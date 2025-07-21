@@ -13,7 +13,11 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
     lib.addIncludePath(b.path(""));
-    lib.addCSourceFile(.{ .file = b.path("utf8norm.c") });
+    lib.addCSourceFiles(.{
+        .root = b.path(""),
+        .files = files,
+        .flags = &.{ "-Wall", "-Werror" },
+    });
     lib.installHeader(b.path("utf8norm.h"), "utf8norm.h");
 
     b.installArtifact(lib);
@@ -21,4 +25,7 @@ pub fn build(b: *std.Build) void {
 
 const files: []const []const u8 = &.{
     "utf8norm.c",
+    "normdata.c",
+    "impl/neon.c",
+    "impl/scalar.c",
 };

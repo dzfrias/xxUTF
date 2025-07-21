@@ -2,8 +2,6 @@
 #define UTF8NORM_H
 
 #include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

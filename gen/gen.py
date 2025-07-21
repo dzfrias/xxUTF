@@ -1,6 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from itertools import batched
+from dataclasses import dataclass
 
 DecompMap = dict[int, list[int]]
 
@@ -79,7 +80,194 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
     return salts, keys
 
 
-PREAMBLE = """typedef struct Entry {
+@dataclass
+class TableInfo:
+    decomp_bytes_len: int
+    salt_len: int
+    kv_len: int
+
+
+def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
+    offsets = {}
+    lengths = {}
+    offset = 0
+    all_decomp_bytes = []
+    for k, decomp in decomp_map.items():
+        offsets[k] = offset
+        decomp_bytes: list[int] = []
+        for c in decomp:
+            utf8 = bytes(chr(c), encoding="UTF-8")
+            decomp_bytes.extend(list(utf8))
+        all_decomp_bytes.extend(decomp_bytes)
+        lengths[k] = len(decomp_bytes)
+        offset += len(decomp_bytes)
+    assert offset <= 2**16 - 1
+
+    writer.write(f"const uint8_t DECOMPOSED_CHARS[{len(all_decomp_bytes)}] = {{\n")
+    for row in batched(all_decomp_bytes, 13):
+        writer.write(" ");
+        for b in row:
+            writer.write(f" 0x{b:02X},")
+        writer.write("\n");
+    writer.write("};\n")
+    assert offset <= 2**16 - 1
+
+    salt, keys = minimal_perfect_hash(decomp_map)
+    writer.write(f"\nconst uint16_t DECOMPOSED_SALT[{len(salt)}] = {{\n")
+    for salts in batched(salt, 14):
+        writer.write(" ")
+        for s in salts:
+            writer.write(f" 0x{s:04X},")
+        writer.write("\n")
+    writer.write("};\n")
+
+    writer.write(f"\nconst Entry DECOMPOSED_KV[{len(keys)}] = {{\n")
+    for batch in batched(keys, 5):
+        writer.write(" ")
+        for k in batch:
+            writer.write(
+                f" {{0x{k:05X}, 0x{offsets[k]:03X}, 0x{lengths[k]}}},"
+            )
+        writer.write("\n")
+    writer.write("};\n")
+
+    return TableInfo(decomp_bytes_len=len(all_decomp_bytes), salt_len=len(salt), kv_len=len(keys))
+
+
+def is_bit_set(mask: int, i: int) -> bool:
+    return (mask & (1 << i)) == (1 << i)
+
+
+def compute_locations(mask: int) -> list[int]:
+    answer: list[int] = []
+    i = 0
+    while (mask >> i) > 0:
+        if is_bit_set(mask, i):
+            answer.append(i)
+        i += 1
+    return answer
+
+
+def compute_code_point_size(mask: int) -> list[int]:
+    positions = compute_locations(mask)
+    answer = []
+    old_x = -1
+    for i in range(len(positions)):
+        x = positions[i]
+        answer.append(x - old_x)
+        old_x = x
+    return answer
+
+
+def has_code_points_up_to_size(sizes: list[int], size: int) -> bool:
+    if len(sizes) < (12 // size):
+        return False
+    return max(sizes[:(12 // size)]) <= size
+
+
+def build_shuf(sizes: tuple[int, ...]) -> list[int]:
+    answer = [0] * 16
+    pos = 0
+    if len(sizes) == 6:
+        for i in range(6):
+            if sizes[i] == 1:
+                answer[i * 2] = pos
+                answer[i * 2 + 1] = 0xff
+                pos += 1
+            else:
+                assert sizes[i] == 2
+                answer[i * 2] = pos + 1
+                answer[i * 2 + 1] = pos
+                pos += 2
+    else:
+        assert len(sizes) == 4 or len(sizes) == 3
+        for i in range(len(sizes)):
+            for j in range(12 // len(sizes)):
+                if sizes[i] != j + 1:
+                    continue
+                answer[i * 4] = pos + j
+                answer[i * 4 + 1] = 0xFF if j - 1 < 0 else pos + (j - 1)
+                answer[i * 4 + 2] = 0xFF if j - 2 < 0 else pos + (j - 2)
+                answer[i * 4 + 3] = 0xFF if j - 3 < 0 else pos + (j - 3)
+                pos += j + 1
+                break
+
+    return answer
+
+
+@dataclass
+class ShuffleInfo:
+    shufutf8_len: int
+    codepoint_index_len: int
+
+
+def generate_shuffle_tables(writer) -> ShuffleInfo:
+    case12_set: set[tuple[int, ...]] = set()
+    case123_set: set[tuple[int, ...]] = set()
+    case1234_set: set[tuple[int, ...]] = set()
+    for x in range(1 << 12):
+        sizes = compute_code_point_size(x)
+        if has_code_points_up_to_size(sizes, 2):
+            case12_set.add(tuple(sizes[:6]))
+        elif has_code_points_up_to_size(sizes, 3):
+            case123_set.add(tuple(sizes[:4]))
+        elif has_code_points_up_to_size(sizes, 4):
+            case1234_set.add(tuple(sizes[:3]))
+    case12 = sorted(case12_set)
+    case123 = sorted(case123_set)
+    case1234 = sorted(case1234_set)
+    cases = case12 + case123 + case1234
+  
+    all_shuf = [build_shuf(z) for z in cases]
+    writer.write(f"\nconst uint8_t SHUFUTF8[{len(cases)}][16] = {{\n")
+    for shuf in all_shuf:
+        writer.write(f"  {{{", ".join(map(str, shuf))}}},\n")
+    writer.write("};\n")
+
+    index = {t: i for i, t in enumerate(cases)}
+    arrg = []
+    for x in range(1 << 12):
+        sizes = compute_code_point_size(x)
+        if has_code_points_up_to_size(sizes, 2):
+            idx = index[tuple(sizes[:6])]
+            arrg.append((idx, sum(sizes[:6])))
+        elif has_code_points_up_to_size(sizes, 3):
+            idx = index[tuple(sizes[:4])]
+            arrg.append((idx, sum(sizes[:4])))
+        elif has_code_points_up_to_size(sizes, 4):
+            idx = index[tuple(sizes[:3])]
+            arrg.append((idx, sum(sizes[:3])))
+        else:
+            # We are in error, use a bogus index
+            arrg.append((209, 12))
+
+    writer.write(f"\nconst uint8_t CODEPOINT_INDEX[{len(arrg)}][2] = {{\n")
+    for row in batched(arrg, 8):
+        writer.write(" ");
+        for a in row:
+            writer.write(f" {{{", ".join(map(str, a))}}},")
+        writer.write("\n")
+    writer.write("};\n");
+
+    return ShuffleInfo(shufutf8_len=len(cases), codepoint_index_len=len(arrg))
+
+
+def generate_header(writer, table_info: TableInfo, shuf_info: ShuffleInfo):
+    writer.write(f"extern const uint8_t DECOMPOSED_CHARS[{table_info.decomp_bytes_len}];\n")
+    writer.write(f"extern const uint16_t DECOMPOSED_SALT[{table_info.salt_len}];\n")
+    writer.write(f"extern const Entry DECOMPOSED_KV[{table_info.kv_len}];\n")
+    writer.write(f"extern const uint8_t SHUFUTF8[{shuf_info.shufutf8_len}][16];\n")
+    writer.write(f"extern const uint8_t CODEPOINT_INDEX[{shuf_info.codepoint_index_len}][2];\n")
+
+
+PREAMBLE_H = """// This file was generated by gen/gen.py
+
+#ifndef UTF8NORM_NORMDATA_H
+#define UTF8NORM_NORMDATA_H
+
+#include <stdint.h>
+
+typedef struct Entry {
   uint32_t k;
   uint16_t v1;
   uint16_t v2;
@@ -87,52 +275,15 @@ PREAMBLE = """typedef struct Entry {
 
 """
 
+POSTAMBLE_H = """
+#endif // UTF8NORM_NORMDATA_H
+"""
 
-def generate(writer, decomp_map: DecompMap) -> None:
-    writer.write(PREAMBLE)
+PREAMBLE = """// This file was generated by gen/gen.py
 
-    offsets = {}
-    offset = 0
-    writer.write("static const uint32_t DECOMPOSED_CHARS[] = {\n")
-    for k, decomp in decomp_map.items():
-        offsets[k] = offset
-        offset += len(decomp)
-        for c in decomp:
-            writer.write(f"    0x{c:04X},\n")
-    writer.write("};\n")
+#include "normdata.h"
 
-    salt, keys = minimal_perfect_hash(decomp_map)
-    writer.write("\nstatic const uint16_t DECOMPOSED_SALT[] = {\n")
-    for salts in batched(salt, 14):
-        writer.write(" " * 3)
-        for s in salts:
-            writer.write(f" 0x{s:04X},")
-        writer.write("\n")
-    writer.write("};\n")
-
-    writer.write("\nstatic const Entry DECOMPOSED_KV[] = {\n")
-    for batch in batched(keys, 5):
-        writer.write(" " * 3)
-        for k in batch:
-            writer.write(
-                f" {{0x{k:05X}, 0x{offsets[k]:03X}, 0x{len(decomp_map[k]):X}}},"
-            )
-        writer.write("\n")
-    writer.write("};\n")
-
-
-def utf8_bytes_needed(n: int) -> int:
-    if n <= 0x7F:
-        return 1
-    elif n <= 0x7FF:
-        return 2
-    elif n <= 0xFFFF:
-        return 3
-    elif n <= 0x10FFFF:
-        return 4
-
-    raise ValueError()
-
+"""
 
 def main() -> None:
     decomp_map: DecompMap = {}
@@ -151,6 +302,7 @@ def main() -> None:
             decomp_map[value] = [int(x, 16) for x in mappings]
 
     # Get the full expansion of each code point
+    max_decomps = 0
     for x, decomp in decomp_map.items():
         final_decomp: list[int] = []
         for c in decomp:
@@ -159,9 +311,20 @@ def main() -> None:
             final_decomp.extend(expansion)
         # TODO: sort this into proper order (by CCC)
         decomp_map[x] = final_decomp
+        max_decomps = max(max_decomps, len(final_decomp))
+
+    # It is a generally good assumption that precomposed code points don't decompose into 
+    # more than four code points.
+    assert max_decomps <= 4
 
     with open("normdata.c", "w") as f:
-        generate(f, decomp_map)
+        f.write(PREAMBLE)
+        hash_info = generate_hash_tables(f, decomp_map)
+        shuf_info = generate_shuffle_tables(f)
+    with open("normdata.h", "w") as f:
+        f.write(PREAMBLE_H)
+        generate_header(f, hash_info, shuf_info);
+        f.write(POSTAMBLE_H)
 
 
 if __name__ == "__main__":
