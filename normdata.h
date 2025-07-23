@@ -6,15 +6,30 @@
 #include <stdint.h>
 
 typedef struct Entry {
+  uint8_t len;
+  uint8_t ccc;
+  uint16_t offset;
   uint32_t k;
-  uint16_t v1;
-  uint16_t v2;
 } Entry;
 
+static const uint16_t S_BASE = 0xAC00;
+static const uint16_t L_BASE = 0x1100;
+static const uint16_t V_BASE = 0x1161;
+static const uint16_t T_BASE = 0x11A7;
+static const uint16_t L_COUNT = 19;
+static const uint16_t V_COUNT = 21;
+static const uint16_t T_COUNT = 28;
+static const uint16_t N_COUNT = V_COUNT * T_COUNT;
+static const uint16_t S_COUNT = L_COUNT * N_COUNT;
+
 extern const uint8_t DECOMPOSED_CHARS[8041];
-extern const uint16_t DECOMPOSED_SALT[2081];
-extern const Entry DECOMPOSED_KV[2081];
+extern const uint16_t DECOMPOSED_SALT[3011];
+extern const Entry DECOMPOSED_KV[3011];
 extern const uint8_t SHUFUTF8[209][16];
 extern const uint8_t CODEPOINT_INDEX[4096][2];
+
+static const uint32_t DECOMPOSED_SALT_SIZE = sizeof(DECOMPOSED_SALT) / 2;
+static const uint32_t DECOMPOSED_KV_SIZE = sizeof(DECOMPOSED_KV) / sizeof(Entry);
+static const uint32_t DECOMPOSED_CHARS_SIZE = sizeof(DECOMPOSED_CHARS);
 
 #endif // UTF8NORM_NORMDATA_H

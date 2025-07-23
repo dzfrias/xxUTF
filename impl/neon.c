@@ -18,18 +18,6 @@ static inline uint16_t make_bitmask(uint8x16_t v) {
   return vgetq_lane_u16(vreinterpretq_u16_u8(tmp), 0);
 }
 
-// // Deduplicate a 64-bit mask (with four bits for each one bit) into a 16-bit
-// // mask.
-// static inline uint16_t dedup4(uint64_t mask) {
-//   uint64_t temp;
-//   temp = mask & 0x1111111111111111ULL;
-//   temp = (temp | (temp >> 3)) & 0x0303030303030303ULL;
-//   temp = (temp | (temp >> 6)) & 0x000F000F000F000FULL;
-//   temp = (temp | (temp >> 12)) & 0x000000FF000000FFULL;
-//   temp = (temp | (temp >> 24)) & 0x000000000000FFFFULL;
-//   return (uint16_t)temp;
-// }
-
 __attribute__((unused)) static void print_uint8x16(const char *name,
                                                    uint8x16_t vec) {
   uint8_t values[16];
@@ -297,9 +285,9 @@ static size_t decompose(uint32x4_t values, size_t length, uint16_t mask,
 
     // Check if the character has a decomposition
     if (kv.k == chars[i]) {
-      uint8_t const *start = &DECOMPOSED_CHARS[kv.v1];
-      memcpy((*out), start, kv.v2);
-      (*out) += kv.v2;
+      uint8_t const *start = &DECOMPOSED_CHARS[kv.offset];
+      memcpy(*out, start, kv.len);
+      (*out) += kv.len;
     } else {
       memcpy((*out), input + offset, size);
       (*out) += size;
@@ -346,15 +334,6 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
     // Algorithm described here:
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
     if (in_range_u16(cps, 0xAC00 - 1, 0xD7AF + 1)) {
-      // static const uint16_t S_BASE = 0xAC00;
-      // static const uint16_t L_BASE = 0x1100;
-      // static const uint16_t V_BASE = 0x1161;
-      // static const uint16_t T_BASE = 0x11A7;
-      // static const uint16_t L_COUNT = 19;
-      // static const uint16_t V_COUNT = 21;
-      // static const uint16_t T_COUNT = 28;
-      // static const uint16_t N_COUNT = V_COUNT * T_COUNT;
-      //
       // printf("FOUND HANGUL\n");
       //
       // // Compute the S index
