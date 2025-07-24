@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static inline uint16_t make_bitmask(uint8x16_t v) {
+static inline uint16_t make_bitmask_8x16(uint8x16_t v) {
   const uint8x16_t mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
                            0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
   uint8x16_t mv = vandq_u8(v, mask);
@@ -18,6 +18,12 @@ static inline uint16_t make_bitmask(uint8x16_t v) {
   return vgetq_lane_u16(vreinterpretq_u16_u8(tmp), 0);
 }
 
+static inline uint8_t make_bitmask_16x4(uint16x4_t v) {
+  const uint16x4_t mask = {0x1, 0x2, 0x4, 0x8};
+  uint16x4_t mv = vand_u16(v, mask);
+  return (uint8_t)(vaddv_u16(mv) & 0xF);
+}
+
 __attribute__((unused)) static void print_uint8x16(const char *name,
                                                    uint8x16_t vec) {
   uint8_t values[16];
@@ -25,6 +31,18 @@ __attribute__((unused)) static void print_uint8x16(const char *name,
 
   printf("%s: ", name);
   for (int i = 0; i < 16; i++) {
+    printf("%02x ", values[i]);
+  }
+  printf("\n");
+}
+
+__attribute__((unused)) static void print_uint8x8(const char *name,
+                                                  uint8x8_t vec) {
+  uint8_t values[8];
+  vst1_u8(values, vec);
+
+  printf("%s: ", name);
+  for (int i = 0; i < 8; i++) {
     printf("%02x ", values[i]);
   }
   printf("\n");
@@ -231,10 +249,39 @@ static uint16x4_t parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
   return composed;
 }
 
+// Write 8 code points, assuming they all expand to three bytes.
+static void write_8_3_byte_utf8(uint16x8_t in, char *out) {
+  uint8x8x3_t bytes;
+
+  // 1110xxxxxxxxxxxx
+  // 0b100011100
+  // 0b100010110
+  uint16x8_t high = vsriq_n_u16(vdupq_n_u16(0xE000), in, 4);
+  // 1110xxxx
+  uint8x8_t high_narrow = vshrn_n_u16(high, 8);
+  bytes.val[0] = high_narrow;
+
+  // xxxxxxxx
+  uint8x8_t middle = vshrn_n_u16(in, 6);
+  // 00xxxxxx
+  uint8x8_t middle_cleared = vand_u8(middle, vdup_n_u8(0b00111111));
+  // 10xxxxxx
+  bytes.val[1] = vorr_u8(middle_cleared, vdup_n_u8(0b10000000));
+
+  // 0000000000xxxxxx
+  uint16x8_t low = vandq_u16(in, vdupq_n_u16(0b00111111));
+  uint8x8_t low_narrow = vmovn_u16(low);
+  // 10xxxxxx
+  bytes.val[2] = vorr_u8(low_narrow, vdup_n_u8(0b10000000));
+
+  // Interleaved store into output
+  vst3_u8((uint8_t *)out, bytes);
+}
+
 static inline bool in_range_u16(uint16x4_t res, uint16_t a, uint16_t b) {
   uint16x4_t lt = vclt_u16(res, vdup_n_u16(b));
-  uint16x4_t gt = vcgt_u16(res, vdup_n_u16(a));
-  uint16x4_t cmp = vand_u8(lt, gt);
+  uint16x4_t ge = vcge_u16(res, vdup_n_u16(a));
+  uint16x4_t cmp = vand_u8(lt, ge);
   return vminv_u16(cmp) == 0xFFFF;
 }
 
@@ -287,10 +334,10 @@ static size_t decompose(uint32x4_t values, size_t length, uint16_t mask,
     if (kv.k == chars[i]) {
       uint8_t const *start = &DECOMPOSED_CHARS[kv.offset];
       memcpy(*out, start, kv.len);
-      (*out) += kv.len;
+      *out += kv.len;
     } else {
-      memcpy((*out), input + offset, size);
-      (*out) += size;
+      memcpy(*out, input + offset, size);
+      *out += size;
     }
     offset += size;
   }
@@ -306,8 +353,8 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
 
   if ((mask & 0xFFFF) == 0xFFFF) {
     printf("ALL ASCII\n");
-    vst1q_u8((unsigned char *)(*out), in);
-    (*out) += 16;
+    vst1q_u8((unsigned char *)*out, in);
+    *out += 16;
     return 16;
   }
 
@@ -319,11 +366,12 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
 
     uint16x4_t cps = parse_three_byte_utf8(in);
 
-    // The largest 3-byte CJK range (encompasses the vast, vast majority of CJK)
-    // that has no precomposed code points. We can just skip these.
-    if (in_range_u16(cps, 0x30FF - 1, 0x9FFF + 1)) {
-      vst1q_u8((unsigned char *)(*out), in);
-      (*out) += 12;
+    // The large, common 3-byte CJK range (encompasses much of CJK) that has no
+    // precomposed code points. We can just skip these.
+    if (in_range_u16(cps, 0x30FF, 0x9FFF + 1)) {
+      printf("FOUND CJK\n");
+      vst1q_u8((unsigned char *)*out, in);
+      *out += 12;
       return 12;
     }
 
@@ -333,50 +381,77 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
     //
     // Algorithm described here:
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
-    if (in_range_u16(cps, 0xAC00 - 1, 0xD7AF + 1)) {
-      // printf("FOUND HANGUL\n");
-      //
-      // // Compute the S index
-      // uint16x4_t s = vsub_u16(cps, vdup_n_u16(S_BASE));
-      //
-      // // Compute the l index: s / N_COUNT
-      // uint32x4_t l_fixed = vmull_u32(s, vdup_n_u16(28533));
-      // // Shift the fixed point number
-      // uint32x4_t l_wide = vshrq_n_u32(l_fixed, 24);
-      // uint16x4_t l = vmovn_u32(l_wide);
-      //
-      // // Multiply and subtract to get the remainder
-      // uint16x4_t v_modulo = vmls_u16(l, vdup_n_u16(N_COUNT), s);
-      // uint16x4_t v_shifted = vshr_n_u16(v_modulo, 2);
-      // uint32x4_t v_fixed = vmull_u16(v_shifted, vdup_n_u16(18725));
-      // uint32x4_t v_wide = vshrq_n_u32(v_fixed, 17);
-      // uint16x4_t v = vmovn_u32(v_wide);
-      //
-      // uint16x4_t t_shifted = vshr_n_u16(s, 2);
-      // uint32x4_t t_fixed = vmull_u16(t_shifted, vdup_n_u16(18725));
-      // // s / T_COUNT
-      // uint32x4_t t_div_wide = vshrq_n_u32(t_fixed, 17);
-      // uint16x4_t t_div = vmovn_u32(t_div_wide);
-      // uint16x4_t t = vmls_u16(t_div, vdup_n_u16(T_COUNT), s);
+    if (in_range_u16(cps, S_BASE, S_BASE + S_COUNT)) {
+      printf("FOUND HANGUL\n");
+
+      // Compute the S index
+      uint16x4_t s = vsub_u16(cps, vdup_n_u16(S_BASE));
+
+      uint32x4_t l_fixed = vmull_n_u16(s, 28533);
+      // Shift the fixed point number
+      uint32x4_t l_wide = vshrq_n_u32(l_fixed, 24);
+      // L index: s / N_COUNT
+      uint16x4_t l = vmovn_u32(l_wide);
+
+      // Multiply and subtract to get the remainder
+      uint16x4_t v_modulo = vmls_u16(s, l, vdup_n_u16(N_COUNT));
+      uint32x4_t v_fixed = vmull_n_u16(v_modulo, 2341);
+      uint32x4_t v_wide = vshrq_n_u32(v_fixed, 16);
+      // V index: (s % N_COUNT) / T_COUNT
+      uint16x4_t v = vmovn_u32(v_wide);
+
+      uint16x4_t t_shifted = vshr_n_u16(s, 2);
+      uint32x4_t t_fixed = vmull_n_u16(t_shifted, 18725);
+      // s / T_COUNT
+      uint32x4_t t_div_wide = vshrq_n_u32(t_fixed, 17);
+      uint16x4_t t_div = vmovn_u32(t_div_wide);
+      // T index: s % T_COUNT
+      uint16x4_t t = vmls_u16(s, t_div, vdup_n_u16(T_COUNT));
 
       // Mask for all precomposed Hangul syllables that should not have a
       // trailing consonant
-      // uint16x4_t t_mask = vceqz_u16(t);
+      uint16x4_t t_mask = vceqz_u16(t);
+      uint8_t bitmask = make_bitmask_16x4(t_mask);
+      // Use the trailing consonant bitmask to get a shuffle vector
+      HangulShuf shuf = HANGUL_SHUF[bitmask];
 
-      // TODO: modify this to be the correct bitmask
-      // This allows us to compute a bitmask in two instructions
-      /*const uint16x8_t bitmask = { 0x0101 , 0x0202, 0x0404, 0x0808, 0x1010,
-       * 0x2020, 0x4040, 0x8080 };*/
-      /*uint16x8_t mt = vandq_u16(t_mask, bitmask);*/
-      /*uint16_t t_bitmask = vaddvq_u16(mt);*/
+      // Only 12 of the 16 uint16_t's will be used
+      uint16_t tmp[16];
+      uint16x4x3_t vals;
+      vals.val[0] = vadd_u16(l, vdup_n_u16(L_BASE));
+      vals.val[1] = vadd_u16(v, vdup_n_u16(V_BASE));
+      vals.val[2] = vadd_u16(t, vdup_n_u16(T_BASE));
+      // Interleave store by three, creating a code point buffer assuming
+      // all precomposed Hangul characters decompose into three Hangul
+      // syllables each.
+      vst3_u16(tmp, vals);
 
-      // TODO: compute t index
-      // to solve the t index byte placement problem:
-      // create a logical vector that describes which bytes have t indices.
-      // Turn into a bitmask (4 bits wide). Look up into a table that returns
-      // a [4]u8 of where to put each L-index code point (i.e. [0, 2, 5, 7]).
-      // From there can derive where to put V-index code point and T-index code
-      // point
+      // Load the tmp buffer into a large byte table
+      uint8x16_t tbl_low = vreinterpretq_u8_u16(vld1q_u16(tmp));
+      uint8x16_t tbl_high = vreinterpretq_u8_u16(vld1q_u16(tmp + 8));
+      uint8x16x2_t tbl;
+      tbl.val[0] = tbl_low;
+      tbl.val[1] = tbl_high;
+
+      // Use the shuffle vector to reorder the syllables so that it (possibly)
+      // corrects the previous code that assumed all characters decompose into
+      // three syllables.
+      //
+      // NOTE: possible fast path: skip this if bitmask == 0b1111.
+      uint8x16_t idx_low = vld1q_u8(shuf.tbl);
+      uint16x8_t low = vreinterpretq_u16_u8(vqtbl2q_u8(tbl, idx_low));
+      uint8x8_t idx_high = vld1_u8(shuf.tbl + 16);
+      uint16x4_t high = vreinterpret_u16_u8(vqtbl2_u8(tbl, idx_high));
+
+      // We will always write at least 24 bytes
+      write_8_3_byte_utf8(low, *out);
+      *out += 24;
+      if (shuf.len > 16) {
+        write_8_3_byte_utf8(vcombine_u16(high, vdup_n_u16(0)), *out);
+        out += (24 - shuf.len) * 3;
+      }
+
+      return 12;
     }
   }
 
@@ -427,10 +502,10 @@ size_t normalize_utf8_nfd_neon(char const *input, size_t length, char *out) {
     uint8x16_t in2 = vld1q_u8((uint8_t const *)(input + p + 16));
     uint8x16_t in3 = vld1q_u8((uint8_t const *)(input + p + 32));
     uint8x16_t in4 = vld1q_u8((uint8_t const *)(input + p + 48));
-    uint64_t start1 = make_bitmask(get_codepoint_starts(in1));
-    uint64_t start2 = make_bitmask(get_codepoint_starts(in2));
-    uint64_t start3 = make_bitmask(get_codepoint_starts(in3));
-    uint64_t start4 = make_bitmask(get_codepoint_starts(in4));
+    uint64_t start1 = make_bitmask_8x16(get_codepoint_starts(in1));
+    uint64_t start2 = make_bitmask_8x16(get_codepoint_starts(in2));
+    uint64_t start3 = make_bitmask_8x16(get_codepoint_starts(in3));
+    uint64_t start4 = make_bitmask_8x16(get_codepoint_starts(in4));
 
     uint64_t mask = start1 | (start2 << 16) | (start3 << 32) | (start4 << 48);
     mask = ~mask;
@@ -445,8 +520,8 @@ size_t normalize_utf8_nfd_neon(char const *input, size_t length, char *out) {
 
   if (p < length) {
     // Write the rest using scalar code
-    (*out_ptr) += normalize_utf8_nfd_scalar(input + p, length - p, *out_ptr);
+    *out_ptr += normalize_utf8_nfd_scalar(input + p, length - p, *out_ptr);
   }
 
-  return (*out_ptr) - start;
+  return *out_ptr - start;
 }

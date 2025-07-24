@@ -12,6 +12,11 @@ typedef struct Entry {
   uint32_t k;
 } Entry;
 
+typedef struct HangulShuf {
+  uint8_t len;
+  uint8_t tbl[24];
+} HangulShuf;
+
 static const uint16_t S_BASE = 0xAC00;
 static const uint16_t L_BASE = 0x1100;
 static const uint16_t V_BASE = 0x1161;
@@ -27,6 +32,7 @@ extern const uint16_t DECOMPOSED_SALT[3011];
 extern const Entry DECOMPOSED_KV[3011];
 extern const uint8_t SHUFUTF8[209][16];
 extern const uint8_t CODEPOINT_INDEX[4096][2];
+extern const HangulShuf HANGUL_SHUF[16];
 
 static const uint32_t DECOMPOSED_SALT_SIZE = sizeof(DECOMPOSED_SALT) / 2;
 static const uint32_t DECOMPOSED_KV_SIZE = sizeof(DECOMPOSED_KV) / sizeof(Entry);
