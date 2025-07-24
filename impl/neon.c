@@ -443,12 +443,11 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint8x8_t idx_high = vld1_u8(shuf.tbl + 16);
       uint16x4_t high = vreinterpret_u16_u8(vqtbl2_u8(tbl, idx_high));
 
-      // We will always write at least 24 bytes
       write_8_3_byte_utf8(low, *out);
       *out += 24;
-      if (shuf.len > 16) {
+      if (shuf.len > 24) {
         write_8_3_byte_utf8(vcombine_u16(high, vdup_n_u16(0)), *out);
-        out += (24 - shuf.len) * 3;
+        *out += shuf.len - 24;
       }
 
       return 12;

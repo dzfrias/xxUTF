@@ -263,15 +263,18 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
     writer.write(f"\nconst HangulShuf HANGUL_SHUF[16] = {{\n")
     for x in range(1 << 4):
         exclude = []
+        total_size = 0
         for i, bit in enumerate(reversed(f"{x:04b}")):
             if bit == "1":
-                 exclude.append(4 + i * 6)
-                 exclude.append(5 + i * 6)
+                exclude.append(4 + i * 6)
+                exclude.append(5 + i * 6)
+                total_size += 6
+            else:
+                total_size += 9
         tbl = [x for x in range(24) if x not in exclude]
-        original_len = len(tbl)
         # Pad to be 24 in length
         tbl.extend([255] * (24 - len(tbl)))
-        writer.write(f"  {{{original_len}, {{{", ".join(map(str, tbl))}}}}},\n")
+        writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
     writer.write("};\n");
 
     return ShuffleInfo(shufutf8_len=len(cases), codepoint_index_len=len(arrg))
