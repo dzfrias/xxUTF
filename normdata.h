@@ -5,37 +5,37 @@
 
 #include <stdint.h>
 
-typedef struct Entry {
+typedef struct NormdataEntry {
   uint8_t len;
   uint8_t ccc;
   uint16_t offset;
   uint32_t k;
-} Entry;
+} NormdataEntry;
 
-typedef struct HangulShuf {
+typedef struct NormdataHangulShuf {
   uint8_t len;
   uint8_t tbl[24];
-} HangulShuf;
+} NormdataHangulShuf;
 
-static const uint16_t S_BASE = 0xAC00;
-static const uint16_t L_BASE = 0x1100;
-static const uint16_t V_BASE = 0x1161;
-static const uint16_t T_BASE = 0x11A7;
-static const uint16_t L_COUNT = 19;
-static const uint16_t V_COUNT = 21;
-static const uint16_t T_COUNT = 28;
-static const uint16_t N_COUNT = V_COUNT * T_COUNT;
-static const uint16_t S_COUNT = L_COUNT * N_COUNT;
+static const uint16_t NORMDATA_S_BASE = 0xAC00;
+static const uint16_t NORMDATA_L_BASE = 0x1100;
+static const uint16_t NORMDATA_V_BASE = 0x1161;
+static const uint16_t NORMDATA_T_BASE = 0x11A7;
+static const uint16_t NORMDATA_L_COUNT = 19;
+static const uint16_t NORMDATA_V_COUNT = 21;
+static const uint16_t NORMDATA_T_COUNT = 28;
+static const uint16_t NORMDATA_N_COUNT = NORMDATA_V_COUNT * NORMDATA_T_COUNT;
+static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 
-extern const uint8_t DECOMPOSED_CHARS[8041];
-extern const uint16_t DECOMPOSED_SALT[3011];
-extern const Entry DECOMPOSED_KV[3011];
-extern const uint8_t SHUFUTF8[209][16];
-extern const uint8_t CODEPOINT_INDEX[4096][2];
-extern const HangulShuf HANGUL_SHUF[16];
+extern const uint8_t NORMDATA_DECOMPOSED_CHARS[8041];
+extern const uint16_t NORMDATA_DECOMPOSED_SALT[3011];
+extern const NormdataEntry NORMDATA_DECOMPOSED_KV[3011];
+extern const uint8_t NORMDATA_SHUFUTF8[209][16];
+extern const uint8_t NORMDATA_CODEPOINT_INDEX[4096][2];
+extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
 
-static const uint32_t DECOMPOSED_SALT_SIZE = sizeof(DECOMPOSED_SALT) / 2;
-static const uint32_t DECOMPOSED_KV_SIZE = sizeof(DECOMPOSED_KV) / sizeof(Entry);
-static const uint32_t DECOMPOSED_CHARS_SIZE = sizeof(DECOMPOSED_CHARS);
+static const uint32_t NORMDATA_DECOMPOSED_SALT_SIZE = sizeof(NORMDATA_DECOMPOSED_SALT) / 2;
+static const uint32_t NORMDATA_DECOMPOSED_KV_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
+static const uint32_t NORMDATA_DECOMPOSED_CHARS_SIZE = sizeof(NORMDATA_DECOMPOSED_CHARS);
 
 #endif // UTF8NORM_NORMDATA_H

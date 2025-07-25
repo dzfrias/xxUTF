@@ -3,6 +3,6 @@
 
 #include <stddef.h>
 
-size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out);
+size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out);
 
 #endif // UTF8NORM_SCALAR_H

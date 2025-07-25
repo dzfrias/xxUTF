@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static uint32_t phash(uint32_t key, uint32_t salt, uint64_t size) {
+static uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
   uint32_t salt_key = key + salt;
   uint32_t y1 = salt_key * 2654435769;
   uint32_t y2 = key * 0x31415926;
@@ -13,7 +13,7 @@ static uint32_t phash(uint32_t key, uint32_t salt, uint64_t size) {
   return mh >> 32;
 }
 
-size_t write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
+size_t scalar_write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
   if (codepoint <= 0x7F) {
     utf8_bytes[0] = (uint8_t)(codepoint & 0xFF);
     return 1;
@@ -39,23 +39,26 @@ size_t write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
 }
 
 // Check if a code point is in the Hangul block.
-static inline bool is_hangul(uint32_t code_point) {
-  return code_point >= S_BASE && code_point < S_BASE + S_COUNT;
+static inline bool scalar_is_hangul(uint32_t code_point) {
+  return code_point >= NORMDATA_S_BASE &&
+         code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT;
 }
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
-static size_t decompose_hangul(uint32_t code_point, char *out) {
-  uint32_t s_index = code_point - S_BASE;
-  uint32_t l_index = s_index / N_COUNT;
-  uint32_t v_index = (s_index % N_COUNT) / T_COUNT;
-  uint32_t t_index = s_index % T_COUNT;
+static size_t scalar_decompose_hangul(uint32_t code_point, char *out) {
+  uint32_t s_index = code_point - NORMDATA_S_BASE;
+  uint32_t l_index = s_index / NORMDATA_N_COUNT;
+  uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;
+  uint32_t t_index = s_index % NORMDATA_T_COUNT;
 
   uint8_t *data = (uint8_t *)out;
   size_t nwritten = 0;
-  nwritten += write_codepoint(L_BASE + l_index, data);
-  nwritten += write_codepoint(V_BASE + v_index, data + nwritten);
+  nwritten += scalar_write_codepoint(NORMDATA_L_BASE + l_index, data);
+  nwritten +=
+      scalar_write_codepoint(NORMDATA_V_BASE + v_index, data + nwritten);
   if (t_index > 0) {
-    nwritten += write_codepoint(T_BASE + t_index, data + nwritten);
+    nwritten +=
+        scalar_write_codepoint(NORMDATA_T_BASE + t_index, data + nwritten);
   }
   return nwritten;
 }
@@ -65,14 +68,16 @@ static size_t decompose_hangul(uint32_t code_point, char *out) {
 // decomposition.
 //
 // Note that this does not handle Hangul code points.
-static size_t decompose(uint32_t code_point, char *out, bool *is_cc) {
+static size_t scalar_decompose(uint32_t code_point, char *out, bool *is_cc) {
   char *start = out;
-  uint32_t salt_hash = phash(code_point, 0, DECOMPOSED_SALT_SIZE);
-  uint32_t salt = DECOMPOSED_SALT[salt_hash];
-  uint32_t key_hash = phash(code_point, salt, DECOMPOSED_SALT_SIZE);
-  Entry kv = DECOMPOSED_KV[key_hash];
+  uint32_t salt_hash =
+      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_SALT_SIZE);
+  uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
+  uint32_t key_hash =
+      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_SALT_SIZE);
+  NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
   if (kv.k == code_point) {
-    uint8_t const *bytes = &DECOMPOSED_CHARS[kv.offset];
+    uint8_t const *bytes = &NORMDATA_DECOMPOSED_CHARS[kv.offset];
     for (uint8_t k = 0; k < kv.len; k++) {
       *out++ = bytes[k];
     }
@@ -84,20 +89,20 @@ static size_t decompose(uint32_t code_point, char *out, bool *is_cc) {
   return out - start;
 }
 
-static uint8_t lookup_ccc(uint32_t code_point) {
-  static const uint32_t SALT_SIZE = sizeof(DECOMPOSED_SALT) / 2;
+static uint8_t scalar_lookup_ccc(uint32_t code_point) {
+  static const uint32_t SALT_SIZE = sizeof(NORMDATA_DECOMPOSED_SALT) / 2;
 
-  uint32_t salt_hash = phash(code_point, 0, SALT_SIZE);
-  uint32_t salt = DECOMPOSED_SALT[salt_hash];
-  uint32_t key_hash = phash(code_point, salt, SALT_SIZE);
-  Entry kv = DECOMPOSED_KV[key_hash];
+  uint32_t salt_hash = scalar_phash(code_point, 0, SALT_SIZE);
+  uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
+  uint32_t key_hash = scalar_phash(code_point, salt, SALT_SIZE);
+  NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
   }
   return 0;
 }
 
-static uint32_t parse_code_point(uint8_t const *input, uint8_t *size) {
+static uint32_t scalar_parse_code_point(uint8_t const *input, uint8_t *size) {
   uint8_t leading = *input;
   if (leading < 0b10000000) {
     *size = 1;
@@ -120,7 +125,8 @@ static uint32_t parse_code_point(uint8_t const *input, uint8_t *size) {
   }
 }
 
-static void reverse(uint8_t *array, size_t size, size_t start, size_t end) {
+static void scalar_reverse(uint8_t *array, size_t size, size_t start,
+                           size_t end) {
   while (start < end) {
     uint8_t tmp = array[start];
     array[start] = array[end];
@@ -130,13 +136,13 @@ static void reverse(uint8_t *array, size_t size, size_t start, size_t end) {
   }
 }
 
-static void rotate(uint8_t *array, size_t size, size_t k) {
-  reverse(array, size, 0, size - 1);
-  reverse(array, size, 0, k - 1);
-  reverse(array, size, k, size - 1);
+static void scalar_rotate(uint8_t *array, size_t size, size_t k) {
+  scalar_reverse(array, size, 0, size - 1);
+  scalar_reverse(array, size, 0, k - 1);
+  scalar_reverse(array, size, k, size - 1);
 }
 
-static void sort_characters(char *out) {
+static void scalar_sort_characters(char *out) {
   uint8_t *start = (uint8_t *)out;
   uint8_t *data = (uint8_t *)out;
 
@@ -148,8 +154,8 @@ static void sort_characters(char *out) {
       data--;
     }
     uint8_t size;
-    uint32_t code_point = parse_code_point(data, &size);
-    uint8_t ccc = lookup_ccc(code_point);
+    uint32_t code_point = scalar_parse_code_point(data, &size);
+    uint8_t ccc = scalar_lookup_ccc(code_point);
     if (last_ccc < ccc) {
       needs_sort = true;
     }
@@ -181,19 +187,19 @@ static void sort_characters(char *out) {
       uint8_t size2;
       // TODO: odds are we can fit this information into a small cache from the
       //       initial backwards loop
-      uint32_t c1 = parse_code_point(data + j, &size1);
+      uint32_t c1 = scalar_parse_code_point(data + j, &size1);
       // Going past the buffer is also a stop condition
       if (j + size1 >= n) {
         break;
       }
-      uint32_t c2 = parse_code_point(data + j + size1, &size2);
-      uint8_t ccc1 = lookup_ccc(c1);
-      uint8_t ccc2 = lookup_ccc(c2);
+      uint32_t c2 = scalar_parse_code_point(data + j + size1, &size2);
+      uint8_t ccc1 = scalar_lookup_ccc(c1);
+      uint8_t ccc2 = scalar_lookup_ccc(c2);
       last_size = size1;
       if (ccc1 > ccc2) {
         // Swapping two adjacent, variably sized UTF-8 encoded code points can
         // be done with a right rotation by the size of the right code point.
-        rotate(data + j, size1 + size2, size2);
+        scalar_rotate(data + j, size1 + size2, size2);
         last_size = size2;
         did_swap = true;
       }
@@ -204,7 +210,7 @@ static void sort_characters(char *out) {
   }
 }
 
-size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out) {
+size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
   uint8_t const *data = (uint8_t const *)input;
   char *start = out;
 
@@ -223,7 +229,7 @@ size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out) {
       // Two byte UTF-8, combine with next. Note that we do no error handling.
       uint32_t code_point =
           (leading & 0b00011111) << 6 | (data[p + 1] & 0b00111111);
-      size_t nwritten = decompose(code_point, out, &is_cc);
+      size_t nwritten = scalar_decompose(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = data[p + 1];
@@ -236,11 +242,11 @@ size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out) {
                             (data[p + 1] & 0b00111111) << 6 |
                             (data[p + 2] & 0b00111111);
       // The Hangul block exists entirely within the three-byte UTF-8 range.
-      if (is_hangul(code_point)) {
+      if (scalar_is_hangul(code_point)) {
         is_cc = false;
-        out += decompose_hangul(code_point, out);
+        out += scalar_decompose_hangul(code_point, out);
       } else {
-        size_t nwritten = decompose(code_point, out, &is_cc);
+        size_t nwritten = scalar_decompose(code_point, out, &is_cc);
         if (nwritten == 0) {
           *out++ = leading;
           *out++ = data[p + 1];
@@ -254,7 +260,7 @@ size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out) {
       uint32_t code_point =
           (leading & 0b00000111) << 18 | (data[p + 1] & 0b00111111) << 12 |
           (data[p + 2] & 0b00111111) << 6 | (data[p + 3] & 0b00111111);
-      size_t nwritten = decompose(code_point, out, &is_cc);
+      size_t nwritten = scalar_decompose(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = data[p + 1];
@@ -269,14 +275,14 @@ size_t normalize_utf8_nfd_scalar(char const *input, size_t length, char *out) {
     // If the last character was a non-starter and the current character is a
     // starter, we need to try to reorder the combining characters
     if (last_is_cc && !is_cc) {
-      sort_characters(c_start - 1);
+      scalar_sort_characters(c_start - 1);
     }
     last_is_cc = is_cc;
   }
 
   // Try to sort at EOF
   if (last_is_cc) {
-    sort_characters(out - 1);
+    scalar_sort_characters(out - 1);
   }
 
   return out - start;

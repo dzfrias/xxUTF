@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static inline uint16_t make_bitmask_8x16(uint8x16_t v) {
+static inline uint16_t neon_make_bitmask_8x16(uint8x16_t v) {
   const uint8x16_t mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
                            0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
   uint8x16_t mv = vandq_u8(v, mask);
@@ -18,14 +18,14 @@ static inline uint16_t make_bitmask_8x16(uint8x16_t v) {
   return vgetq_lane_u16(vreinterpretq_u16_u8(tmp), 0);
 }
 
-static inline uint8_t make_bitmask_16x4(uint16x4_t v) {
+static inline uint8_t neon_make_bitmask_16x4(uint16x4_t v) {
   const uint16x4_t mask = {0x1, 0x2, 0x4, 0x8};
   uint16x4_t mv = vand_u16(v, mask);
   return (uint8_t)(vaddv_u16(mv) & 0xF);
 }
 
-__attribute__((unused)) static void print_uint8x16(const char *name,
-                                                   uint8x16_t vec) {
+__attribute__((unused)) static void neon_print_uint8x16(const char *name,
+                                                        uint8x16_t vec) {
   uint8_t values[16];
   vst1q_u8(values, vec);
 
@@ -36,8 +36,8 @@ __attribute__((unused)) static void print_uint8x16(const char *name,
   printf("\n");
 }
 
-__attribute__((unused)) static void print_uint8x8(const char *name,
-                                                  uint8x8_t vec) {
+__attribute__((unused)) static void neon_print_uint8x8(const char *name,
+                                                       uint8x8_t vec) {
   uint8_t values[8];
   vst1_u8(values, vec);
 
@@ -48,8 +48,8 @@ __attribute__((unused)) static void print_uint8x8(const char *name,
   printf("\n");
 }
 
-__attribute__((unused)) static void print_uint16x8(const char *name,
-                                                   uint16x8_t vec) {
+__attribute__((unused)) static void neon_print_uint16x8(const char *name,
+                                                        uint16x8_t vec) {
   uint16_t values[8];
   vst1q_u16(values, vec);
 
@@ -60,8 +60,8 @@ __attribute__((unused)) static void print_uint16x8(const char *name,
   printf("\n");
 }
 
-__attribute__((unused)) static void print_uint16x4(const char *name,
-                                                   uint16x4_t vec) {
+__attribute__((unused)) static void neon_print_uint16x4(const char *name,
+                                                        uint16x4_t vec) {
   uint16_t values[4];
   vst1_u16(values, vec);
 
@@ -72,8 +72,8 @@ __attribute__((unused)) static void print_uint16x4(const char *name,
   printf("\n");
 }
 
-__attribute__((unused)) static void print_uint32x4(const char *name,
-                                                   uint32x4_t vec) {
+__attribute__((unused)) static void neon_print_uint32x4(const char *name,
+                                                        uint32x4_t vec) {
   uint32_t values[4];
   vst1q_u32(values, vec);
 
@@ -86,7 +86,7 @@ __attribute__((unused)) static void print_uint32x4(const char *name,
 
 // Parse four three-byte UTF-8 code points into their 16-bit code point values.
 // Taken from simdutf
-static uint16x4_t parse_three_byte_utf8(uint8x16_t in) {
+static uint16x4_t neon_parse_three_byte_utf8(uint8x16_t in) {
   const uint8x16_t sh = {0, 2, 3, 5, 6, 8, 9, 11, 1, 1, 4, 4, 7, 7, 10, 10};
   uint8x16_t perm = vqtbl1q_u8(in, sh);
   // Split into half vectors.
@@ -112,12 +112,12 @@ static uint16x4_t parse_three_byte_utf8(uint8x16_t in) {
 
 // Parse six code points encoded in UTF-8 into 16-bit code point values.
 // Taken from simdutf
-static uint16x8_t parse_6_utf8(uint8x16_t in, size_t shufutf8_idx) {
+static uint16x8_t neon_parse_6_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // Converts 6 1-2 byte UTF-8 characters to 6 UTF-16 characters.
   // This is a relatively easy scenario
   // we process SIX (6) input code-code units. The max length in bytes of six
   // code code units spanning between 1 and 2 bytes each is 12 bytes.
-  uint8x16_t sh = vld1q_u8(SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
   // Shuffle
   // 1 byte: 00000000 0bbbbbbb
   // 2 byte: 110aaaaa 10bbbbbb
@@ -138,10 +138,10 @@ static uint16x8_t parse_6_utf8(uint8x16_t in, size_t shufutf8_idx) {
 
 // Parse three code points encoded in UTF-8 into 32-bit code point values.
 // Taken from simdutf
-static uint32x4_t parse_3_utf8(uint8x16_t in, size_t shufutf8_idx) {
+static uint32x4_t neon_parse_3_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // Unlike UTF-16, doing a fast codepath doesn't have nearly as much benefit
   // due to surrogates no longer being involved.
-  uint8x16_t sh = vld1q_u8(SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
   // 1 byte: 00000000 00000000 00000000 0ddddddd
   // 2 byte: 00000000 00000000 110ccccc 10dddddd
   // 3 byte: 00000000 1110bbbb 10cccccc 10dddddd
@@ -178,7 +178,7 @@ static uint32x4_t parse_3_utf8(uint8x16_t in, size_t shufutf8_idx) {
 
 // Parse three four-byte UTF-8 code points into their 32-bit code point values.
 // Taken from simdutf
-static uint32x4_t parse_4_byte_utf8(uint8x16_t in) {
+static uint32x4_t neon_parse_4_byte_utf8(uint8x16_t in) {
   // We want to take 3 4-byte UTF-8 code units and turn them into 3 4-byte
   // UTF-32 code units. This uses the same method as the fixed 3 byte
   // version, reversing and shift left insert. However, there is no need for
@@ -210,9 +210,9 @@ static uint32x4_t parse_4_byte_utf8(uint8x16_t in) {
 
 // Parse four code points encoded in UTF-8 into 16-bit code point values.
 // Taken from simdutf
-static uint16x4_t parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
+static uint16x4_t neon_parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // UTF-16 and UTF-32 use similar algorithms, but UTF-32 skips the narrowing.
-  uint8x16_t sh = vld1q_u8(SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
   // XXX: depending on the system scalar instructions might be faster.
   // 1 byte: 00000000 00000000 0ccccccc
   // 2 byte: 00000000 110bbbbb 10cccccc
@@ -250,7 +250,7 @@ static uint16x4_t parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
 }
 
 // Write 8 code points, assuming they all expand to three bytes.
-static void write_8_3_byte_utf8(uint16x8_t in, char *out) {
+static void neon_write_8_3_byte_utf8(uint16x8_t in, char *out) {
   uint8x8x3_t bytes;
 
   // 1110xxxxxxxxxxxx
@@ -278,7 +278,7 @@ static void write_8_3_byte_utf8(uint16x8_t in, char *out) {
   vst3_u8((uint8_t *)out, bytes);
 }
 
-static inline bool in_range_u16(uint16x4_t res, uint16_t a, uint16_t b) {
+static inline bool neon_in_range_u16(uint16x4_t res, uint16_t a, uint16_t b) {
   uint16x4_t lt = vclt_u16(res, vdup_n_u16(b));
   uint16x4_t ge = vcge_u16(res, vdup_n_u16(a));
   uint16x4_t cmp = vand_u8(lt, ge);
@@ -286,7 +286,7 @@ static inline bool in_range_u16(uint16x4_t res, uint16_t a, uint16_t b) {
 }
 
 // Hash four 32-bit values using the perfect hashing function.
-static uint32x4_t phash(uint32x4_t key, uint32x4_t salt, uint32_t size) {
+static uint32x4_t neon_phash(uint32x4_t key, uint32x4_t salt, uint32_t size) {
   uint32x4_t salt_key = vaddq_u32(key, salt);
   uint32x4_t y1 = vmulq_u32(salt_key, vdupq_n_u32(2654435769));
   uint32x4_t y2 = vmulq_u32(key, vdupq_n_u32(0x31415926));
@@ -302,18 +302,17 @@ static uint32x4_t phash(uint32x4_t key, uint32x4_t salt, uint32_t size) {
 //
 // `length` must be less than or equal to four. The mask should be a code point
 // mask that corresponds to the input pointer.
-static size_t decompose(uint32x4_t values, size_t length, uint16_t mask,
-                        char **out, const char *input) {
-  static const uint32_t SALT_SIZE = sizeof(DECOMPOSED_SALT) / 2;
-
-  uint32x4_t salt_hash = phash(values, vdupq_n_u32(0), SALT_SIZE);
+static size_t neon_decompose(uint32x4_t values, size_t length, uint16_t mask,
+                             char **out, const char *input) {
+  uint32x4_t salt_hash =
+      neon_phash(values, vdupq_n_u32(0), NORMDATA_DECOMPOSED_SALT_SIZE);
   uint32x4_t salt = {
-      DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 0)],
-      DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 1)],
-      DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 2)],
-      DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 3)],
+      NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 0)],
+      NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 1)],
+      NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 2)],
+      NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 3)],
   };
-  uint32x4_t key_hash = phash(values, salt, SALT_SIZE);
+  uint32x4_t key_hash = neon_phash(values, salt, NORMDATA_DECOMPOSED_SALT_SIZE);
   uint32_t hashes[4];
   uint32_t chars[4];
   vst1q_u32(hashes, key_hash);
@@ -325,14 +324,14 @@ static size_t decompose(uint32x4_t values, size_t length, uint16_t mask,
   uint64_t rmask = __rbitll(mask);
   // Enter scalar code to do lookups
   for (int i = 0; i < length; i++) {
-    Entry kv = DECOMPOSED_KV[hashes[i]];
+    NormdataEntry kv = NORMDATA_DECOMPOSED_KV[hashes[i]];
     unsigned int tz = __clzll(rmask << offset);
     // Get the size of the code point using the number of trailing zeroes
     uint32_t size = tz + 1;
 
     // Check if the character has a decomposition
     if (kv.k == chars[i]) {
-      uint8_t const *start = &DECOMPOSED_CHARS[kv.offset];
+      uint8_t const *start = &NORMDATA_DECOMPOSED_CHARS[kv.offset];
       memcpy(*out, start, kv.len);
       *out += kv.len;
     } else {
@@ -347,8 +346,8 @@ static size_t decompose(uint32x4_t values, size_t length, uint16_t mask,
 
 // NFD normalize up to 16 bytes of UTF-8 using an end of code point mask.
 // Returns the number of bytes consumed.
-static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
-                                        char **out) {
+static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
+                                             char **out) {
   uint32x4_t in = vld1q_u8((uint8_t const *)input);
 
   if ((mask & 0xFFFF) == 0xFFFF) {
@@ -364,11 +363,11 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
   if (sml_mask == 0x924) {
     printf("FOUND THREE BYTE\n");
 
-    uint16x4_t cps = parse_three_byte_utf8(in);
+    uint16x4_t cps = neon_parse_three_byte_utf8(in);
 
     // The large, common 3-byte CJK range (encompasses much of CJK) that has no
     // precomposed code points. We can just skip these.
-    if (in_range_u16(cps, 0x30FF, 0x9FFF + 1)) {
+    if (neon_in_range_u16(cps, 0x30FF, 0x9FFF + 1)) {
       printf("FOUND CJK\n");
       vst1q_u8((unsigned char *)*out, in);
       *out += 12;
@@ -381,11 +380,12 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
     //
     // Algorithm described here:
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
-    if (in_range_u16(cps, S_BASE, S_BASE + S_COUNT)) {
+    if (neon_in_range_u16(cps, NORMDATA_S_BASE,
+                          NORMDATA_S_BASE + NORMDATA_S_COUNT)) {
       printf("FOUND HANGUL\n");
 
       // Compute the S index
-      uint16x4_t s = vsub_u16(cps, vdup_n_u16(S_BASE));
+      uint16x4_t s = vsub_u16(cps, vdup_n_u16(NORMDATA_S_BASE));
 
       uint32x4_t l_fixed = vmull_n_u16(s, 28533);
       // Shift the fixed point number
@@ -394,7 +394,7 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint16x4_t l = vmovn_u32(l_wide);
 
       // Multiply and subtract to get the remainder
-      uint16x4_t v_modulo = vmls_u16(s, l, vdup_n_u16(N_COUNT));
+      uint16x4_t v_modulo = vmls_u16(s, l, vdup_n_u16(NORMDATA_N_COUNT));
       uint32x4_t v_fixed = vmull_n_u16(v_modulo, 2341);
       uint32x4_t v_wide = vshrq_n_u32(v_fixed, 16);
       // V index: (s % N_COUNT) / T_COUNT
@@ -406,21 +406,21 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint32x4_t t_div_wide = vshrq_n_u32(t_fixed, 17);
       uint16x4_t t_div = vmovn_u32(t_div_wide);
       // T index: s % T_COUNT
-      uint16x4_t t = vmls_u16(s, t_div, vdup_n_u16(T_COUNT));
+      uint16x4_t t = vmls_u16(s, t_div, vdup_n_u16(NORMDATA_T_COUNT));
 
       // Mask for all precomposed Hangul syllables that should not have a
       // trailing consonant
       uint16x4_t t_mask = vceqz_u16(t);
-      uint8_t bitmask = make_bitmask_16x4(t_mask);
+      uint8_t bitmask = neon_make_bitmask_16x4(t_mask);
       // Use the trailing consonant bitmask to get a shuffle vector
-      HangulShuf shuf = HANGUL_SHUF[bitmask];
+      NormdataHangulShuf shuf = NORMDATA_HANGUL_SHUF[bitmask];
 
       // Only 12 of the 16 uint16_t's will be used
       uint16_t tmp[16];
       uint16x4x3_t vals;
-      vals.val[0] = vadd_u16(l, vdup_n_u16(L_BASE));
-      vals.val[1] = vadd_u16(v, vdup_n_u16(V_BASE));
-      vals.val[2] = vadd_u16(t, vdup_n_u16(T_BASE));
+      vals.val[0] = vadd_u16(l, vdup_n_u16(NORMDATA_L_BASE));
+      vals.val[1] = vadd_u16(v, vdup_n_u16(NORMDATA_V_BASE));
+      vals.val[2] = vadd_u16(t, vdup_n_u16(NORMDATA_T_BASE));
       // Interleave store by three, creating a code point buffer assuming
       // all precomposed Hangul characters decompose into three Hangul
       // syllables each.
@@ -443,10 +443,10 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint8x8_t idx_high = vld1_u8(shuf.tbl + 16);
       uint16x4_t high = vreinterpret_u16_u8(vqtbl2_u8(tbl, idx_high));
 
-      write_8_3_byte_utf8(low, *out);
+      neon_write_8_3_byte_utf8(low, *out);
       *out += 24;
       if (shuf.len > 24) {
-        write_8_3_byte_utf8(vcombine_u16(high, vdup_n_u16(0)), *out);
+        neon_write_8_3_byte_utf8(vcombine_u16(high, vdup_n_u16(0)), *out);
         *out += shuf.len - 24;
       }
 
@@ -454,30 +454,30 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
     }
   }
 
-  uint8_t idx = CODEPOINT_INDEX[sml_mask][0];
-  uint8_t nchars = CODEPOINT_INDEX[sml_mask][1];
+  uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
+  uint8_t nchars = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
 
   if (idx < 64) {
     // Six one to two byte code points
-    uint16x8_t chars = parse_6_utf8(in, idx);
+    uint16x8_t chars = neon_parse_6_utf8(in, idx);
     uint32x4_t lower = vmovl_u16(vget_low_u16(chars));
-    size_t consumed = decompose(lower, 4, sml_mask, out, input);
+    size_t consumed = neon_decompose(lower, 4, sml_mask, out, input);
     uint16_t new_mask = sml_mask >> consumed;
     uint32x4_t upper = vmovl_u16(vget_high_u16(chars));
-    (void)decompose(upper, 2, new_mask, out, input + consumed);
+    (void)neon_decompose(upper, 2, new_mask, out, input + consumed);
   } else if (idx < 145) {
     // Four code points
-    uint16x4_t chars = parse_4_utf8(in, idx);
+    uint16x4_t chars = neon_parse_4_utf8(in, idx);
     uint32x4_t wide = vmovl_u16(chars);
-    (void)decompose(wide, 4, sml_mask, out, input);
+    (void)neon_decompose(wide, 4, sml_mask, out, input);
   } else if (idx < 209) {
     // Three code points
     if (sml_mask == 0x888) {
-      uint32x4_t chars = parse_4_byte_utf8(in);
-      (void)decompose(chars, 3, sml_mask, out, input);
+      uint32x4_t chars = neon_parse_4_byte_utf8(in);
+      (void)neon_decompose(chars, 3, sml_mask, out, input);
     } else {
-      uint32x4_t chars = parse_3_utf8(in, idx);
-      (void)decompose(chars, 3, sml_mask, out, input);
+      uint32x4_t chars = neon_parse_3_utf8(in, idx);
+      (void)neon_decompose(chars, 3, sml_mask, out, input);
     }
   } else {
     return 12;
@@ -486,12 +486,12 @@ static size_t normalize_masked_utf8_nfd(const char *input, uint64_t mask,
   return nchars;
 }
 
-static inline uint8x16_t get_codepoint_starts(uint8x16_t in) {
+static inline uint8x16_t neon_get_codepoint_starts(uint8x16_t in) {
   int8x16_t sgn = vreinterpretq_s8_u8(in);
   return vcltq_s8(sgn, vdupq_n_s8(-65 + 1));
 }
 
-size_t normalize_utf8_nfd_neon(char const *input, size_t length, char *out) {
+size_t neon_normalize_utf8_nfd(char const *input, size_t length, char *out) {
   char **out_ptr = &out;
   char *start = out;
 
@@ -501,17 +501,18 @@ size_t normalize_utf8_nfd_neon(char const *input, size_t length, char *out) {
     uint8x16_t in2 = vld1q_u8((uint8_t const *)(input + p + 16));
     uint8x16_t in3 = vld1q_u8((uint8_t const *)(input + p + 32));
     uint8x16_t in4 = vld1q_u8((uint8_t const *)(input + p + 48));
-    uint64_t start1 = make_bitmask_8x16(get_codepoint_starts(in1));
-    uint64_t start2 = make_bitmask_8x16(get_codepoint_starts(in2));
-    uint64_t start3 = make_bitmask_8x16(get_codepoint_starts(in3));
-    uint64_t start4 = make_bitmask_8x16(get_codepoint_starts(in4));
+    uint64_t start1 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in1));
+    uint64_t start2 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in2));
+    uint64_t start3 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in3));
+    uint64_t start4 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in4));
 
     uint64_t mask = start1 | (start2 << 16) | (start3 << 32) | (start4 << 48);
     mask = ~mask;
     mask >>= 1;
     size_t pmax = (p + 64) - 12;
     while (p <= pmax) {
-      size_t consumed = normalize_masked_utf8_nfd(input + p, mask, out_ptr);
+      size_t consumed =
+          neon_normalize_masked_utf8_nfd(input + p, mask, out_ptr);
       p += consumed;
       mask >>= consumed;
     }
@@ -519,7 +520,7 @@ size_t normalize_utf8_nfd_neon(char const *input, size_t length, char *out) {
 
   if (p < length) {
     // Write the rest using scalar code
-    *out_ptr += normalize_utf8_nfd_scalar(input + p, length - p, *out_ptr);
+    *out_ptr += scalar_normalize_utf8_nfd(input + p, length - p, *out_ptr);
   }
 
   return *out_ptr - start;
