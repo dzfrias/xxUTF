@@ -168,8 +168,10 @@ int main(int argc, char **argv) {
     utf8norm_out[nwritten] = '\0';
 
     char *icu_out = icu_normalize_utf8_nfd((char const *)buf, len);
+    bool eql = equal(utf8norm_out, icu_out);
+    free(icu_out);
 
-    if (!equal(utf8norm_out, icu_out)) {
+    if (!eql) {
       printf("UTF-8 buffers didn't match!\n");
       return 1;
     }
