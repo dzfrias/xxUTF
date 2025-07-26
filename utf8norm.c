@@ -1,5 +1,9 @@
 #ifndef UTF8NORM_IMPLEMENTATION_NEON
-#define UTF8NORM_IMPLEMENTATION_NEON __aarch64__
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define UTF8NORM_IMPLEMENTATION_NEON 1
+#else
+#define UTF8NORM_IMPLEMENTATION_NEON 0
+#endif
 #endif
 
 #include "utf8norm.h"
