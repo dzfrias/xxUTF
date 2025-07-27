@@ -60,6 +60,7 @@ pub fn build(b: *std.Build) !void {
     if (afl_fuzz) |afl_fuzz_bin| {
         const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
         run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
+        run_amalgamate.addDirectoryArg(b.path(""));
         run_amalgamate.addArg("-o");
         const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
         const run_afl_cc = b.addSystemCommand(&.{

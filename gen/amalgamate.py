@@ -3,6 +3,7 @@
 import argparse
 import re
 import sys
+import os
 
 
 SOURCES = ["utf8norm.c", "normdata.c", "impl/scalar.c", "impl/neon.c"]
@@ -26,14 +27,14 @@ add_re = re.compile(r"^// amalgamate add: (.*)")
 
 
 
-def copy_file(out, file: str, seen_headers: set[str]) -> None:
+def copy_file(out, root: str, file: str, seen_headers: set[str]) -> None:
     out.write(f"/*amalgamate: BEGIN {file}*/\n")
     with open(file, "r", encoding="utf-8") as f:
         for line in f:
             if (include_match := include_re.match(line)) is not None:
                 include = include_match.group(1)
                 if include not in seen_headers:
-                    copy_file(out, include, seen_headers)
+                    copy_file(out, root, os.path.join(root, include), seen_headers)
                     seen_headers.add(include)
                 else:
                     out.write(f"/*amalgamate: skip {line.strip()}*/\n")
@@ -74,6 +75,7 @@ def main() -> None:
         prog="amalgamate",
         description="Amalgamate the entire utf8norm codebase into one file",
     )
+    parser.add_argument("path", help="directory with the utf8norm codebase", nargs="?", default=".")
     parser.add_argument("-o", "--output", type=str, help="output file (default: stdout)")
     
     args = parser.parse_args()
@@ -82,12 +84,12 @@ def main() -> None:
     if args.output is None:
         sys.stdout.write(PREAMBLE)
         for file in SOURCES:
-            copy_file(sys.stdout, file, seen_headers)
+            copy_file(sys.stdout, args.path, os.path.join(args.path, file), seen_headers)
     else:
-        with open(args.output, "w", encoding="utf-8") as f:
+        with open(os.path.join(args.path, args.output), "w", encoding="utf-8") as f:
             f.write(PREAMBLE)
             for file in SOURCES:
-                copy_file(f, file, seen_headers)
+                copy_file(f, args.path, os.path.join(args.path, file), seen_headers)
 
 
 if __name__ == "__main__":
