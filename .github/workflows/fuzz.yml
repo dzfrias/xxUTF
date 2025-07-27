@@ -22,97 +22,30 @@ jobs:
         sudo apt-get install -y libicu-dev
         # Verify installation
         pkg-config --modversion icu-uc
-    
-    - name: Install AFL++
-      run: |
-        git clone https://github.com/AFLplusplus/AFLplusplus.git
-        cd AFLplusplus
-        
-        # Build AFL++
-        make source-only
-        
-        # Install AFL++ to system
-        sudo make install
-        
-        # Add AFL++ to PATH
-        echo "/usr/local/bin" >> $GITHUB_PATH
-        
-        # Verify installation
-        afl-fuzz --help || true
-    
+
     - name: Install Zig
       uses: mlugg/setup-zig@v2
       with:
         version: 0.14.1
     
-    - name: Verify installations
+    - name: Run AFL++
       run: |
-        echo "=== ICU4C Version ==="
-        pkg-config --modversion icu-uc
-        
-        echo "=== AFL++ Version ==="
-        afl-fuzz --version || true
-        
-        echo "=== Zig Version ==="
-        zig version
-    
-    - name: Run Zig fuzz build step
-      run: |
-        timeout 1800 zig build fuzz || {
-          exit_code=$?
-          if [ $exit_code -eq 124 ]; then
-            echo "Fuzzing finished"
-            exit 0
-          else
-            echo "Fuzzing failed with exit code $exit_code"
-            exit $exit_code
-          fi
-        }
+        docker run --rm \
+          -v ${{ github.workspace }}:/src \
+          -w /src \
+          aflplusplus/aflplusplus:latest \
+          bash -c "
+            zig build amalgamate
 
-    - name: Collect fuzzer findings
+            afl-cc -O3 -flto=full -o target -I. zig-out/amalgamation.c test/fuzz.c
+            
+            timeout 1800 afl-fuzz -i test/corpus -o output -- ./target
+          "
+          
+    - name: Upload fuzzing results
       if: always()
-      run: |
-        # Look for common AFL++ output directories
-        find . -name "crashes" -type d -exec cp -r {} fuzz-results/ \; 2>/dev/null || true
-        find . -name "hangs" -type d -exec cp -r {} fuzz-results/ \; 2>/dev/null || true
-        find . -name "queue" -type d -exec cp -r {} fuzz-results/ \; 2>/dev/null || true
-        
-        # Look for any files with "crash" or "hang" in the name
-        find . -name "*crash*" -type f -exec cp {} fuzz-results/ \; 2>/dev/null || true
-        find . -name "*hang*" -type f -exec cp {} fuzz-results/ \; 2>/dev/null || true
-        
-        # Create a summary of findings
-        echo "=== Fuzzer Results Summary ===" > fuzz-results/summary.txt
-        echo "Date: $(date)" >> fuzz-results/summary.txt
-        echo "Commit: $GITHUB_SHA" >> fuzz-results/summary.txt
-        echo "" >> fuzz-results/summary.txt
-        
-        if [ -d "fuzz-results/crashes" ] && [ "$(ls -A fuzz-results/crashes 2>/dev/null)" ]; then
-          echo "CRASHES FOUND:" >> fuzz-results/summary.txt
-          ls -la fuzz-results/crashes/ >> fuzz-results/summary.txt
-          echo "" >> fuzz-results/summary.txt
-        fi
-        
-        if [ -d "fuzz-results/hangs" ] && [ "$(ls -A fuzz-results/hangs 2>/dev/null)" ]; then
-          echo "HANGS FOUND:" >> fuzz-results/summary.txt
-          ls -la fuzz-results/hangs/ >> fuzz-results/summary.txt
-          echo "" >> fuzz-results/summary.txt
-        fi
-        
-        # Check if we found anything interesting
-        if [ "$(find fuzz-results -name '*.txt' -o -name 'id:*' -o -name 'crash-*' -o -name 'hang-*' | wc -l)" -gt 1 ]; then
-          echo "Fuzzer findings collected" >> fuzz-results/summary.txt
-        else
-          echo "No crashes or hangs found during this run" >> fuzz-results/summary.txt
-        fi
-        
-        # Show the summary
-        cat fuzz-results/summary.txt
-    
-    - name: Upload fuzzer artifacts
       uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: fuzz-results-${{ github.sha }}
-        path: fuzz-results/
+        name: fuzzing-results
+        path: output/
         retention-days: 30
