@@ -75,6 +75,7 @@ pub fn build(b: *std.Build) !void {
         run_afl_cc.addFileArg(b.path("test/fuzz.c"));
         run_afl_cc.addArgs(flags.items);
         run_afl_cc.addArg("-Wno-error=unused-const-variable");
+        run_afl_cc.addArgs(&.{ "-licuuc", "-licudata" });
         const run_fuzz_exe = b.addSystemCommand(&.{
             afl_fuzz_bin,
             "-i",
