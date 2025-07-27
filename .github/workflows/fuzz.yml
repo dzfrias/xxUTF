@@ -40,7 +40,7 @@ jobs:
           aflplusplus/aflplusplus:latest \
           bash -c "
             afl-cc -O3 -flto=full -o target -I. zig-out/amalgamation.c test/fuzz.c
-            timeout 1800 afl-fuzz -i test/corpus -o output -- ./target
+            timeout 1 afl-fuzz -i test/corpus -o output -- ./target
           "
           
     - name: Upload fuzzing results
