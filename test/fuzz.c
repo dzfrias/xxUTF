@@ -9,8 +9,11 @@
 #include <unicode/ustring.h>
 #include <unistd.h>
 
+#if defined(__clang__)
 #pragma clang optimize off
+#elif defined(__GNUC__)
 #pragma GCC optimize("O0")
+#endif
 
 static bool is_valid_utf8(const uint8_t *data, size_t len) {
   size_t i = 0;
