@@ -4,7 +4,19 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const no_neon = b.option(bool, "no-neon", "Disable usage of ARM NEON (default: false)") orelse false;
+    const neon = b.option(bool, "neon", "Select usage of ARM NEON (default: detect)");
+
+    var sources: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer sources.deinit(b.allocator);
+    try sources.appendSlice(b.allocator, &.{
+        "utf8norm.c",
+        "normdata.c",
+        "impl/scalar.c",
+    });
+    const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
+    if (add_neon) {
+        try sources.append(b.allocator, "impl/neon.c");
+    }
 
     const lib = b.addLibrary(.{
         .name = "utf8norm",
@@ -19,12 +31,12 @@ pub fn build(b: *std.Build) !void {
     defer flags.deinit(b.allocator);
     try flags.append(b.allocator, "-Wall");
     try flags.append(b.allocator, "-Werror");
-    if (no_neon) {
+    if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
     lib.addCSourceFiles(.{
         .root = b.path(""),
-        .files = files,
+        .files = sources.items,
         .flags = flags.items,
     });
     lib.installHeader(b.path("utf8norm.h"), "utf8norm.h");
@@ -80,10 +92,3 @@ pub fn build(b: *std.Build) !void {
         fuzz_step.dependOn(&install_fuzz_results.step);
     }
 }
-
-const files: []const []const u8 = &.{
-    "utf8norm.c",
-    "normdata.c",
-    "impl/neon.c",
-    "impl/scalar.c",
-};

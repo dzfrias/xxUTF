@@ -21,6 +21,6 @@ size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length,
   return neon_normalize_utf8_nfd(input, length, out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return normalize_utf8_nfd_scalar(input, length, out);
+  return scalar_normalize_utf8_nfd(input, length, out);
 #endif
 }

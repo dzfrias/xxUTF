@@ -22,6 +22,7 @@ sys_include_re = re.compile(r"^#include <(.*)>")
 ifdef_cpp_re = re.compile(r"^#ifdef __cplusplus")
 decl_re = re.compile(r"([_a-zA-Z][_a-zA-Z0-9 ]+ \**)([_a-zA-Z0-9]+)\((.*)")
 var_re = re.compile(r"^([_a-zA-Z][a-zA-Z_0-9 ]+ \**)([_a-zA-Z0-9]+)(\[|;| =)")
+add_re = re.compile(r"^// amalgamate add: (.*)")
 
 
 
@@ -58,6 +59,9 @@ def copy_file(out, file: str, seen_headers: set[str]) -> None:
                         out.write(f"static {line}")
                 else:
                     out.write(line)
+            elif (add_match := add_re.match(line)) is not None:
+                stmt = add_match.group(1)
+                out.write(stmt + "\n")
             elif ifdef_cpp_re.match(line) is not None:
                 out.write("#if 0\n")
             else:

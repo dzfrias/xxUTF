@@ -1,3 +1,5 @@
+// amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
+
 #include "impl/neon.h"
 #include "impl/scalar.h"
 #include "normdata.h"
@@ -525,3 +527,5 @@ size_t neon_normalize_utf8_nfd(char const *input, size_t length, char *out) {
 
   return *out_ptr - start;
 }
+
+// amalgamate add: #endif // UTF8NORM_IMPLEMENTATION_NEON
