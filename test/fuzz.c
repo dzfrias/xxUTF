@@ -7,6 +7,7 @@
 #include <unicode/ucnv.h>
 #include <unicode/unorm2.h>
 #include <unicode/ustring.h>
+#include <unistd.h>
 
 #pragma clang optimize off
 #pragma GCC optimize("O0")
