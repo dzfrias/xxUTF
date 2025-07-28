@@ -39,13 +39,13 @@ size_t scalar_write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
 }
 
 // Check if a code point is in the Hangul block.
-static inline bool scalar_is_hangul(uint32_t code_point) {
+bool scalar_is_hangul(uint32_t code_point) {
   return code_point >= NORMDATA_S_BASE &&
          code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT;
 }
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
-static size_t scalar_decompose_hangul(uint32_t code_point, char *out) {
+size_t scalar_decompose_hangul(uint32_t code_point, char *out) {
   uint32_t s_index = code_point - NORMDATA_S_BASE;
   uint32_t l_index = s_index / NORMDATA_N_COUNT;
   uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;

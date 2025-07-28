@@ -326,10 +326,18 @@ static size_t neon_decompose(uint32x4_t values, size_t length, uint16_t mask,
   uint64_t rmask = __rbitll(mask);
   // Enter scalar code to do lookups
   for (int i = 0; i < length; i++) {
-    NormdataEntry kv = NORMDATA_DECOMPOSED_KV[hashes[i]];
     unsigned int tz = __clzll(rmask << offset);
     // Get the size of the code point using the number of trailing zeroes
     uint32_t size = tz + 1;
+
+    // We still need to check if it is a Hangul code point
+    if (scalar_is_hangul(chars[i])) {
+      *out += scalar_decompose_hangul(chars[i], *out);
+      offset += size;
+      continue;
+    }
+
+    NormdataEntry kv = NORMDATA_DECOMPOSED_KV[hashes[i]];
 
     // Check if the character has a decomposition
     if (kv.k == chars[i]) {
