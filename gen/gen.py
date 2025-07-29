@@ -376,6 +376,23 @@ def main() -> None:
     # more than four code points.
     assert max_decomps <= 4
 
+    for x, decomps in decomp_map.items():
+        if decomps.ccc == 0 and decomps.decomps and all(d in decomp_map and decomp_map[d].ccc > 0 for d in decomps.decomps):
+            # HACK: this is a very implementation-specific operation, but here's my best
+            #       explanation: we want to ensure that any character that decomposes
+            #       into combining characters (all ccc values > 0) also has a ccc value > 0.
+            #       This is important, because one way we detect for when we need to do a
+            #       combining character sort is by looking at the original (precomposed)
+            #       character's ccc value. There are a few code points that have a ccc value
+            #       of zero, yet decompose solely into code points with ccc values > 0. This
+            #       amends those characters so that they can be properly detected as combining
+            #       marks. Obviously, patching over the Unicode character database is suboptimal,
+            #       but this presently causes no issues with the decompositon process.
+            #       In general, this means we uphold that every combining mark has ccc > 0.
+            #       See https://corp.unicode.org/pipermail/unicode/2025-July/011511.html for the
+            #       relevant discussion on this
+            decomp_map[x].ccc = 1
+
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
         hash_info = generate_hash_tables(f, decomp_map)
