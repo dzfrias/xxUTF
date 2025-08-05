@@ -26,11 +26,11 @@ jobs:
     - name: Build the amalgamation
       run: |
         zig build amalgamate
-    
+
     - name: Run fuzzing tests
       run: |
         docker build -t fuzz -f test/Dockerfile .
-        docker run --rm -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
+        docker run --rm --user "$(id -u):$(id -g)" -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
           afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
           export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           timeout 1 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target || true
