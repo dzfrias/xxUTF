@@ -45,20 +45,18 @@ bool scalar_is_hangul(uint32_t code_point) {
 }
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
-size_t scalar_decompose_hangul(uint32_t code_point, char *out) {
+size_t scalar_decompose_hangul(uint32_t code_point, uint8_t *out) {
   uint32_t s_index = code_point - NORMDATA_S_BASE;
   uint32_t l_index = s_index / NORMDATA_N_COUNT;
   uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;
   uint32_t t_index = s_index % NORMDATA_T_COUNT;
 
-  uint8_t *data = (uint8_t *)out;
   size_t nwritten = 0;
-  nwritten += scalar_write_codepoint(NORMDATA_L_BASE + l_index, data);
-  nwritten +=
-      scalar_write_codepoint(NORMDATA_V_BASE + v_index, data + nwritten);
+  nwritten += scalar_write_codepoint(NORMDATA_L_BASE + l_index, out);
+  nwritten += scalar_write_codepoint(NORMDATA_V_BASE + v_index, out + nwritten);
   if (t_index > 0) {
     nwritten +=
-        scalar_write_codepoint(NORMDATA_T_BASE + t_index, data + nwritten);
+        scalar_write_codepoint(NORMDATA_T_BASE + t_index, out + nwritten);
   }
   return nwritten;
 }
@@ -68,8 +66,8 @@ size_t scalar_decompose_hangul(uint32_t code_point, char *out) {
 // decomposition.
 //
 // Note that this does not handle Hangul code points.
-static size_t scalar_decompose(uint32_t code_point, char *out, bool *is_cc) {
-  char *start = out;
+size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
+  uint8_t *start = out;
   uint32_t salt_hash =
       scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_SALT_SIZE);
   uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
@@ -90,11 +88,11 @@ static size_t scalar_decompose(uint32_t code_point, char *out, bool *is_cc) {
 }
 
 static uint8_t scalar_lookup_ccc(uint32_t code_point) {
-  static const uint32_t SALT_SIZE = sizeof(NORMDATA_DECOMPOSED_SALT) / 2;
-
-  uint32_t salt_hash = scalar_phash(code_point, 0, SALT_SIZE);
+  uint32_t salt_hash =
+      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_SALT_SIZE);
   uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
-  uint32_t key_hash = scalar_phash(code_point, salt, SALT_SIZE);
+  uint32_t key_hash =
+      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_SALT_SIZE);
   NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
@@ -142,19 +140,18 @@ static void scalar_rotate(uint8_t *array, size_t size, size_t k) {
   scalar_reverse(array, size, k, size - 1);
 }
 
-static void scalar_sort_characters(char *out) {
-  uint8_t *start = (uint8_t *)out;
-  uint8_t *data = (uint8_t *)out;
+void scalar_sort_characters(uint8_t *out) {
+  uint8_t *start = out;
 
   // We need to walk backwards until we find a starter character.
   uint8_t last_ccc = 255;
   bool needs_sort = false;
   while (true) {
-    while ((*data & 0b11000000) == 0b10000000) {
-      data--;
+    while ((*out & 0b11000000) == 0b10000000) {
+      out--;
     }
     uint8_t size;
-    uint32_t code_point = scalar_parse_code_point(data, &size);
+    uint32_t code_point = scalar_parse_code_point(out, &size);
     uint8_t ccc = scalar_lookup_ccc(code_point);
     if (last_ccc < ccc) {
       needs_sort = true;
@@ -163,7 +160,7 @@ static void scalar_sort_characters(char *out) {
     if (ccc == 0) {
       break;
     }
-    data--;
+    out--;
     last_ccc = ccc;
   }
 
@@ -176,7 +173,7 @@ static void scalar_sort_characters(char *out) {
   // characters with no memory allocation. Sorting is thus done entirely
   // in-place and still while all code points are in UTF-8-encoded form. In
   // practice, n will be small.
-  size_t n = start - data;
+  size_t n = start - out;
   // This loop will run until we detect no more swaps, in which case we will
   // have sorted the buffer.
   while (true) {
@@ -187,19 +184,19 @@ static void scalar_sort_characters(char *out) {
       uint8_t size2;
       // TODO: odds are we can fit this information into a small cache from the
       //       initial backwards loop
-      uint32_t c1 = scalar_parse_code_point(data + j, &size1);
+      uint32_t c1 = scalar_parse_code_point(out + j, &size1);
       // Going past the buffer is also a stop condition
       if (j + size1 >= n) {
         break;
       }
-      uint32_t c2 = scalar_parse_code_point(data + j + size1, &size2);
+      uint32_t c2 = scalar_parse_code_point(out + j + size1, &size2);
       uint8_t ccc1 = scalar_lookup_ccc(c1);
       uint8_t ccc2 = scalar_lookup_ccc(c2);
       last_size = size1;
       if (ccc1 > ccc2) {
         // Swapping two adjacent, variably sized UTF-8 encoded code points can
         // be done with a right rotation by the size of the right code point.
-        scalar_rotate(data + j, size1 + size2, size2);
+        scalar_rotate(out + j, size1 + size2, size2);
         last_size = size2;
         did_swap = true;
       }
@@ -210,17 +207,18 @@ static void scalar_sort_characters(char *out) {
   }
 }
 
-size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
-  uint8_t const *data = (uint8_t const *)input;
-  char *start = out;
+size_t scalar_normalize_utf8_nfd_with_context(uint8_t const *input,
+                                              size_t length, uint8_t *out,
+                                              bool *end_is_cc) {
+  uint8_t *start = out;
 
-  bool last_is_cc = false;
+  bool last_is_cc = *end_is_cc;
   size_t p = 0;
   while (p < length) {
-    uint8_t leading = data[p];
+    uint8_t leading = input[p];
 
     bool is_cc = false;
-    char *c_start = out;
+    uint8_t *c_start = out;
     if (leading < 0b10000000) {
       // ASCII, no need to do a lookup
       *out++ = leading;
@@ -228,19 +226,19 @@ size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
     } else if ((leading & 0b11100000) == 0b11000000) {
       // Two byte UTF-8, combine with next. Note that we do no error handling.
       uint32_t code_point =
-          (leading & 0b00011111) << 6 | (data[p + 1] & 0b00111111);
+          (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);
       size_t nwritten = scalar_decompose(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
-        *out++ = data[p + 1];
+        *out++ = input[p + 1];
       } else {
         out += nwritten;
       }
       p += 2;
     } else if ((leading & 0b11110000) == 0b11100000) {
       uint32_t code_point = (leading & 0b00001111) << 12 |
-                            (data[p + 1] & 0b00111111) << 6 |
-                            (data[p + 2] & 0b00111111);
+                            (input[p + 1] & 0b00111111) << 6 |
+                            (input[p + 2] & 0b00111111);
       // The Hangul block exists entirely within the three-byte UTF-8 range.
       if (scalar_is_hangul(code_point)) {
         is_cc = false;
@@ -249,8 +247,8 @@ size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
         size_t nwritten = scalar_decompose(code_point, out, &is_cc);
         if (nwritten == 0) {
           *out++ = leading;
-          *out++ = data[p + 1];
-          *out++ = data[p + 2];
+          *out++ = input[p + 1];
+          *out++ = input[p + 2];
         } else {
           out += nwritten;
         }
@@ -258,14 +256,14 @@ size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
       p += 3;
     } else if ((leading & 0b11111000) == 0b11110000) {
       uint32_t code_point =
-          (leading & 0b00000111) << 18 | (data[p + 1] & 0b00111111) << 12 |
-          (data[p + 2] & 0b00111111) << 6 | (data[p + 3] & 0b00111111);
+          (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |
+          (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);
       size_t nwritten = scalar_decompose(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
-        *out++ = data[p + 1];
-        *out++ = data[p + 2];
-        *out++ = data[p + 3];
+        *out++ = input[p + 1];
+        *out++ = input[p + 2];
+        *out++ = input[p + 3];
       } else {
         out += nwritten;
       }
@@ -285,5 +283,13 @@ size_t scalar_normalize_utf8_nfd(char const *input, size_t length, char *out) {
     scalar_sort_characters(out - 1);
   }
 
+  *end_is_cc = last_is_cc;
+
   return out - start;
+}
+
+size_t scalar_normalize_utf8_nfd(const uint8_t *input, size_t length,
+                                 uint8_t *out) {
+  bool end_is_cc = false;
+  return scalar_normalize_utf8_nfd_with_context(input, length, out, &end_is_cc);
 }

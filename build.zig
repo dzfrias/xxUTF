@@ -58,7 +58,9 @@ pub fn build(b: *std.Build) !void {
 
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
     run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
-    run_amalgamate.addDirectoryArg(b.path(""));
+    for (all_sources) |source| {
+        run_amalgamate.addFileArg(b.path(source));
+    }
     run_amalgamate.addArg("-o");
     const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
     const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
@@ -97,4 +99,31 @@ pub fn build(b: *std.Build) !void {
         const fuzz_step = b.step("fuzz", "Fuzz utf8norm using AFL++");
         fuzz_step.dependOn(&install_fuzz_results.step);
     }
+
+    const benchmark_exe = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("benchmarks/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    benchmark_exe.linkLibrary(lib);
+    benchmark_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
+    const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
+    run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
+    for (b.args orelse &.{}) |arg| {
+        run_benchmark_exe.addArg(arg);
+    }
+    const benchmark_step = b.step("bench", "Benchmark utf8norm");
+    const benchmark_install = b.addInstallArtifact(benchmark_exe, .{});
+    benchmark_step.dependOn(&run_benchmark_exe.step);
+    benchmark_step.dependOn(&benchmark_install.step);
 }
+
+const all_sources: []const []const u8 = &.{
+    "utf8norm.c",
+    "normdata.c",
+    "impl/scalar.c",
+    "impl/neon.c",
+};

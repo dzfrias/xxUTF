@@ -8,19 +8,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
-static inline uint16_t neon_make_bitmask_8x16(uint8x16_t v) {
-  const uint8x16_t mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
-                           0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
-  uint8x16_t mv = vandq_u8(v, mask);
-  uint8x16_t tmp = vpaddq_u8(mv, mv);
-  tmp = vpaddq_u8(tmp, tmp);
-  tmp = vpaddq_u8(tmp, tmp);
-  return vgetq_lane_u16(vreinterpretq_u16_u8(tmp), 0);
-}
-
-static inline uint8_t neon_make_bitmask_16x4(uint16x4_t v) {
+static inline uint8_t neon_movemask_u16(uint16x4_t v) {
   const uint16x4_t mask = {0x1, 0x2, 0x4, 0x8};
   uint16x4_t mv = vand_u16(v, mask);
   return (uint8_t)(vaddv_u16(mv) & 0xF);
@@ -109,6 +98,24 @@ static uint16x4_t neon_parse_three_byte_utf8(uint8x16_t in) {
   // Shift left insert into the low bits
   // aaaabbbb bbcccccc
   uint16x4_t composed = vsli_n_u16(low, mid_high, 6);
+  return composed;
+}
+
+// Parse six two-byte UTF-8 code points into their 32-bit code point values.
+// Taken from simdutf
+static uint16x8_t neon_parse_2_byte_utf8(uint8x16_t in) {
+  // Converts 6 2 byte UTF-8 characters to 6 UTF-16 characters.
+
+  // 10bbbbbb 110aaaaa
+  uint16x8_t upper = vreinterpretq_u16_u8(in);
+  // (in << 8) | (in >> 8)
+  // 110aaaaa 10bbbbbb
+  uint16x8_t lower = vreinterpretq_u16_u8(vrev16q_u8(in));
+  // 00000000 000aaaaa
+  uint16x8_t upper_masked = vandq_u16(upper, vmovq_n_u16(0x1F));
+  // Assemble with shift left insert.
+  // 00000aaa aabbbbbb
+  uint16x8_t composed = vsliq_n_u16(lower, upper_masked, 6);
   return composed;
 }
 
@@ -252,12 +259,10 @@ static uint16x4_t neon_parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
 }
 
 // Write 8 code points, assuming they all expand to three bytes.
-static void neon_write_8_3_byte_utf8(uint16x8_t in, char *out) {
+static void neon_write_8_3_byte_utf8(uint16x8_t in, uint8_t *out) {
   uint8x8x3_t bytes;
 
   // 1110xxxxxxxxxxxx
-  // 0b100011100
-  // 0b100010110
   uint16x8_t high = vsriq_n_u16(vdupq_n_u16(0xE000), in, 4);
   // 1110xxxx
   uint8x8_t high_narrow = vshrn_n_u16(high, 8);
@@ -277,37 +282,134 @@ static void neon_write_8_3_byte_utf8(uint16x8_t in, char *out) {
   bytes.val[2] = vorr_u8(low_narrow, vdup_n_u8(0b10000000));
 
   // Interleaved store into output
-  vst3_u8((uint8_t *)out, bytes);
-}
-
-static inline bool neon_in_range_u16(uint16x4_t res, uint16_t a, uint16_t b) {
-  uint16x4_t lt = vclt_u16(res, vdup_n_u16(b));
-  uint16x4_t ge = vcge_u16(res, vdup_n_u16(a));
-  uint16x4_t cmp = vand_u8(lt, ge);
-  return vminv_u16(cmp) == 0xFFFF;
+  vst3_u8(out, bytes);
 }
 
 // Hash four 32-bit values using the perfect hashing function.
 static uint32x4_t neon_phash(uint32x4_t key, uint32x4_t salt, uint32_t size) {
   uint32x4_t salt_key = vaddq_u32(key, salt);
-  uint32x4_t y1 = vmulq_u32(salt_key, vdupq_n_u32(2654435769));
-  uint32x4_t y2 = vmulq_u32(key, vdupq_n_u32(0x31415926));
+  uint32x4_t y1 = vmulq_n_u32(salt_key, 2654435769);
+  uint32x4_t y2 = vmulq_n_u32(key, 0x31415926);
   uint32x4_t y = veorq_u32(y1, y2);
-  uint64x2_t mul_hash_low = vmull_u32(vget_low_u32(y), vdup_n_u32(size));
-  uint64x2_t mul_hash_high = vmull_high_u32(y, vdupq_n_u32(size));
+  uint64x2_t mul_hash_low = vmull_n_u32(vget_low_u32(y), size);
+  uint64x2_t mul_hash_high = vmull_high_n_u32(y, size);
   uint32x2_t shifted_low = vshrn_n_u64(mul_hash_low, 32);
   uint32x2_t shifted_high = vshrn_n_u64(mul_hash_high, 32);
   return vcombine_u32(shifted_low, shifted_high);
 }
 
+// Extremely fast, low quality hash function
+static uint32x4_t neon_mul_shift_hash(uint32x4_t x) {
+  uint32x4_t mul = vmulq_n_u32(x, 2654435761);
+  uint32x4_t shift = vshrq_n_u32(mul, 16);
+  uint32x4_t y = vandq_u32(shift, vdupq_n_u32(65535));
+  return y;
+}
+
+// Moderate quality hash function
+static uint32x4_t neon_xorshift_hash(uint32x4_t x) {
+  x = veorq_u32(x, vshrq_n_u32(x, 13));
+  x = veorq_u32(x, vshlq_n_u32(x, 17));
+  x = veorq_u32(x, vshrq_n_u32(x, 5));
+  return x;
+}
+
+// High quality hash function based on the MurmurHash3 finalizer
+static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
+  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
+  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
+  x = veorq_u32(vshrq_n_u32(x, 16), x);
+  return x;
+}
+
+static bool neon_any_in_bloom_filter(uint32x4_t input) {
+  uint32x4_t h1 = neon_mul_shift_hash(input);
+  uint32x4_t h2 = neon_xorshift_hash(input);
+  uint32x4_t h3 = neon_xorshift_mul_hash(input);
+
+  // h1 % 4096
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
+  // h2 % 32
+  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
+  // h3 % 32
+  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
+  // (h2 + h3) % 32
+  uint32x4_t shift3 = vandq_u32(vaddq_u32(h2, h3), vdupq_n_u32(31));
+
+  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
+
+  uint32x4_t block = {
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return vaddvq_u32(result_eq) > 0;
+}
+
+__attribute__((unused)) static void neon_print_misses(uint32x4_t input) {
+  uint32x4_t h1 = neon_mul_shift_hash(input);
+  uint32x4_t h2 = neon_xorshift_hash(input);
+  uint32x4_t h3 = neon_xorshift_mul_hash(input);
+
+  // h1 % 4096
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
+  // h2 % 32
+  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
+  // h3 % 32
+  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
+  // (h2 + h3) % 32
+  uint32x4_t shift3 = vandq_u32(vaddq_u32(h2, h3), vdupq_n_u32(31));
+
+  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
+
+  uint32x4_t block = {
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+
+  uint32_t results[4];
+  uint32_t chars[4];
+  vst1q_u32(results, result_eq);
+  vst1q_u32(chars, input);
+  for (size_t i = 0; i < 4; i++) {
+    if (results[i] > 0) {
+      printf("miss: %0X\n", chars[i]);
+    }
+  }
+}
+
+static inline bool neon_any_hangul(uint32x4_t input) {
+  uint32x4_t ge = vcgeq_u32(input, vdupq_n_u32(NORMDATA_S_BASE));
+  uint32x4_t lt =
+      vcltq_u32(input, vdupq_n_u32(NORMDATA_S_BASE + NORMDATA_S_COUNT));
+  uint32x4_t cmp = vandq_u32(lt, ge);
+  return vmaxvq_u32(cmp) > 0;
+}
+
 // Decompose up to four code points into their NFD form.
 //
-// `length` must be less than or equal to four. The mask should be a code point
-// mask that corresponds to the input pointer.
-static size_t neon_decompose(uint32x4_t values, size_t length, uint16_t mask,
-                             char **out, const char *input) {
+// `length` must be less than or equal to four. The mask should be a code
+// point mask that corresponds to the input pointer. Returns the number of
+// bytes written
+__attribute__((unused)) static size_t
+neon_decompose(uint32x4_t values, size_t length, uint16_t mask, uint8_t **out,
+               const uint8_t *input, bool *end_is_cc) {
   uint32x4_t salt_hash =
       neon_phash(values, vdupq_n_u32(0), NORMDATA_DECOMPOSED_SALT_SIZE);
+  // Lookups are done in a scalar manner
   uint32x4_t salt = {
       NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 0)],
       NORMDATA_DECOMPOSED_SALT[vgetq_lane_u32(salt_hash, 1)],
@@ -320,21 +422,32 @@ static size_t neon_decompose(uint32x4_t values, size_t length, uint16_t mask,
   vst1q_u32(hashes, key_hash);
   vst1q_u32(chars, values);
 
+  bool last_is_cc = *end_is_cc;
   size_t offset = 0;
   // We reverse the code point mask so we can count the number of trailing
   // zeroes (ARM only has clz).
   uint64_t rmask = __rbitll(mask);
   // Enter scalar code to do lookups
   for (int i = 0; i < length; i++) {
+    bool is_cc = false;
     unsigned int tz = __clzll(rmask << offset);
     // Get the size of the code point using the number of trailing zeroes
     uint32_t size = tz + 1;
+    uint8_t nwritten = size;
 
-    // We still need to check if it is a Hangul code point
+    // ASCII fast path
+    if (chars[i] <= 0x7F) {
+      *(*out)++ = chars[i];
+      is_cc = false;
+      goto loop_end;
+    }
+
+    // Hangul check
     if (scalar_is_hangul(chars[i])) {
-      *out += scalar_decompose_hangul(chars[i], *out);
-      offset += size;
-      continue;
+      nwritten = scalar_decompose_hangul(chars[i], *out);
+      *out += nwritten;
+      is_cc = false;
+      goto loop_end;
     }
 
     NormdataEntry kv = NORMDATA_DECOMPOSED_KV[hashes[i]];
@@ -342,45 +455,88 @@ static size_t neon_decompose(uint32x4_t values, size_t length, uint16_t mask,
     // Check if the character has a decomposition
     if (kv.k == chars[i]) {
       uint8_t const *start = &NORMDATA_DECOMPOSED_CHARS[kv.offset];
-      memcpy(*out, start, kv.len);
-      *out += kv.len;
+      for (uint8_t j = 0; j < kv.len; j++) {
+        *(*out)++ = start[j];
+      }
+      is_cc = kv.ccc > 0;
+      nwritten = kv.len;
     } else {
-      memcpy(*out, input + offset, size);
-      *out += size;
+      uint8_t const *start = input + offset;
+      for (uint8_t j = 0; j < size; j++) {
+        *(*out)++ = start[j];
+      }
+      is_cc = false;
     }
+
+  loop_end:
     offset += size;
+    if (last_is_cc && !is_cc) {
+      scalar_sort_characters(*out - nwritten - 1);
+    }
+    last_is_cc = is_cc;
   }
 
+  *end_is_cc = last_is_cc;
   return offset;
+}
+
+// memcpy for inputs less than 64 bytes large.
+static inline void neon_memcpy_small(uint8_t *dst, const uint8_t *src,
+                                     size_t len) {
+  vst1q_u8(dst, vld1q_u8(src));
+  if (len <= 16) {
+    return;
+  }
+  vst1q_u8(dst + 16, vld1q_u8(src + 16));
+  if (len <= 32) {
+    return;
+  }
+  vst1q_u8(dst + 32, vld1q_u8(src + 32));
+  if (len <= 48) {
+    return;
+  }
+  vst1q_u8(dst + 48, vld1q_u8(src + 48));
 }
 
 // NFD normalize up to 16 bytes of UTF-8 using an end of code point mask.
 // Returns the number of bytes consumed.
-static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
-                                             char **out) {
-  uint32x4_t in = vld1q_u8((uint8_t const *)input);
-
-  if ((mask & 0xFFFF) == 0xFFFF) {
-    printf("ALL ASCII\n");
-    vst1q_u8((unsigned char *)*out, in);
-    *out += 16;
-    return 16;
+static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
+                                             uint64_t mask, uint8_t **out,
+                                             bool *end_is_cc) {
+  uint64_t rmask = __rbitll(mask);
+  unsigned int t1 = __clzll(~rmask);
+  // Skip as many ASCII bytes as possible
+  if (t1 > 2) {
+    if (*end_is_cc) {
+      scalar_sort_characters(*out - 1);
+    }
+    size_t min = t1 > 52 ? 52 : t1;
+    neon_memcpy_small(*out, input, min);
+    *out += min;
+    *end_is_cc = false;
+    return min;
   }
 
+  uint8x16_t in = vld1q_u8(input);
   uint16_t sml_mask = mask & 0xFFF;
 
-  // Fast path for 4 3-byte code points (common in CJK)
+  // Fast path for 4 3-byte code points
   if (sml_mask == 0x924) {
-    printf("FOUND THREE BYTE\n");
+    uint16x4_t chars = neon_parse_three_byte_utf8(in);
+    uint16_t min = vminv_u16(chars);
+    uint16_t max = vmaxv_u16(chars);
 
-    uint16x4_t cps = neon_parse_three_byte_utf8(in);
-
-    // The large, common 3-byte CJK range (encompasses much of CJK) that has no
-    // precomposed code points. We can just skip these.
-    if (neon_in_range_u16(cps, 0x30FF, 0x9FFF + 1)) {
-      printf("FOUND CJK\n");
-      vst1q_u8((unsigned char *)*out, in);
+    // The large, common 3-byte CJK range (encompasses much of CJK) that has
+    // no precomposed code points. We can just skip these. Not a huge fan of
+    // language-specific optimization like this (excluding ASCII), but the
+    // speedups are so large for such a low cost that it seems worth it.
+    if (min >= 0x30FF && max <= 0x9FFF) {
+      if (*end_is_cc) {
+        scalar_sort_characters(*out - 1);
+      }
+      vst1q_u8(*out, in);
       *out += 12;
+      *end_is_cc = false;
       return 12;
     }
 
@@ -390,12 +546,13 @@ static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
     //
     // Algorithm described here:
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
-    if (neon_in_range_u16(cps, NORMDATA_S_BASE,
-                          NORMDATA_S_BASE + NORMDATA_S_COUNT)) {
-      printf("FOUND HANGUL\n");
+    if (min >= NORMDATA_S_BASE && max < NORMDATA_S_BASE + NORMDATA_S_COUNT) {
+      if (*end_is_cc) {
+        scalar_sort_characters(*out - 1);
+      }
 
       // Compute the S index
-      uint16x4_t s = vsub_u16(cps, vdup_n_u16(NORMDATA_S_BASE));
+      uint16x4_t s = vsub_u16(chars, vdup_n_u16(NORMDATA_S_BASE));
 
       uint32x4_t l_fixed = vmull_n_u16(s, 28533);
       // Shift the fixed point number
@@ -404,7 +561,7 @@ static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint16x4_t l = vmovn_u32(l_wide);
 
       // Multiply and subtract to get the remainder
-      uint16x4_t v_modulo = vmls_u16(s, l, vdup_n_u16(NORMDATA_N_COUNT));
+      uint16x4_t v_modulo = vmls_n_u16(s, l, NORMDATA_N_COUNT);
       uint32x4_t v_fixed = vmull_n_u16(v_modulo, 2341);
       uint32x4_t v_wide = vshrq_n_u32(v_fixed, 16);
       // V index: (s % N_COUNT) / T_COUNT
@@ -416,12 +573,12 @@ static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
       uint32x4_t t_div_wide = vshrq_n_u32(t_fixed, 17);
       uint16x4_t t_div = vmovn_u32(t_div_wide);
       // T index: s % T_COUNT
-      uint16x4_t t = vmls_u16(s, t_div, vdup_n_u16(NORMDATA_T_COUNT));
+      uint16x4_t t = vmls_n_u16(s, t_div, NORMDATA_T_COUNT);
 
       // Mask for all precomposed Hangul syllables that should not have a
       // trailing consonant
       uint16x4_t t_mask = vceqz_u16(t);
-      uint8_t bitmask = neon_make_bitmask_16x4(t_mask);
+      uint8_t bitmask = neon_movemask_u16(t_mask);
       // Use the trailing consonant bitmask to get a shuffle vector
       NormdataHangulShuf shuf = NORMDATA_HANGUL_SHUF[bitmask];
 
@@ -460,39 +617,98 @@ static size_t neon_normalize_masked_utf8_nfd(const char *input, uint64_t mask,
         *out += shuf.len - 24;
       }
 
+      *end_is_cc = false;
       return 12;
     }
+
+    // Fallback path for 4 3-byte characters
+    uint32x4_t wide = vmovl_u16(chars);
+    if (!neon_any_in_bloom_filter(wide) && !neon_any_hangul(wide)) {
+      if (*end_is_cc) {
+        scalar_sort_characters(*out - 1);
+      }
+      vst1q_u8(*out, in);
+      *out += 12;
+      *end_is_cc = false;
+      return 12;
+    }
+    *out += scalar_normalize_utf8_nfd_with_context(input, 12, *out, end_is_cc);
+    return 12;
+  }
+
+  // Four two-byte code points
+  if ((sml_mask & 0xFF) == 0xAA) {
+    uint16x8_t chars = neon_parse_2_byte_utf8(in);
+    // We only use the first four code points
+    uint32x4_t lower = vmovl_u16(vget_low_u16(chars));
+    if (!neon_any_in_bloom_filter(lower)) {
+      if (*end_is_cc) {
+        scalar_sort_characters(*out - 1);
+      }
+      vst1q_u8(*out, in);
+      *out += 8;
+      *end_is_cc = false;
+      return 8;
+    }
+    *out += scalar_normalize_utf8_nfd_with_context(input, 8, *out, end_is_cc);
+    return 8;
   }
 
   uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
   uint8_t nchars = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
 
+  // TODO: this case right now is "recognize six, only take four". Try cleaning
+  //       it up into "recognize four, take four"
   if (idx < 64) {
     // Six one to two byte code points
     uint16x8_t chars = neon_parse_6_utf8(in, idx);
+    // Only the first four code points are used
     uint32x4_t lower = vmovl_u16(vget_low_u16(chars));
-    size_t consumed = neon_decompose(lower, 4, sml_mask, out, input);
-    uint16_t new_mask = sml_mask >> consumed;
-    uint32x4_t upper = vmovl_u16(vget_high_u16(chars));
-    (void)neon_decompose(upper, 2, new_mask, out, input + consumed);
+    if (!neon_any_in_bloom_filter(lower)) {
+      goto skip;
+    }
+    *out +=
+        scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
+    return nchars;
   } else if (idx < 145) {
     // Four code points
     uint16x4_t chars = neon_parse_4_utf8(in, idx);
     uint32x4_t wide = vmovl_u16(chars);
-    (void)neon_decompose(wide, 4, sml_mask, out, input);
+    if (!neon_any_in_bloom_filter(wide) && !neon_any_hangul(wide)) {
+      goto skip;
+    }
+    *out +=
+        scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
+    return nchars;
   } else if (idx < 209) {
     // Three code points
+    uint32x4_t chars;
     if (sml_mask == 0x888) {
-      uint32x4_t chars = neon_parse_4_byte_utf8(in);
-      (void)neon_decompose(chars, 3, sml_mask, out, input);
+      chars = neon_parse_4_byte_utf8(in);
     } else {
-      uint32x4_t chars = neon_parse_3_utf8(in, idx);
-      (void)neon_decompose(chars, 3, sml_mask, out, input);
+      chars = neon_parse_3_utf8(in, idx);
     }
+    uint32x4_t mask = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0};
+    uint32x4_t chars_masked = vandq_u32(chars, mask);
+    if (!neon_any_in_bloom_filter(chars_masked) &&
+        !neon_any_hangul(chars_masked)) {
+      goto skip;
+    }
+    *out +=
+        scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
+    return nchars;
   } else {
+    // This is an error
     return 12;
   }
 
+skip:
+  if (*end_is_cc) {
+    scalar_sort_characters(*out - 1);
+  }
+  vst1q_u8(*out, in);
+  *out += nchars;
+  *end_is_cc = false;
   return nchars;
 }
 
@@ -501,34 +717,52 @@ static inline uint8x16_t neon_get_codepoint_starts(uint8x16_t in) {
   return vcltq_s8(sgn, vdupq_n_s8(-65 + 1));
 }
 
-size_t neon_normalize_utf8_nfd(char const *input, size_t length, char *out) {
-  char **out_ptr = &out;
-  char *start = out;
+static inline uint64_t neon_make_code_point_mask(uint8_t const *input) {
+  uint8x16_t bit_mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
+                         0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
+  uint8x16_t c0 = neon_get_codepoint_starts(vld1q_u8(input));
+  uint8x16_t c1 = neon_get_codepoint_starts(vld1q_u8(input + 16));
+  uint8x16_t c2 = neon_get_codepoint_starts(vld1q_u8(input + 32));
+  uint8x16_t c3 = neon_get_codepoint_starts(vld1q_u8(input + 48));
+  uint8x16_t sum0 = vpaddq_u8(vandq_u8(c0, bit_mask), vandq_u8(c1, bit_mask));
+  uint8x16_t sum1 = vpaddq_u8(vandq_u8(c2, bit_mask), vandq_u8(c3, bit_mask));
+  sum0 = vpaddq_u8(sum0, sum1);
+  sum0 = vpaddq_u8(sum0, sum0);
 
+  uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
+  mask = ~mask;
+  mask >>= 1;
+
+  return mask;
+}
+
+size_t neon_normalize_utf8_nfd(uint8_t const *input, size_t length,
+                               uint8_t *out) {
+  uint8_t **out_ptr = &out;
+  uint8_t *start = out;
+
+  // It is possible that we do buffer overruns (but only _use_ the appropriate
+  // number of bytes) in specifc cases. This margin makes sure that those
+  // oversized store operations are safe.
+  const size_t SAFETY_MARGIN = 12;
+  bool end_is_cc = false;
   size_t p = 0;
-  while (p + 64 <= length) {
-    uint8x16_t in1 = vld1q_u8((uint8_t const *)(input + p));
-    uint8x16_t in2 = vld1q_u8((uint8_t const *)(input + p + 16));
-    uint8x16_t in3 = vld1q_u8((uint8_t const *)(input + p + 32));
-    uint8x16_t in4 = vld1q_u8((uint8_t const *)(input + p + 48));
-    uint64_t start1 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in1));
-    uint64_t start2 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in2));
-    uint64_t start3 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in3));
-    uint64_t start4 = neon_make_bitmask_8x16(neon_get_codepoint_starts(in4));
-
-    uint64_t mask = start1 | (start2 << 16) | (start3 << 32) | (start4 << 48);
-    mask = ~mask;
-    mask >>= 1;
+  while (p + 64 + SAFETY_MARGIN <= length) {
+    uint64_t mask = neon_make_code_point_mask(input + p);
     size_t pmax = (p + 64) - 12;
-    while (p <= pmax) {
+    while (p < pmax) {
       size_t consumed =
-          neon_normalize_masked_utf8_nfd(input + p, mask, out_ptr);
+          neon_normalize_masked_utf8_nfd(input + p, mask, out_ptr, &end_is_cc);
       p += consumed;
       mask >>= consumed;
     }
   }
 
   if (p < length) {
+    if (end_is_cc) {
+      scalar_sort_characters(*out_ptr - 1);
+    }
+
     // Write the rest using scalar code
     *out_ptr += scalar_normalize_utf8_nfd(input + p, length - p, *out_ptr);
   }

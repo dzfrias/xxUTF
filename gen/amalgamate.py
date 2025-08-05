@@ -3,10 +3,9 @@
 import argparse
 import re
 import sys
-import os
+from pathlib import Path
 
 
-SOURCES = ["utf8norm.c", "normdata.c", "impl/scalar.c", "impl/neon.c"]
 PREAMBLE = """/*
 This file is an amalgamation of all the C source files in the utf8norm codebase.
 This is the only file you need to compile utf8norm, and compilation will be done
@@ -19,7 +18,6 @@ See: https://www.sqlite.org/amalgamation.html
 
 
 include_re = re.compile(r"^#include \"(.*)\"")
-sys_include_re = re.compile(r"^#include <(.*)>")
 ifdef_cpp_re = re.compile(r"^#ifdef __cplusplus")
 decl_re = re.compile(r"([_a-zA-Z][_a-zA-Z0-9 ]+ \**)([_a-zA-Z0-9]+)\((.*)")
 var_re = re.compile(r"^([_a-zA-Z][a-zA-Z_0-9 ]+ \**)([_a-zA-Z0-9]+)(\[|;| =)")
@@ -27,22 +25,15 @@ add_re = re.compile(r"^// amalgamate add: (.*)")
 
 
 
-def copy_file(out, root: str, file: str, seen_headers: set[str]) -> None:
+def copy_file(out, file: Path, seen_headers: set[str]) -> None:
     out.write(f"/*amalgamate: BEGIN {file}*/\n")
     with open(file, "r", encoding="utf-8") as f:
         for line in f:
             if (include_match := include_re.match(line)) is not None:
                 include = include_match.group(1)
                 if include not in seen_headers:
-                    copy_file(out, root, os.path.join(root, include), seen_headers)
+                    copy_file(out, Path(include), seen_headers)
                     seen_headers.add(include)
-                else:
-                    out.write(f"/*amalgamate: skip {line.strip()}*/\n")
-            elif (sys_include_match := sys_include_re.match(line)) is not None:
-                sys_include = sys_include_match.group(1)
-                if sys_include not in seen_headers:
-                    out.write(line)
-                    seen_headers.add(sys_include)
                 else:
                     out.write(f"/*amalgamate: skip {line.strip()}*/\n")
             elif (decl_match := decl_re.match(line)) is not None:
@@ -75,21 +66,23 @@ def main() -> None:
         prog="amalgamate",
         description="Amalgamate the entire utf8norm codebase into one file",
     )
-    parser.add_argument("path", help="directory with the utf8norm codebase", nargs="?", default=".")
+    parser.add_argument("sources", help="directory with the utf8norm codebase", nargs="+")
     parser.add_argument("-o", "--output", type=str, help="output file (default: stdout)")
     
     args = parser.parse_args()
 
+    cwd = Path.cwd()
     seen_headers: set[str] = set()
     if args.output is None:
         sys.stdout.write(PREAMBLE)
-        for file in SOURCES:
-            copy_file(sys.stdout, args.path, os.path.join(args.path, file), seen_headers)
+        for file in args.sources:
+            copy_file(sys.stdout, file, seen_headers)
     else:
-        with open(os.path.join(args.path, args.output), "w", encoding="utf-8") as f:
+        with open(args.output, "w", encoding="utf-8") as f:
             f.write(PREAMBLE)
-            for file in SOURCES:
-                copy_file(f, args.path, os.path.join(args.path, file), seen_headers)
+            for file in args.sources:
+                file_path = Path(file)
+                copy_file(f, file_path.relative_to(cwd), seen_headers)
 
 
 if __name__ == "__main__":

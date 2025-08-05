@@ -27,25 +27,20 @@ jobs:
       run: |
         zig build amalgamate
     
-    - name: Run AFL++
+    - name: Run fuzzing tests
       run: |
-        docker run --rm \
-          --user $(id -u):$(id -g) \
-          -v ${{ github.workspace }}:/src \
-          -w /src \
-          aflplusplus/aflplusplus:latest \
-          bash -c "
-            afl-cc -O3 -flto=full -o target -I. zig-out/amalgamation.c test/fuzz.c
-            timeout 1 afl-fuzz -i test/corpus -o output -- ./target || true
-          "
+        docker build -t fuzz -f test/Dockerfile .
+        docker run --rm -v "$HOME/output:/output" -v "$(pwd):/code" fuzz \
+          afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
+          timeout 30min afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target
 
     - name: Rename fuzzing outputs
       run: |
-        find ./output -name "*:*" -type f | while read -r file; do
+        find "$HOME/output" -name "*:*" -type f | while read -r file; do
             dir=$(dirname "$file")
             base=$(basename "$file")
             newname="${base//:/−}"
-            echo "Renaming $file to $dir/newname"
+            echo "Renaming $file to $dir/$newname"
             mv "$file" "$dir/$newname"
         done
           

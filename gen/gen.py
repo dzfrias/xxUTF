@@ -20,7 +20,11 @@ def expand(c: int, map: DecompMap) -> list[int]:
     stack = [c]
     while stack:
         x = stack.pop()
-        if x not in map or not map[x].decomps:
+        if (
+            x not in map
+            or not map[x].decomps
+            or (len(map[x].decomps) == 1 and x == map[x].decomps[0])
+        ):
             expansion.append(x)
         elif map[x]:
             stack.extend(reversed(map[x].decomps))
@@ -101,8 +105,6 @@ def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
     offset = 0
     all_decomp_bytes = []
     for k, decomp in decomp_map.items():
-        if not decomp.decomps:
-            continue
         offsets[k] = offset
         decomp_bytes: list[int] = []
         for c in decomp.decomps:
@@ -113,12 +115,14 @@ def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
         offset += len(decomp_bytes)
     assert offset <= 2**16 - 1
 
-    writer.write(f"const uint8_t NORMDATA_DECOMPOSED_CHARS[{len(all_decomp_bytes)}] = {{\n")
+    writer.write(
+        f"const uint8_t NORMDATA_DECOMPOSED_CHARS[{len(all_decomp_bytes)}] = {{\n"
+    )
     for row in batched(all_decomp_bytes, 13):
-        writer.write(" ");
+        writer.write(" ")
         for b in row:
             writer.write(f" 0x{b:02X},")
-        writer.write("\n");
+        writer.write("\n")
     writer.write("};\n")
     assert offset <= 2**16 - 1
 
@@ -136,13 +140,13 @@ def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
         writer.write(" ")
         for k in batch:
             ccc = decomp_map[k].ccc
-            writer.write(
-                f" {{{lengths.get(k, 0)}, {ccc}, 0x{offsets.get(k, 0):03X}, 0x{k:05X}}},"
-            )
+            writer.write(f" {{{lengths[k]}, {ccc}, 0x{offsets[k]:03X}, 0x{k:05X}}},")
         writer.write("\n")
     writer.write("};\n")
 
-    return TableInfo(decomp_bytes_len=len(all_decomp_bytes), salt_len=len(salt), kv_len=len(keys))
+    return TableInfo(
+        decomp_bytes_len=len(all_decomp_bytes), salt_len=len(salt), kv_len=len(keys)
+    )
 
 
 def is_bit_set(mask: int, i: int) -> bool:
@@ -173,7 +177,7 @@ def compute_code_point_size(mask: int) -> list[int]:
 def has_code_points_up_to_size(sizes: list[int], size: int) -> bool:
     if len(sizes) < (12 // size):
         return False
-    return max(sizes[:(12 // size)]) <= size
+    return max(sizes[: (12 // size)]) <= size
 
 
 def build_shuf(sizes: tuple[int, ...]) -> list[int]:
@@ -183,7 +187,7 @@ def build_shuf(sizes: tuple[int, ...]) -> list[int]:
         for i in range(6):
             if sizes[i] == 1:
                 answer[i * 2] = pos
-                answer[i * 2 + 1] = 0xff
+                answer[i * 2 + 1] = 0xFF
                 pos += 1
             else:
                 assert sizes[i] == 2
@@ -228,7 +232,7 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
     case123 = sorted(case123_set)
     case1234 = sorted(case1234_set)
     cases = case12 + case123 + case1234
-  
+
     all_shuf = [build_shuf(z) for z in cases]
     writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8[{len(cases)}][16] = {{\n")
     for shuf in all_shuf:
@@ -241,7 +245,7 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
         sizes = compute_code_point_size(x)
         if has_code_points_up_to_size(sizes, 2):
             idx = index[tuple(sizes[:6])]
-            arrg.append((idx, sum(sizes[:6])))
+            arrg.append((idx, sum(sizes[:4])))
         elif has_code_points_up_to_size(sizes, 3):
             idx = index[tuple(sizes[:4])]
             arrg.append((idx, sum(sizes[:4])))
@@ -254,11 +258,11 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
 
     writer.write(f"\nconst uint8_t NORMDATA_CODEPOINT_INDEX[{len(arrg)}][2] = {{\n")
     for row in batched(arrg, 8):
-        writer.write(" ");
+        writer.write(" ")
         for a in row:
             writer.write(f" {{{", ".join(map(str, a))}}},")
         writer.write("\n")
-    writer.write("};\n");
+    writer.write("};\n")
 
     writer.write(f"\nconst NormdataHangulShuf NORMDATA_HANGUL_SHUF[16] = {{\n")
     for x in range(1 << 4):
@@ -275,18 +279,98 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
         # Pad to be 24 in length
         tbl.extend([255] * (24 - len(tbl)))
         writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
-    writer.write("};\n");
+    writer.write("};\n")
 
     return ShuffleInfo(shufutf8_len=len(cases), codepoint_index_len=len(arrg))
 
 
-def generate_header(writer, table_info: TableInfo, shuf_info: ShuffleInfo):
-    writer.write(f"extern const uint8_t NORMDATA_DECOMPOSED_CHARS[{table_info.decomp_bytes_len}];\n")
-    writer.write(f"extern const uint16_t NORMDATA_DECOMPOSED_SALT[{table_info.salt_len}];\n")
-    writer.write(f"extern const NormdataEntry NORMDATA_DECOMPOSED_KV[{table_info.kv_len}];\n")
-    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8[{shuf_info.shufutf8_len}][16];\n")
-    writer.write(f"extern const uint8_t NORMDATA_CODEPOINT_INDEX[{shuf_info.codepoint_index_len}][2];\n")
+@dataclass
+class BloomFilterInfo:
+    blocks: list[int]
+
+
+def xorshift_hash(x: int, seed: int = 0) -> int:
+    mask_32 = 0xFFFFFFFF
+    x ^= seed
+    x ^= (x >> 13) & mask_32
+    x ^= (x << 17) & mask_32
+    x ^= (x >> 5) & mask_32
+    return x
+
+
+def multiply_shift_hash(x: int) -> int:
+    return ((2654435761 * x) >> 16) & ((1 << 16) - 1)
+
+
+def hash_32bit_fast(x, seed=0):
+    mask_32 = 0xFFFFFFFF
+    x ^= seed
+    x = (((x >> 16) ^ x) * 0x45D9F3B) & mask_32
+    x = (((x >> 16) ^ x) * 0x45D9F3B) & mask_32
+    x = ((x >> 16) ^ x) & mask_32
+    return x
+
+
+BLOOM_FILTER_SIZE = 131072
+BLOOM_FILTER_N_BLOCKS = BLOOM_FILTER_SIZE // 32
+
+
+def create_bloom_mask(c: int) -> tuple[int, int]:
+    h1 = multiply_shift_hash(c)
+    h2 = xorshift_hash(c)
+    h3 = hash_32bit_fast(c)
+    block = h1 % BLOOM_FILTER_N_BLOCKS
+    shift1 = h2 % 32
+    shift2 = h3 % 32
+    shift3 = (h2 + h3) % 32
+    mask = 0
+    mask |= 1 << shift1
+    mask |= 1 << shift2
+    mask |= 1 << shift3
+    return block, mask
+
+
+def generate_bloom_filter(writer, decomp_map: DecompMap) -> BloomFilterInfo:
+    blocks = [0] * BLOOM_FILTER_N_BLOCKS
+    for c in decomp_map:
+        block, mask = create_bloom_mask(c)
+        blocks[block] |= mask
+
+    writer.write(
+        f"\nconst uint32_t NORMDATA_BLOOM_FILTER[{BLOOM_FILTER_N_BLOCKS}] = {{\n"
+    )
+    for row in batched(blocks, 10):
+        writer.write(" ")
+        for block in row:
+            writer.write(f" 0x{block:08X},")
+        writer.write("\n")
+    writer.write("};\n")
+
+    return BloomFilterInfo(blocks)
+
+
+def generate_header(
+    writer, table_info: TableInfo, shuf_info: ShuffleInfo, bloom_info: BloomFilterInfo
+):
+    writer.write(
+        f"extern const uint8_t NORMDATA_DECOMPOSED_CHARS[{table_info.decomp_bytes_len}];\n"
+    )
+    writer.write(
+        f"extern const uint16_t NORMDATA_DECOMPOSED_SALT[{table_info.salt_len}];\n"
+    )
+    writer.write(
+        f"extern const NormdataEntry NORMDATA_DECOMPOSED_KV[{table_info.kv_len}];\n"
+    )
+    writer.write(
+        f"extern const uint8_t NORMDATA_SHUFUTF8[{shuf_info.shufutf8_len}][16];\n"
+    )
+    writer.write(
+        f"extern const uint8_t NORMDATA_CODEPOINT_INDEX[{shuf_info.codepoint_index_len}][2];\n"
+    )
     writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
+    writer.write(
+        f"extern const uint32_t NORMDATA_BLOOM_FILTER[{len(bloom_info.blocks)}];\n"
+    )
 
 
 PREAMBLE_H = """// This file was generated by gen/gen.py
@@ -334,6 +418,58 @@ PREAMBLE = """// This file was generated by gen/gen.py
 
 """
 
+
+def code_points():
+    with open("UnicodeData.txt", "r") as f:
+        range_start = 0
+
+        for line in f:
+            info = line.split(";")
+            value = int(info[0], 16)
+            name = info[1]
+
+            if name.endswith("First>"):
+                range_start = value
+                continue
+            if name.endswith("Last>"):
+                for x in range(range_start, value + 1):
+                    yield x
+                continue
+
+            yield value
+
+
+def bloom_filter_fps(
+    code_points, info: BloomFilterInfo, decomp_map: DecompMap
+) -> tuple[list[int], float]:
+    fps = []
+    n = 0
+    for c in code_points:
+        n += 1
+        block_idx, mask = create_bloom_mask(c)
+        block = info.blocks[block_idx]
+        if (block & mask) == mask and c not in decomp_map:
+            fps.append(c)
+    return fps, len(fps) / n
+
+
+def align_key_value_lines(lines: list[str]) -> list[str]:
+    """
+    Aligns a list of strings of the form 'key: value' so that the colons line up.
+    """
+    # Split each line into key and value
+    split_lines = [line.split(":", 1) for line in lines]
+
+    # Strip whitespace and find the longest key
+    max_key_len = max(len(key.strip()) for key, _ in split_lines)
+
+    # Format each line with aligned colon
+    aligned = [
+        f"{key.strip():<{max_key_len}} {value.strip()}" for key, value in split_lines
+    ]
+    return aligned
+
+
 def main() -> None:
     decomp_map: DecompMap = {}
     ccc_map: CCCMap = {}
@@ -345,10 +481,10 @@ def main() -> None:
             value = int(info[0], 16)
             mappings = info[5].split(" ")
             ccc = int(info[3])
-            
+
             if ccc > 0:
                 # Add all CCC > 0 characters to the decomp map
-                decomp_map[value] = DecompValue([], ccc)
+                decomp_map[value] = DecompValue([value], ccc)
                 ccc_map[value] = ccc
 
             # Skip decomp if there is nothing or if it is a compatibility decomposition
@@ -372,12 +508,16 @@ def main() -> None:
         decomp_map[x].decomps = final_decomp
         max_decomps = max(max_decomps, len(final_decomp))
 
-    # It is a generally good assumption that precomposed code points don't decompose into 
+    # It is a generally good assumption that precomposed code points don't decompose into
     # more than four code points.
     assert max_decomps <= 4
 
     for x, decomps in decomp_map.items():
-        if decomps.ccc == 0 and decomps.decomps and all(d in decomp_map and decomp_map[d].ccc > 0 for d in decomps.decomps):
+        if (
+            decomps.ccc == 0
+            and decomps.decomps
+            and all(d in decomp_map and decomp_map[d].ccc > 0 for d in decomps.decomps)
+        ):
             # HACK: this is a very implementation-specific operation, but here's my best
             #       explanation: we want to ensure that any character that decomposes
             #       into combining characters (all ccc values > 0) also has a ccc value > 0.
@@ -388,19 +528,42 @@ def main() -> None:
             #       amends those characters so that they can be properly detected as combining
             #       marks. Obviously, patching over the Unicode character database is suboptimal,
             #       but this presently causes no issues with the decompositon process.
-            #       In general, this means we uphold that every combining mark has ccc > 0.
             #       See https://corp.unicode.org/pipermail/unicode/2025-July/011511.html for the
-            #       relevant discussion on this
+            #       relevant discussion on this. It might also be a more convincing argument
+            #       for why this operation doesn't mess with the canonical decomposition process
+            #       in a harmful way.
             decomp_map[x].ccc = 1
 
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
         hash_info = generate_hash_tables(f, decomp_map)
         shuf_info = generate_shuffle_tables(f)
+        bloom_filter_info = generate_bloom_filter(f, decomp_map)
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
-        generate_header(f, hash_info, shuf_info);
+        generate_header(f, hash_info, shuf_info, bloom_filter_info)
         f.write(POSTAMBLE_H)
+
+    KILOBYTE = 1024
+    lines = []
+    lines.append(f"Decomposed chars: {hash_info.decomp_bytes_len / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed salt: {(hash_info.salt_len * 2) / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed KV: {(hash_info.kv_len * 8) / KILOBYTE:.1f}KiB")
+    lines.append(f"UTF-8 shuffle: {(shuf_info.shufutf8_len * 16) / KILOBYTE:.1f}KiB")
+    lines.append(
+        f"Code point index: {(shuf_info.codepoint_index_len * 2) / KILOBYTE:.1f}KiB"
+    )
+    lines.append(
+        f"Bloom filter: {(len(bloom_filter_info.blocks) * 4) / KILOBYTE:.1f}KiB"
+    )
+    fp_list, fpr = bloom_filter_fps(code_points(), bloom_filter_info, decomp_map)
+    lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
+    bmp = len([c for c in fp_list if c <= 0xFFFF])
+    lines.append(f"NFD bloom filter BMP count: {bmp}")
+
+    aligned = align_key_value_lines(lines)
+    for line in aligned:
+        print(line)
 
 
 if __name__ == "__main__":

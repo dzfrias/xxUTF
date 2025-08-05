@@ -1,13 +1,15 @@
+// This file is a fuzz entrypoint for AFL++, using shared memory and persistent
+// mode instrumentation. It can also be run without AFL++ instrumentation, in
+// which it receives input via stdin.
+
 #include "utf8norm.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-// #include <unicode/ucnv.h>
-// #include <unicode/unorm2.h>
-// #include <unicode/ustring.h>
 #include <unistd.h>
+#include <utf8proc.h>
 
 #if defined(__clang__)
 #pragma clang optimize off
@@ -15,11 +17,12 @@
 #pragma GCC optimize("O0")
 #endif
 
-static bool is_valid_utf8(const uint8_t *data, size_t len) {
+static bool is_valid_utf8(const uint8_t *data, size_t len, size_t *pos) {
   size_t i = 0;
   while (i < len) {
     uint8_t byte = data[i];
     size_t remaining = len - i;
+    *pos = i;
 
     if (byte <= 0x7F) {
       // ASCII
@@ -63,104 +66,83 @@ static bool is_valid_utf8(const uint8_t *data, size_t len) {
   return true;
 }
 
-// static bool equal(char const *a, char const *b) {
-//   for (size_t i = 0;; i++) {
-//     if (a[i] == '\0') {
-//       return b[i] == '\0';
-//     }
-//     if (a[i] != b[i]) {
-//       return false;
-//     }
-//   }
-//
-//   return true;
-// }
+static bool equal(char const *a, char const *b) {
+  for (size_t i = 0;; i++) {
+    if (a[i] == '\0') {
+      return b[i] == '\0';
+    }
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
 
-// // Helper function to check ICU error and exit if needed
-// void check_icu_error(UErrorCode status, const char *context) {
-//   if (U_FAILURE(status)) {
-//     fprintf(stderr, "ICU error in %s: %s\n", context, u_errorName(status));
-//     exit(EXIT_FAILURE);
-//   }
-// }
-//
-// // Normalize a UTF-8 string using ICU (NFC form)
-// char *icu_normalize_utf8_nfd(const char *input_utf8, int32_t len) {
-//   UErrorCode status = U_ZERO_ERROR;
-//
-//   // 1. Get NFC Normalizer
-//   const UNormalizer2 *normalizer = unorm2_getNFDInstance(&status);
-//   check_icu_error(status, "unorm2_getNFCInstance");
-//
-//   // 2. Convert UTF-8 -> UTF-16
-//   int32_t utf16_len = 0;
-//   u_strFromUTF8(NULL, 0, &utf16_len, input_utf8, len, &status);
-//   if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status)) {
-//     check_icu_error(status, "u_strFromUTF8 preflight");
-//   }
-//
-//   status = U_ZERO_ERROR;
-//   UChar *utf16 = (UChar *)malloc((utf16_len + 1) * sizeof(UChar));
-//   if (!utf16) {
-//     fprintf(stderr, "Memory allocation failed for UTF-16 buffer\n");
-//     exit(1);
-//   }
-//
-//   u_strFromUTF8(utf16, utf16_len + 1, NULL, input_utf8, -1, &status);
-//   check_icu_error(status, "u_strFromUTF8");
-//
-//   // 3. Normalize UTF-16 string
-//   int32_t norm_len =
-//       unorm2_normalize(normalizer, utf16, utf16_len, NULL, 0, &status);
-//   if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status)) {
-//     free(utf16);
-//     check_icu_error(status, "unorm2_normalize preflight");
-//   }
-//
-//   status = U_ZERO_ERROR;
-//   UChar *norm_utf16 = (UChar *)malloc((norm_len + 1) * sizeof(UChar));
-//   if (!norm_utf16) {
-//     fprintf(stderr, "Memory allocation failed for normalized UTF-16
-//     buffer\n"); free(utf16); exit(1);
-//   }
-//
-//   unorm2_normalize(normalizer, utf16, utf16_len, norm_utf16, norm_len + 1,
-//                    &status);
-//   free(utf16);
-//   check_icu_error(status, "unorm2_normalize");
-//
-//   // 4. Convert normalized UTF-16 -> UTF-8
-//   int32_t utf8_len = 0;
-//   u_strToUTF8(NULL, 0, &utf8_len, norm_utf16, norm_len, &status);
-//   if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status)) {
-//     free(norm_utf16);
-//     check_icu_error(status, "u_strToUTF8 preflight");
-//   }
-//
-//   status = U_ZERO_ERROR;
-//   char *output_utf8 = (char *)malloc(utf8_len + 1);
-//   if (!output_utf8) {
-//     fprintf(stderr, "Memory allocation failed for output UTF-8 buffer\n");
-//     free(norm_utf16);
-//     exit(1);
-//   }
-//
-//   u_strToUTF8(output_utf8, utf8_len + 1, NULL, norm_utf16, norm_len,
-//   &status); free(norm_utf16); check_icu_error(status, "u_strToUTF8");
-//
-//   return output_utf8; // must be freed by the caller
-// }
+  return true;
+}
 
+// Normalize a UTF-8 string using utf8proc (NFD form)
+static char *utf8proc_normalize_utf8_nfd(const char *input, int32_t len) {
+  utf8proc_uint8_t *normalized = NULL;
+  utf8proc_ssize_t result =
+      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
+                   UTF8PROC_DECOMPOSE | UTF8PROC_STABLE);
+
+  if (result < 0) {
+    return NULL;
+  }
+
+  return (char *)normalized;
+}
+
+#ifdef __AFL_FUZZ_TESTCASE_LEN
 __AFL_FUZZ_INIT();
+#endif
+
+void print_codepoints(char const *s, ssize_t len) {
+  if (!s)
+    return;
+
+  // If len is -1, calculate length using the NUL terminator
+  if (len == -1) {
+    len = 0;
+    while (s[len] != '\0')
+      len++;
+  }
+
+  ssize_t i = 0;
+  while (i < len) {
+    uint32_t codepoint;
+    unsigned char byte = (unsigned char)s[i];
+
+    if ((byte & 0x80) == 0) {
+      codepoint = byte;
+      i += 1;
+    } else if ((byte & 0xE0) == 0xC0) {
+      codepoint = ((byte & 0x1F) << 6) | (s[i + 1] & 0x3F);
+      i += 2;
+    } else if ((byte & 0xF0) == 0xE0) {
+      codepoint =
+          ((byte & 0x0F) << 12) | ((s[i + 1] & 0x3F) << 6) | (s[i + 2] & 0x3F);
+      i += 3;
+    } else {
+      codepoint = ((byte & 0x07) << 18) | ((s[i + 1] & 0x3F) << 12) |
+                  ((s[i + 2] & 0x3F) << 6) | (s[i + 3] & 0x3F);
+      i += 4;
+    }
+
+    printf("%04X ", codepoint);
+  }
+}
 
 int main(int argc, char **argv) {
+#ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
   while (__AFL_LOOP(1000)) {
     int len = __AFL_FUZZ_TESTCASE_LEN;
 
     // Ensure valid input
-    if (!is_valid_utf8(buf, len) || len > 2048) {
+    size_t pos;
+    if (!is_valid_utf8(buf, len, &pos) || len > 2048) {
       continue;
     }
 
@@ -168,19 +150,57 @@ int main(int argc, char **argv) {
     size_t nwritten =
         utf8norm_normalize_utf8_nfd((char const *)buf, len, utf8norm_out);
 
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten)) {
-      return 1;
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten, &pos)) {
+      abort();
     }
-    // utf8norm_out[nwritten] = '\0';
-    // char *icu_out = icu_normalize_utf8_nfd((char const *)buf, len);
-    // bool eql = equal(utf8norm_out, icu_out);
-    // free(icu_out);
-    //
-    // if (!eql) {
-    //   printf("UTF-8 buffers didn't match!\n");
-    //   return 1;
-    // }
+    utf8norm_out[nwritten] = '\0';
+
+    char *utf8proc_out = utf8proc_normalize_utf8_nfd((char const *)buf, len);
+    bool eql = equal(utf8norm_out, utf8proc_out);
+    free(utf8proc_out);
+
+    if (!eql) {
+      abort();
+    }
+
+    return 0;
+  }
+#else
+  char buf[4096];
+  ssize_t nread;
+
+  while ((nread = read(0, buf, sizeof(buf) - 1)) > 0) {
+    buf[nread] = '\0';
+
+    char utf8norm_out[16384];
+    size_t nwritten = utf8norm_normalize_utf8_nfd(buf, nread, utf8norm_out);
+
+    size_t pos;
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten, &pos)) {
+      printf("normalized output is invaild UTF-8, position %zu\n", pos);
+      continue;
+    }
+    utf8norm_out[nwritten] = '\0';
+
+    char *utf8proc_out = utf8proc_normalize_utf8_nfd(buf, nread);
+
+    if (equal(utf8norm_out, utf8proc_out)) {
+      printf("Both buffers equal!\n");
+    } else {
+      printf("Buffers not equal\n");
+      printf("   input: ");
+      print_codepoints(buf, nread);
+      printf("\n");
+      printf("utf8norm: ");
+      print_codepoints(utf8norm_out, -1);
+      printf("\n");
+      printf("utf8proc: ");
+      print_codepoints(utf8proc_out, -1);
+      printf("\n");
+    }
+    free(utf8proc_out);
   }
 
   return 0;
+#endif
 }
