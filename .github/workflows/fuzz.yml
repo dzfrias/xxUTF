@@ -32,6 +32,7 @@ jobs:
         docker build -t fuzz -f test/Dockerfile .
         docker run --rm -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
           afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
+          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
           timeout 1800 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target
         "
 
