@@ -30,9 +30,10 @@ jobs:
     - name: Run fuzzing tests
       run: |
         docker build -t fuzz -f test/Dockerfile .
-        docker run --rm -v "$HOME/output:/output" -v "$(pwd):/code" fuzz \
+        docker run --rm -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
           afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
           timeout 1800 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target
+        "
 
     - name: Rename fuzzing outputs
       run: |
