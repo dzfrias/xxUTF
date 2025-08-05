@@ -15,65 +15,24 @@ static inline uint8_t neon_movemask_u16(uint16x4_t v) {
   return (uint8_t)(vaddv_u16(mv) & 0xF);
 }
 
-__attribute__((unused)) static void neon_print_uint8x16(const char *name,
-                                                        uint8x16_t vec) {
-  uint8_t values[16];
-  vst1q_u8(values, vec);
-
-  printf("%s: ", name);
-  for (int i = 0; i < 16; i++) {
-    printf("%02x ", values[i]);
+#define NEON_PRINT_FUNC(type, child_type, store_func)                          \
+  __attribute__((unused)) static void neon_print_##type(const char *name,      \
+                                                        type vec) {            \
+    child_type values[sizeof(type) / sizeof(child_type)];                      \
+    store_func(values, vec);                                                   \
+    printf("%s: ", name);                                                      \
+    for (int i = 0; i < sizeof(values) / sizeof(child_type); i++) {            \
+      printf("%04x ", values[i]);                                              \
+    }                                                                          \
+    printf("\n");                                                              \
   }
-  printf("\n");
-}
 
-__attribute__((unused)) static void neon_print_uint8x8(const char *name,
-                                                       uint8x8_t vec) {
-  uint8_t values[8];
-  vst1_u8(values, vec);
-
-  printf("%s: ", name);
-  for (int i = 0; i < 8; i++) {
-    printf("%02x ", values[i]);
-  }
-  printf("\n");
-}
-
-__attribute__((unused)) static void neon_print_uint16x8(const char *name,
-                                                        uint16x8_t vec) {
-  uint16_t values[8];
-  vst1q_u16(values, vec);
-
-  printf("%s: ", name);
-  for (int i = 0; i < 8; i++) {
-    printf("%04x ", values[i]);
-  }
-  printf("\n");
-}
-
-__attribute__((unused)) static void neon_print_uint16x4(const char *name,
-                                                        uint16x4_t vec) {
-  uint16_t values[4];
-  vst1_u16(values, vec);
-
-  printf("%s: ", name);
-  for (int i = 0; i < 4; i++) {
-    printf("%04x ", values[i]);
-  }
-  printf("\n");
-}
-
-__attribute__((unused)) static void neon_print_uint32x4(const char *name,
-                                                        uint32x4_t vec) {
-  uint32_t values[4];
-  vst1q_u32(values, vec);
-
-  printf("%s: ", name);
-  for (int i = 0; i < 4; i++) {
-    printf("%08x ", values[i]);
-  }
-  printf("\n");
-}
+NEON_PRINT_FUNC(uint8x16_t, uint8_t, vst1q_u8);
+NEON_PRINT_FUNC(uint8x8_t, uint8_t, vst1_u8);
+NEON_PRINT_FUNC(uint16x8_t, uint16_t, vst1q_u16);
+NEON_PRINT_FUNC(uint16x4_t, uint16_t, vst1_u16);
+NEON_PRINT_FUNC(uint32x4_t, uint32_t, vst1q_u32);
+NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
 
 // Parse four three-byte UTF-8 code points into their 16-bit code point values.
 // Taken from simdutf
