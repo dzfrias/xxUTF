@@ -174,17 +174,17 @@ def compute_code_point_size(mask: int) -> list[int]:
     return answer
 
 
-def has_code_points_up_to_size(sizes: list[int], size: int) -> bool:
-    if len(sizes) < (12 // size):
+def has_code_points_up_to_size(sizes: list[int], size: int, n: int) -> bool:
+    if len(sizes) < n:
         return False
-    return max(sizes[: (12 // size)]) <= size
+    return max(sizes[:n]) <= size
 
 
 def build_shuf(sizes: tuple[int, ...]) -> list[int]:
     answer = [0] * 16
     pos = 0
-    if len(sizes) == 6:
-        for i in range(6):
+    if max(sizes) <= 2 and len(sizes) == 4:
+        for i in range(4):
             if sizes[i] == 1:
                 answer[i * 2] = pos
                 answer[i * 2 + 1] = 0xFF
@@ -222,11 +222,11 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
     case1234_set: set[tuple[int, ...]] = set()
     for x in range(1 << 12):
         sizes = compute_code_point_size(x)
-        if has_code_points_up_to_size(sizes, 2):
-            case12_set.add(tuple(sizes[:6]))
-        elif has_code_points_up_to_size(sizes, 3):
+        if has_code_points_up_to_size(sizes, size=2, n=4):
+            case12_set.add(tuple(sizes[:4]))
+        elif has_code_points_up_to_size(sizes, size=3, n=4):
             case123_set.add(tuple(sizes[:4]))
-        elif has_code_points_up_to_size(sizes, 4):
+        elif has_code_points_up_to_size(sizes, size=4, n=3):
             case1234_set.add(tuple(sizes[:3]))
     case12 = sorted(case12_set)
     case123 = sorted(case123_set)
@@ -243,18 +243,17 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
     arrg = []
     for x in range(1 << 12):
         sizes = compute_code_point_size(x)
-        if has_code_points_up_to_size(sizes, 2):
-            idx = index[tuple(sizes[:6])]
-            arrg.append((idx, sum(sizes[:4])))
-        elif has_code_points_up_to_size(sizes, 3):
+        if has_code_points_up_to_size(sizes, size=2, n=4):
             idx = index[tuple(sizes[:4])]
             arrg.append((idx, sum(sizes[:4])))
-        elif has_code_points_up_to_size(sizes, 4):
+        elif has_code_points_up_to_size(sizes, size=3, n=4):
+            idx = index[tuple(sizes[:4])]
+            arrg.append((idx, sum(sizes[:4])))
+        elif has_code_points_up_to_size(sizes, size=4, n=3):
             idx = index[tuple(sizes[:3])]
             arrg.append((idx, sum(sizes[:3])))
         else:
-            # We are in error, use a bogus index
-            arrg.append((209, 12))
+            arrg.append((len(all_shuf), 12))
 
     writer.write(f"\nconst uint8_t NORMDATA_CODEPOINT_INDEX[{len(arrg)}][2] = {{\n")
     for row in batched(arrg, 8):
@@ -263,6 +262,12 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
             writer.write(f" {{{", ".join(map(str, a))}}},")
         writer.write("\n")
     writer.write("};\n")
+
+    writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8_INDEX_12 = {len(case12)};\n")
+    writer.write(
+        f"const uint8_t NORMDATA_SHUFUTF8_INDEX_123 = {len(case12) + len(case123)};\n"
+    )
+    writer.write(f"const uint8_t NORMDATA_SHUFUTF8_INDEX_1234 = {len(cases)};\n")
 
     writer.write(f"\nconst NormdataHangulShuf NORMDATA_HANGUL_SHUF[16] = {{\n")
     for x in range(1 << 4):
@@ -367,6 +372,9 @@ def generate_header(
     writer.write(
         f"extern const uint8_t NORMDATA_CODEPOINT_INDEX[{shuf_info.codepoint_index_len}][2];\n"
     )
+    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;\n")
+    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;\n")
+    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;\n")
     writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
     writer.write(
         f"extern const uint32_t NORMDATA_BLOOM_FILTER[{len(bloom_info.blocks)}];\n"

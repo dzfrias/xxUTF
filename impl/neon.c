@@ -60,11 +60,9 @@ static uint16x4_t neon_parse_three_byte_utf8(uint8x16_t in) {
   return composed;
 }
 
-// Parse six two-byte UTF-8 code points into their 32-bit code point values.
+// Parse four two-byte UTF-8 code points into their 16-bit code point values.
 // Taken from simdutf
-static uint16x8_t neon_parse_2_byte_utf8(uint8x16_t in) {
-  // Converts 6 2 byte UTF-8 characters to 6 UTF-16 characters.
-
+static uint16x4_t neon_parse_2_byte_utf8(uint8x16_t in) {
   // 10bbbbbb 110aaaaa
   uint16x8_t upper = vreinterpretq_u16_u8(in);
   // (in << 8) | (in >> 8)
@@ -75,16 +73,12 @@ static uint16x8_t neon_parse_2_byte_utf8(uint8x16_t in) {
   // Assemble with shift left insert.
   // 00000aaa aabbbbbb
   uint16x8_t composed = vsliq_n_u16(lower, upper_masked, 6);
-  return composed;
+  return vget_low_u16(composed);
 }
 
-// Parse six code points encoded in UTF-8 into 16-bit code point values.
+// Parse four code points encoded in UTF-8 into 16-bit code point values.
 // Taken from simdutf
-static uint16x8_t neon_parse_6_utf8(uint8x16_t in, size_t shufutf8_idx) {
-  // Converts 6 1-2 byte UTF-8 characters to 6 UTF-16 characters.
-  // This is a relatively easy scenario
-  // we process SIX (6) input code-code units. The max length in bytes of six
-  // code code units spanning between 1 and 2 bytes each is 12 bytes.
+static uint16x4_t neon_parse_4_12_utf8(uint8x16_t in, size_t shufutf8_idx) {
   uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
   // Shuffle
   // 1 byte: 00000000 0bbbbbbb
@@ -101,7 +95,7 @@ static uint16x8_t neon_parse_6_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // 1 byte: 00000000 0bbbbbbb
   // 2 byte: 00000aaa aabbbbbb
   uint16x8_t composed = vsraq_n_u16(ascii, highbyte, 2);
-  return composed;
+  return vget_low_u16(composed);
 }
 
 // Parse three code points encoded in UTF-8 into 32-bit code point values.
@@ -178,7 +172,7 @@ static uint32x4_t neon_parse_4_byte_utf8(uint8x16_t in) {
 
 // Parse four code points encoded in UTF-8 into 16-bit code point values.
 // Taken from simdutf
-static uint16x4_t neon_parse_4_utf8(uint8x16_t in, size_t shufutf8_idx) {
+static uint16x4_t neon_parse_4_123_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // UTF-16 and UTF-32 use similar algorithms, but UTF-32 skips the narrowing.
   uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
   // XXX: depending on the system scalar instructions might be faster.
@@ -597,10 +591,9 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
 
   // Four two-byte code points
   if ((sml_mask & 0xFF) == 0xAA) {
-    uint16x8_t chars = neon_parse_2_byte_utf8(in);
-    // We only use the first four code points
-    uint32x4_t lower = vmovl_u16(vget_low_u16(chars));
-    if (!neon_any_in_bloom_filter(lower)) {
+    uint16x4_t chars = neon_parse_2_byte_utf8(in);
+    uint32x4_t wide = vmovl_u16(chars);
+    if (!neon_any_in_bloom_filter(wide)) {
       if (*end_is_cc) {
         scalar_sort_characters(*out - 1);
       }
@@ -616,22 +609,20 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
   uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
   uint8_t nchars = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
 
-  // TODO: this case right now is "recognize six, only take four". Try cleaning
-  //       it up into "recognize four, take four"
-  if (idx < 64) {
-    // Six one to two byte code points
-    uint16x8_t chars = neon_parse_6_utf8(in, idx);
+  if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+    // Four one to two byte code points
+    uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
     // Only the first four code points are used
-    uint32x4_t lower = vmovl_u16(vget_low_u16(chars));
-    if (!neon_any_in_bloom_filter(lower)) {
+    uint32x4_t wide = vmovl_u16(chars);
+    if (!neon_any_in_bloom_filter(wide)) {
       goto skip;
     }
     *out +=
         scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
     return nchars;
-  } else if (idx < 145) {
+  } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
     // Four code points
-    uint16x4_t chars = neon_parse_4_utf8(in, idx);
+    uint16x4_t chars = neon_parse_4_123_utf8(in, idx);
     uint32x4_t wide = vmovl_u16(chars);
     if (!neon_any_in_bloom_filter(wide) && !neon_any_hangul(wide)) {
       goto skip;
@@ -639,7 +630,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     *out +=
         scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
     return nchars;
-  } else if (idx < 209) {
+  } else if (idx < NORMDATA_SHUFUTF8_INDEX_1234) {
     // Three code points
     uint32x4_t chars;
     if (sml_mask == 0x888) {

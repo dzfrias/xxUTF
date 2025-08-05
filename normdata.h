@@ -30,8 +30,11 @@ static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 extern const uint8_t NORMDATA_DECOMPOSED_CHARS[10804];
 extern const uint16_t NORMDATA_DECOMPOSED_SALT[3011];
 extern const NormdataEntry NORMDATA_DECOMPOSED_KV[3011];
-extern const uint8_t NORMDATA_SHUFUTF8[209][16];
+extern const uint8_t NORMDATA_SHUFUTF8[145][16];
 extern const uint8_t NORMDATA_CODEPOINT_INDEX[4096][2];
+extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;
+extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;
+extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;
 extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
 extern const uint32_t NORMDATA_BLOOM_FILTER[4096];
 
