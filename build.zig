@@ -18,6 +18,20 @@ pub fn build(b: *std.Build) !void {
         try sources.append(b.allocator, "impl/neon.c");
     }
 
+    const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
+    run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
+    for (all_sources) |source| {
+        run_amalgamate.addFileArg(b.path(source));
+    }
+    for (all_files) |file| {
+        run_amalgamate.addFileInput(b.path(file));
+    }
+    run_amalgamate.addArg("-o");
+    const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
+    const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
+    const amalgamate_step = b.step("amalgamate", "Create the utf8norm amalgamation file");
+    amalgamate_step.dependOn(&amalgamate_install_file.step);
+
     const lib = b.addLibrary(.{
         .name = "utf8norm",
         .root_module = b.createModule(.{
@@ -34,11 +48,17 @@ pub fn build(b: *std.Build) !void {
     if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
-    lib.addCSourceFiles(.{
-        .root = b.path(""),
-        .files = sources.items,
-        .flags = flags.items,
-    });
+    if (optimize == .Debug) {
+        lib.addCSourceFiles(.{
+            .root = b.path(""),
+            .files = sources.items,
+            .flags = flags.items,
+        });
+    } else {
+        // Use single header for release builds. This gives worse compiler errors, but
+        // better performance.
+        lib.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
+    }
     lib.installHeader(b.path("utf8norm.h"), "utf8norm.h");
     b.installArtifact(lib);
 
@@ -55,17 +75,6 @@ pub fn build(b: *std.Build) !void {
     run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
     const test_step = b.step("test", "Test utf8norm using the Unicode Character Database");
     test_step.dependOn(&run_test_exe.step);
-
-    const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
-    run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
-    for (all_sources) |source| {
-        run_amalgamate.addFileArg(b.path(source));
-    }
-    run_amalgamate.addArg("-o");
-    const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
-    const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
-    const amalgamate_step = b.step("amalgamate", "Create the utf8norm amalgamation file");
-    amalgamate_step.dependOn(&amalgamate_install_file.step);
 
     const afl_fuzz: ?[]const u8 = b.findProgram(&.{"afl-fuzz"}, &.{}) catch null;
     if (afl_fuzz) |afl_fuzz_bin| {
@@ -125,5 +134,16 @@ const all_sources: []const []const u8 = &.{
     "utf8norm.c",
     "normdata.c",
     "impl/scalar.c",
+    "impl/neon.c",
+};
+
+const all_files: []const []const u8 = &.{
+    "utf8norm.h",
+    "utf8norm.c",
+    "normdata.h",
+    "normdata.c",
+    "impl/scalar.h",
+    "impl/scalar.c",
+    "impl/neon.h",
     "impl/neon.c",
 };

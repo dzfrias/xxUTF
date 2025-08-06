@@ -413,9 +413,7 @@ static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 """
 
 POSTAMBLE_H = """
-static const uint32_t NORMDATA_DECOMPOSED_SALT_SIZE = sizeof(NORMDATA_DECOMPOSED_SALT) / 2;
-static const uint32_t NORMDATA_DECOMPOSED_KV_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
-static const uint32_t NORMDATA_DECOMPOSED_CHARS_SIZE = sizeof(NORMDATA_DECOMPOSED_CHARS);
+static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / 2;
 
 #endif // UTF8NORM_NORMDATA_H
 """
@@ -568,6 +566,10 @@ def main() -> None:
     lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
     bmp = len([c for c in fp_list if c <= 0xFFFF])
     lines.append(f"NFD bloom filter BMP count: {bmp}")
+    ascii = len([c for c in fp_list if c < 128])
+    lines.append(f"NFD bloom filter ASCII count: {ascii}")
+    hangul = len([c for c in fp_list if 0xAC00 <= c <= 0xD7AF])
+    lines.append(f"NFD bloom filter Hangul count: {hangul}")
 
     aligned = align_key_value_lines(lines)
     for line in aligned:

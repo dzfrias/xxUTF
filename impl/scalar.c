@@ -69,10 +69,10 @@ size_t scalar_decompose_hangul(uint32_t code_point, uint8_t *out) {
 size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
   uint8_t *start = out;
   uint32_t salt_hash =
-      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_SALT_SIZE);
+      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_TABLE_SIZE);
   uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
   uint32_t key_hash =
-      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_SALT_SIZE);
+      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_TABLE_SIZE);
   NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
   if (kv.k == code_point) {
     uint8_t const *bytes = &NORMDATA_DECOMPOSED_CHARS[kv.offset];
@@ -89,10 +89,10 @@ size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
 
 static uint8_t scalar_lookup_ccc(uint32_t code_point) {
   uint32_t salt_hash =
-      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_SALT_SIZE);
+      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_TABLE_SIZE);
   uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
   uint32_t key_hash =
-      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_SALT_SIZE);
+      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_TABLE_SIZE);
   NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
