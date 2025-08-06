@@ -331,7 +331,8 @@ static inline uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
 
 // Write a 3-byte code point into the output buffer. The code point is assumed
 // to be in the range of 0x0800 to 0xFFFF.
-static inline void write_3_byte_code_point(uint16_t codepoint, uint8_t *out) {
+static inline void neon_write_3_byte_code_point(uint16_t codepoint,
+                                                uint8_t *out) {
   out[0] = 0xE0 | (codepoint >> 12);
   out[1] = 0x80 | ((codepoint >> 6) & 0x3F);
   out[2] = 0x80 | (codepoint & 0x3F);
@@ -376,16 +377,16 @@ static void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
     uint16_t v = lvt.val[1][i];
     uint16_t t = lvt.val[2][i];
 
-    write_3_byte_code_point(l, *out);
+    neon_write_3_byte_code_point(l, *out);
     *out += 3;
-    write_3_byte_code_point(v, *out);
+    neon_write_3_byte_code_point(v, *out);
     *out += 3;
     // Naively write the T code point, even if it is zero, and branchlessly
     // increment the output pointer if it is non-zero. Although this appears
     // like extra work, it is actually faster than branching on the T code point
     // being zero or not, because the branch miss penalty is quite high. For the
     // korean.txt benchmark, this gave a ~33% speedup.
-    write_3_byte_code_point(t, *out);
+    neon_write_3_byte_code_point(t, *out);
     *out += 3 * (t - NORMDATA_T_BASE > 0);
     input += 3;
   }
