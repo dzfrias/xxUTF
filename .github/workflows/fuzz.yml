@@ -1,55 +1,66 @@
-name: Fuzz Testing
+name: Test
 
 on:
   push:
     branches: [main]
 
 jobs:
-  fuzz:
+  test:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Install ICU4C
-      run: |
-        sudo apt-get install -y libicu-dev
-        # Verify installation
-        pkg-config --modversion icu-uc
-
     - name: Install Zig
       uses: mlugg/setup-zig@v2
       with:
         version: 0.14.1
 
-    - name: Build the amalgamation
+    - name: Run Unicode testsuite
       run: |
-        zig build amalgamate
+        zig build test
 
-    - name: Run fuzzing tests
-      run: |
-        docker build -t fuzz -f test/Dockerfile .
-        docker run --rm --user "$(id -u):$(id -g)" -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
-          afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
-          export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
-          timeout 1 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target || true
-        "
-
-    - name: Rename fuzzing outputs
-      run: |
-        find "$HOME/output" -name "*:*" -type f | while read -r file; do
-            dir=$(dirname "$file")
-            base=$(basename "$file")
-            newname="${base//:/−}"
-            echo "Renaming $file to $dir/$newname"
-            mv "$file" "$dir/$newname"
-        done
-          
-    - name: Upload fuzzing results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: fuzzing-results
-        path: ~/output/
-        retention-days: 30
+  # TODO: figure out and re-enable fuzzing
+  # fuzz:
+  #   runs-on: ubuntu-latest
+  #
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #
+  #   - name: Install Zig
+  #     uses: mlugg/setup-zig@v2
+  #     with:
+  #       version: 0.14.1
+  #
+  #   - name: Build the amalgamation
+  #     run: |
+  #       zig build amalgamate
+  #
+  #   - name: Run fuzzing tests
+  #     run: |
+  #       docker build -t fuzz -f test/Dockerfile .
+  #       docker run --rm --user "$(id -u):$(id -g)" -v "$HOME/output:/output" -v "$(pwd):/code" fuzz bash -c "
+  #         afl-cc -o fuzz_target -O3 -flto=full -Icode code/zig-out/amalgamation.c code/test/fuzz.c -lutf8proc && \
+  #         export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+  #         timeout 1 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target || true
+  #       "
+  #
+  #   - name: Rename fuzzing outputs
+  #     run: |
+  #       find "$HOME/output" -name "*:*" -type f | while read -r file; do
+  #           dir=$(dirname "$file")
+  #           base=$(basename "$file")
+  #           newname="${base//:/−}"
+  #           echo "Renaming $file to $dir/$newname"
+  #           mv "$file" "$dir/$newname"
+  #       done
+  #
+  #   - name: Upload fuzzing results
+  #     if: always()
+  #     uses: actions/upload-artifact@v4
+  #     with:
+  #       name: fuzzing-results
+  #       path: ~/output/
+  #       retention-days: 30
