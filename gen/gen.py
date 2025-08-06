@@ -413,7 +413,7 @@ static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 """
 
 POSTAMBLE_H = """
-static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / 2;
+static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
 
 #endif // UTF8NORM_NORMDATA_H
 """

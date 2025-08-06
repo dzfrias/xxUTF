@@ -38,6 +38,6 @@ extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;
 extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
 extern const uint32_t NORMDATA_BLOOM_FILTER[4096];
 
-static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / 2;
+static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
 
 #endif // UTF8NORM_NORMDATA_H
