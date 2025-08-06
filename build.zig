@@ -43,8 +43,26 @@ pub fn build(b: *std.Build) !void {
     lib.addIncludePath(b.path(""));
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
-    try flags.append(b.allocator, "-Wall");
-    try flags.append(b.allocator, "-Werror");
+    try flags.appendSlice(b.allocator, &.{
+        "-Wall",
+        "-Wextra",
+        "-Wcast-qual",
+        "-Wcast-align",
+        "-Wstrict-aliasing",
+        "-Wpointer-arith",
+        "-Wshadow",
+        "-Winit-self",
+        "-Wswitch-enum",
+        "-Wstrict-prototypes",
+        "-Wmissing-prototypes",
+        "-Wredundant-decls",
+        "-Wfloat-equal",
+        "-Wundef",
+        "-Wvla",
+        "-Wformat=2",
+        "-Wc++-compat",
+        "-Werror",
+    });
     if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }

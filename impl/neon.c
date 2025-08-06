@@ -22,7 +22,7 @@ static inline uint8_t neon_movemask_u16(uint16x4_t v) {
     child_type values[sizeof(type) / sizeof(child_type)];                      \
     store_func(values, vec);                                                   \
     printf("%s: ", name);                                                      \
-    for (int i = 0; i < sizeof(values) / sizeof(child_type); i++) {            \
+    for (uint8_t i = 0; i < sizeof(values) / sizeof(child_type); i++) {        \
       printf("%04x ", values[i]);                                              \
     }                                                                          \
     printf("\n");                                                              \
@@ -391,8 +391,8 @@ static void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
   }
 }
 
-static inline void neon_skip(uint8x16_t in, size_t nchars, const uint8_t *input,
-                             uint8_t **out, bool *end_is_cc) {
+static inline void neon_skip(uint8x16_t in, size_t nchars, uint8_t **out,
+                             bool *end_is_cc) {
   if (*end_is_cc) {
     scalar_sort_characters(*out - 1);
   }
@@ -410,7 +410,7 @@ static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
   bool hangul_result = vmaxvq_u32(hangul_mask) > 0;
   if (!bloom_result && !hangul_result) {
     // Case where we have no precomposed characters and no Hangul syllables
-    neon_skip(in, nchars, input, out, end_is_cc);
+    neon_skip(in, nchars, out, end_is_cc);
   } else if (hangul_result && !bloom_result) {
     // Case where we have Hangul syllables, but no precomposed characters
     neon_decompose_hangul(chars, hangul_mask, out, input, end_is_cc);
@@ -480,7 +480,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     // language-specific optimization like this (excluding ASCII), but the
     // speedups are so large for such a low cost that it seems worth it.
     if (min >= 0x30FF && max <= 0x9FFF) {
-      neon_skip(in, 12, input, out, end_is_cc);
+      neon_skip(in, 12, out, end_is_cc);
       return 12;
     }
 
@@ -553,7 +553,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint32x4_t wide = vmovl_u16(chars);
     uint32x4_t bloom = neon_evaluate_bloom(wide);
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip(in, 8, input, out, end_is_cc);
+      neon_skip(in, 8, out, end_is_cc);
     } else {
       neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }
@@ -571,7 +571,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint32x4_t bloom = neon_evaluate_bloom(wide);
     // Hangul isn't possible here, so we don't need to check for it.
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip(in, nchars, input, out, end_is_cc);
+      neon_skip(in, nchars, out, end_is_cc);
     } else {
       neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }

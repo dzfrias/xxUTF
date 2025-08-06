@@ -123,8 +123,7 @@ static uint32_t scalar_parse_code_point(uint8_t const *input, uint8_t *size) {
   }
 }
 
-static void scalar_reverse(uint8_t *array, size_t size, size_t start,
-                           size_t end) {
+static void scalar_reverse(uint8_t *array, size_t start, size_t end) {
   while (start < end) {
     uint8_t tmp = array[start];
     array[start] = array[end];
@@ -135,9 +134,9 @@ static void scalar_reverse(uint8_t *array, size_t size, size_t start,
 }
 
 static void scalar_rotate(uint8_t *array, size_t size, size_t k) {
-  scalar_reverse(array, size, 0, size - 1);
-  scalar_reverse(array, size, 0, k - 1);
-  scalar_reverse(array, size, k, size - 1);
+  scalar_reverse(array, 0, size - 1);
+  scalar_reverse(array, 0, k - 1);
+  scalar_reverse(array, k, size - 1);
 }
 
 void scalar_sort_characters(uint8_t *out) {
