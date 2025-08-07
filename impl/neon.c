@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// Create an 8-bit movemask from a 16x4 vector.
 static inline uint8_t neon_movemask_u16(uint16x4_t v) {
   const uint16x4_t mask = {0x1, 0x2, 0x4, 0x8};
   uint16x4_t mv = vand_u16(v, mask);
@@ -191,6 +192,9 @@ static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
   return x;
 }
 
+// Pass a code point vector through the decomp+cc bloom filter, which will
+// return a vector of 0s and 0xFFFFFFFFs probabilistically indicating whether
+// the corresponding code point has a decomposition or is a combining character.
 static uint32x4_t neon_evaluate_bloom(uint32x4_t input) {
   uint32x4_t h1 = neon_mul_shift_hash(input);
   uint32x4_t h2 = neon_xorshift_hash(input);
@@ -222,6 +226,9 @@ static uint32x4_t neon_evaluate_bloom(uint32x4_t input) {
   return result_eq;
 }
 
+// Check if a code point vector contains Hangul syllables. The result is a
+// vector of 0s and 0xFFFFFFFFs, where 0 means the code point is not a Hangul
+// syllable and 0xFFFFFFFF means it is a Hangul syllable.
 static inline uint32x4_t neon_hangul_mask(uint32x4_t input) {
   uint32x4_t ge = vcgeq_u32(input, vdupq_n_u32(NORMDATA_S_BASE));
   uint32x4_t lt =
@@ -405,6 +412,7 @@ static void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
   }
 }
 
+// Copy a 16-byte input vector into the output buffer.
 static inline void neon_skip(uint8x16_t in, size_t nchars, uint8_t **out,
                              bool *end_is_cc) {
   if (*end_is_cc) {
@@ -415,11 +423,18 @@ static inline void neon_skip(uint8x16_t in, size_t nchars, uint8_t **out,
   *out += nchars;
 }
 
+// Generalized decomposition for a 16-byte input vector of UTF-8 code points.
+// The parsed code points are passed in as a 4x32-bit vector of code points,
+// and the `nchars` parameter indicates how many bytes of the input vector are
+// used for the `chars` parameter. The `input` parameter is the original pointer
+// to UTF-8 bytes.
 static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
                                   size_t nchars, const uint8_t *input,
                                   uint8_t **out, bool *end_is_cc) {
   uint32x4_t bloom = neon_evaluate_bloom(chars);
   uint32x4_t hangul_mask = neon_hangul_mask(chars);
+  // We use these results to split the input into four cases that have
+  // specialized handling for each case.
   bool bloom_result = vmaxvq_u32(bloom) > 0;
   bool hangul_result = vmaxvq_u32(hangul_mask) > 0;
   if (!bloom_result && !hangul_result) {
@@ -432,7 +447,8 @@ static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
     // Case where we have precomposed characters, but no Hangul
     neon_decompose_non_hangul(chars, in, bloom, out, input, end_is_cc);
   } else {
-    // Case where we have both precomposed characters and Hangul syllables
+    // Case where we have both precomposed characters and Hangul syllables.
+    // Very rare in practice, so we just fall back to the scalar implementation.
     *out +=
         scalar_normalize_utf8_nfd_with_context(input, nchars, *out, end_is_cc);
   }
@@ -566,6 +582,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint16x4_t chars = neon_parse_2_byte_utf8(in);
     uint32x4_t wide = vmovl_u16(chars);
     uint32x4_t bloom = neon_evaluate_bloom(wide);
+    // Hangul syllables are not possible here.
     if (vaddvq_u32(bloom) == 0) {
       neon_skip(in, 8, out, end_is_cc);
     } else {
@@ -619,6 +636,7 @@ static inline uint64_t neon_make_code_point_mask(uint8_t const *input) {
   uint8x16_t c1 = neon_get_codepoint_starts(vld1q_u8(input + 16));
   uint8x16_t c2 = neon_get_codepoint_starts(vld1q_u8(input + 32));
   uint8x16_t c3 = neon_get_codepoint_starts(vld1q_u8(input + 48));
+  // Compute the 64-bit movemask
   uint8x16_t sum0 = vpaddq_u8(vandq_u8(c0, bit_mask), vandq_u8(c1, bit_mask));
   uint8x16_t sum1 = vpaddq_u8(vandq_u8(c2, bit_mask), vandq_u8(c3, bit_mask));
   sum0 = vpaddq_u8(sum0, sum1);
@@ -626,6 +644,7 @@ static inline uint64_t neon_make_code_point_mask(uint8_t const *input) {
 
   uint64_t mask = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
   mask = ~mask;
+  // Shift right to get the end of each code point
   mask >>= 1;
 
   return mask;

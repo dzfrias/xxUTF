@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Hash using the perfect hash function for the given key and salt. See
+// gen/gen.py for the reference implementation of the perfect hash function.
 static uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
   uint32_t salt_key = key + salt;
   uint32_t y1 = salt_key * 2654435769;
@@ -13,6 +15,8 @@ static uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
   return mh >> 32;
 }
 
+// Write a code point into the output buffer as UTF-8 bytes. Returns the number
+// of bytes written.
 size_t scalar_write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
   if (codepoint <= 0x7F) {
     utf8_bytes[0] = (uint8_t)(codepoint & 0xFF);
@@ -87,6 +91,9 @@ size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
   return out - start;
 }
 
+// Look up the canonical combining class (CCC) for a code point.
+//
+// See: https://www.unicode.org/reports/tr44/#Canonical_Combining_Class_Values
 static uint8_t scalar_lookup_ccc(uint32_t code_point) {
   uint32_t salt_hash =
       scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_TABLE_SIZE);
@@ -100,6 +107,8 @@ static uint8_t scalar_lookup_ccc(uint32_t code_point) {
   return 0;
 }
 
+// Parse a UTF-8 code point from the input buffer. The size of the code point is
+// written to the `size` pointer.
 static uint32_t scalar_parse_code_point(uint8_t const *input, uint8_t *size) {
   uint8_t leading = *input;
   if (leading < 0b10000000) {
@@ -123,6 +132,7 @@ static uint32_t scalar_parse_code_point(uint8_t const *input, uint8_t *size) {
   }
 }
 
+// Reverse a subsection of an array.
 static void scalar_reverse(uint8_t *array, size_t start, size_t end) {
   while (start < end) {
     uint8_t tmp = array[start];
@@ -133,12 +143,17 @@ static void scalar_reverse(uint8_t *array, size_t start, size_t end) {
   }
 }
 
+// Rotate a subsection of an array to the right by k positions.
 static void scalar_rotate(uint8_t *array, size_t size, size_t k) {
   scalar_reverse(array, 0, size - 1);
   scalar_reverse(array, 0, k - 1);
   scalar_reverse(array, k, size - 1);
 }
 
+// Sort combining characters in-place (implementation of the canonical ordering
+// algorithm). This is done by walking backwards from the end of the buffer
+// until a starter character is found and sorting the combining characters from
+// there.
 void scalar_sort_characters(uint8_t *out) {
   uint8_t *start = out;
 
@@ -163,6 +178,7 @@ void scalar_sort_characters(uint8_t *out) {
     last_ccc = ccc;
   }
 
+  // Fast path if the combining characters are already sorted
   if (!needs_sort) {
     return;
   }

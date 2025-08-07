@@ -538,6 +538,12 @@ def main() -> None:
             #       relevant discussion on this. It might also be a more convincing argument
             #       for why this operation doesn't mess with the canonical decomposition process
             #       in a harmful way.
+            #
+            #       From https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49537:
+            #       > All characters with non-zero canonical combining class are combining characters,
+            #       > but the reverse is not the case: there are combining characters with a zero
+            #       > canonical combining class.
+            #       This change makes "the reverse" true: x.ccc > 0 iff x is a combining character.
             decomp_map[x].ccc = 1
 
     with open("normdata.c", "w") as f:
