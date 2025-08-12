@@ -106,6 +106,7 @@ pub fn build(b: *std.Build) !void {
     benchmark_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
     run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
+    run_benchmark_exe.addDirectoryArg(b.path("benchmarks/out"));
     for (b.args orelse &.{}) |arg| {
         run_benchmark_exe.addArg(arg);
     }

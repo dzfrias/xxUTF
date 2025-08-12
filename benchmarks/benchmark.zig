@@ -10,13 +10,23 @@ pub fn main() !void {
     var args_it = std.process.args();
     _ = args_it.next().?;
     const input_dir_path = args_it.next() orelse return error.ArgumentError;
+    const output_dir_path = args_it.next() orelse return error.ArgumentError;
     const specific_test = args_it.next();
     var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
     defer input_dir.close();
+    std.fs.cwd().makeDir(output_dir_path) catch {};
+    var out_dir = try std.fs.cwd().openDir(output_dir_path, .{});
+    defer out_dir.close();
     const stdout = std.io.getStdOut();
 
     try writeHeader(stdout.writer(), "UTF8NORM");
-    try benchmarkImplementation(stdout.writer(), input_dir, specific_test, utf8norm_normalize);
+    try benchmarkImplementation(
+        stdout.writer(),
+        input_dir,
+        out_dir,
+        specific_test,
+        utf8norm_normalize,
+    );
     // try stdout.writer().writeByte('\n');
     // try writeHeader(stdout.writer(), "UTF8PROC");
     // try benchmarkImplementation(stdout.writer(), input_dir, specific_test, utf8proc_normalize);
@@ -32,6 +42,7 @@ fn writeHeader(out: anytype, title: []const u8) !void {
 fn benchmarkImplementation(
     out: anytype,
     inputs: std.fs.Dir,
+    data_out: std.fs.Dir,
     specific_test: ?[]const u8,
     comptime impl: fn ([]const u8) void,
 ) !void {
@@ -53,6 +64,12 @@ fn benchmarkImplementation(
             std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
             .{ entry.name, result.mean_ms, result.sd_ms },
         );
+
+        const out_file = try data_out.createFile(entry.name, .{});
+        defer out_file.close();
+        for (result.data) |x| {
+            try out_file.writer().print("{d:.3}\n", .{x});
+        }
     }
 }
 
@@ -75,6 +92,7 @@ fn utf8proc_normalize(src: []const u8) void {
 const BenchResult = struct {
     mean_ms: f64,
     sd_ms: f64,
+    data: [n_iters]f64,
 };
 
 const n_iters = 500;
@@ -125,5 +143,5 @@ fn runBenchmark(file: std.fs.File, comptime impl: fn ([]const u8) void) !BenchRe
     }
     const variance = total_dists / (n_iters - 1);
 
-    return .{ .mean_ms = mean, .sd_ms = std.math.sqrt(variance) };
+    return .{ .mean_ms = mean, .sd_ms = std.math.sqrt(variance), .data = results };
 }
