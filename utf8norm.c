@@ -8,11 +8,9 @@
 
 #include "utf8norm.h"
 
+#include "impl/scalar.h"
 #if UTF8NORM_IMPLEMENTATION_NEON
 #include "impl/neon.h"
-#endif
-#if !UTF8NORM_IMPLEMENTATION_NEON
-#include "impl/scalar.h"
 #endif
 
 size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length,
@@ -25,4 +23,10 @@ size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length,
   return scalar_normalize_utf8_nfd((uint8_t const *)input, length,
                                    (uint8_t *)out);
 #endif
+}
+
+size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length,
+                                   char *out) {
+  return scalar_normalize_utf8_nfc((uint8_t const *)input, length,
+                                   (uint8_t *)out);
 }

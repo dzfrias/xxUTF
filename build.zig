@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) !void {
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
+            .sanitize_c = false,
         }),
         .linkage = .static,
     });
@@ -93,6 +94,19 @@ pub fn build(b: *std.Build) !void {
     run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
     const test_step = b.step("test", "Test utf8norm using the Unicode Character Database");
     test_step.dependOn(&run_test_exe.step);
+
+    const compare_exe = b.addExecutable(.{
+        .name = "compare",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    compare_exe.addIncludePath(b.path(""));
+    compare_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
+    compare_exe.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
+    compare_exe.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
+    b.installArtifact(compare_exe);
 
     const benchmark_exe = b.addExecutable(.{
         .name = "benchmark",

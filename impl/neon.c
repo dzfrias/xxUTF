@@ -237,20 +237,6 @@ static inline uint32x4_t neon_hangul_mask(uint32x4_t input) {
   return cmp;
 }
 
-// Size of UTF-8 code points in bytes, indexed by the first byte.
-static const uint8_t neon_utf8_size[256] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0};
-
 // Decompose a 4x32-bit vector of code points into their UTF-8
 // representations, writing them into the output buffer. The relevant mask
 // indicates which code points should be decomposed (0 meaning irrelevant).
@@ -277,7 +263,7 @@ static void neon_decompose_non_hangul(uint32x4_t values, uint8x16_t in,
     bool r = relevant[i] > 0;
 
     uint8_t leading = input[0];
-    uint8_t size = neon_utf8_size[leading];
+    uint8_t size = NORMDATA_UTF8_SIZE[leading];
     if (size == 1) {
       if (last_is_cc) {
         scalar_sort_characters(*out - 1);
@@ -385,7 +371,7 @@ static void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
   for (size_t i = 0; i < 4; i++) {
     if (relevant[i] == 0) {
       // Not a Hangul syllable, just copy the input.
-      size_t size = neon_utf8_size[input[0]];
+      size_t size = NORMDATA_UTF8_SIZE[input[0]];
       for (size_t j = 0; j < size; j++) {
         *(*out)++ = input[j];
       }

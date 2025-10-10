@@ -60,32 +60,64 @@ const Failure = struct {
 var out: [64]u8 = undefined;
 
 // Test if two normalization forms are equal.
-fn testEqualNormalizedNFD(expected: []const u8, precomposed: []const u8) ?Failure {
-    const nwritten = c.utf8norm_normalize_utf8_nfd(precomposed.ptr, precomposed.len, &out);
+fn testEqualNormalized(
+    comptime impl: fn ([*c]const u8, usize, [*c]u8) callconv(.c) usize,
+    expected: []const u8,
+    input: []const u8,
+) ?Failure {
+    const nwritten = impl(input.ptr, input.len, &out);
     const normalized = out[0..nwritten];
     if (!std.mem.eql(u8, expected, normalized)) {
-        return .{ .expected = expected, .input = precomposed, .got = normalized };
+        return .{ .expected = expected, .input = input, .got = normalized };
     } else {
         return null;
     }
+}
+
+fn normalizeNFC(input: [*c]const u8, len: usize, buf: [*c]u8) callconv(.c) usize {
+    var tmp: [64]u8 = undefined;
+    const nwritten = c.utf8norm_normalize_utf8_nfd(input, len, &tmp);
+    // TODO: eventually, we shouldn't have to call NFD first on the user end
+    return c.utf8norm_normalize_utf8_nfc(&tmp, nwritten, buf);
 }
 
 fn testNFD(test_info: TestInfo) ?Failure {
     const expected = test_info.cols[2];
 
     // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
-    if (testEqualNormalizedNFD(expected, test_info.cols[0])) |failure|
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[0])) |failure|
         return failure
-    else if (testEqualNormalizedNFD(expected, test_info.cols[1])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[1])) |failure|
         return failure
-    else if (testEqualNormalizedNFD(expected, test_info.cols[2])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[2])) |failure|
         return failure;
 
     // c5 ==  toNFD(c4) ==  toNFD(c5)
     const alt_expected = test_info.cols[4];
-    if (testEqualNormalizedNFD(alt_expected, test_info.cols[3])) |failure|
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, alt_expected, test_info.cols[3])) |failure|
         return failure
-    else if (testEqualNormalizedNFD(alt_expected, test_info.cols[4])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, alt_expected, test_info.cols[4])) |failure|
+        return failure;
+
+    return null;
+}
+
+fn testNFC(test_info: TestInfo) ?Failure {
+    const expected = test_info.cols[1];
+
+    // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
+    if (testEqualNormalized(normalizeNFC, expected, test_info.cols[0])) |failure|
+        return failure
+    else if (testEqualNormalized(normalizeNFC, expected, test_info.cols[1])) |failure|
+        return failure
+    else if (testEqualNormalized(normalizeNFC, expected, test_info.cols[2])) |failure|
+        return failure;
+
+    // c4 ==  toNFC(c4) ==  toNFC(c5)
+    const alt_expected = test_info.cols[3];
+    if (testEqualNormalized(normalizeNFC, alt_expected, test_info.cols[3])) |failure|
+        return failure
+    else if (testEqualNormalized(normalizeNFC, alt_expected, test_info.cols[4])) |failure|
         return failure;
 
     return null;
@@ -141,7 +173,23 @@ pub fn main() !void {
         defer test_node.end();
         const test_info = try parseTestInfo(allocator, line);
         if (testNFD(test_info)) |failure| {
-            try stderr.writer().print("test at line {} failed: {?s}\n", .{ i + 1, test_info.comment });
+            try stderr.writer().print(
+                "NFD test at line {} failed: {?s}\n",
+                .{ i + 1, test_info.comment },
+            );
+            try stderr.writeAll("input:    ");
+            try writeHex(stderr.writer(), failure.input);
+            try stderr.writeAll("expected: ");
+            try writeHex(stderr.writer(), failure.expected);
+            try stderr.writeAll("got:      ");
+            try writeHex(stderr.writer(), failure.got);
+            return error.Failed;
+        }
+        if (testNFC(test_info)) |failure| {
+            try stderr.writer().print(
+                "NFC test at line {} failed: {?s}\n",
+                .{ i + 1, test_info.comment },
+            );
             try stderr.writeAll("input:    ");
             try writeHex(stderr.writer(), failure.input);
             try stderr.writeAll("expected: ");

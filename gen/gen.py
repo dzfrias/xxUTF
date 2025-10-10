@@ -11,7 +11,7 @@ class DecompValue:
 
 
 DecompMap = dict[int, DecompValue]
-CCCMap = dict[int, int]
+CompMap = dict[tuple[int, int], int]
 
 
 # Helper to recusively decompose a Unicode character `c`
@@ -95,11 +95,11 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
 @dataclass
 class TableInfo:
     decomp_bytes_len: int
-    salt_len: int
-    kv_len: int
+    decomp_len: int
+    comp_len: int
 
 
-def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
+def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> TableInfo:
     offsets = {}
     lengths = {}
     offset = 0
@@ -126,17 +126,21 @@ def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
     writer.write("};\n")
     assert offset <= 2**16 - 1
 
-    salt, keys = minimal_perfect_hash(decomp_map)
-    writer.write(f"\nconst uint16_t NORMDATA_DECOMPOSED_SALT[{len(salt)}] = {{\n")
-    for salts in batched(salt, 14):
+    decomp_salt, decomp_keys = minimal_perfect_hash(decomp_map)
+    writer.write(
+        f"\nconst uint16_t NORMDATA_DECOMPOSED_SALT[{len(decomp_salt)}] = {{\n"
+    )
+    for salts in batched(decomp_salt, 14):
         writer.write(" ")
         for s in salts:
             writer.write(f" 0x{s:04X},")
         writer.write("\n")
     writer.write("};\n")
 
-    writer.write(f"\nconst NormdataEntry NORMDATA_DECOMPOSED_KV[{len(keys)}] = {{\n")
-    for batch in batched(keys, 5):
+    writer.write(
+        f"\nconst NormdataEntry NORMDATA_DECOMPOSED_KV[{len(decomp_keys)}] = {{\n"
+    )
+    for batch in batched(decomp_keys, 5):
         writer.write(" ")
         for k in batch:
             ccc = decomp_map[k].ccc
@@ -144,8 +148,43 @@ def generate_hash_tables(writer, decomp_map: DecompMap) -> TableInfo:
         writer.write("\n")
     writer.write("};\n")
 
+    # Write the composition map
+    comp_table = {}
+    for (c1, c2), x in comp_map.items():
+        if c1 <= 0xFFFF and c2 <= 0xFFFF:
+            comp_table[(c1 << 16) | c2] = x
+    comp_salt, comp_keys = minimal_perfect_hash(comp_table)
+    writer.write(f"\nconst uint16_t NORMDATA_COMPOSITION_SALT[{len(comp_salt)}] = {{\n")
+    for salts in batched(comp_salt, 14):
+        writer.write(" ")
+        for s in salts:
+            writer.write(f" 0x{s:04X},")
+        writer.write("\n")
+    writer.write("};\n")
+    writer.write(
+        f"\nconst uint32_t NORMDATA_COMPOSITION_KV[{len(comp_keys)}][2] = {{\n"
+    )
+    for batch in batched(comp_keys, 8):
+        writer.write(" ")
+        for k in batch:
+            comp = comp_table[k]
+            writer.write(f" {{0x{comp:05X}, 0x{k:08X}}},")
+        writer.write("\n")
+    writer.write("};\n")
+
+    writer.write(
+        "\nuint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2) {\n"
+    )
+    for (c1, c2), x in comp_map.items():
+        if c1 <= 0xFFFF and c2 <= 0xFFFF:
+            continue
+        writer.write(f"  if (c1 == 0x{c1:08X} && c2 == 0x{c2:08X}) return 0x{x:08X};\n")
+    writer.write("  return 0;\n}\n")
+
     return TableInfo(
-        decomp_bytes_len=len(all_decomp_bytes), salt_len=len(salt), kv_len=len(keys)
+        decomp_bytes_len=len(all_decomp_bytes),
+        decomp_len=len(decomp_keys),
+        comp_len=len(comp_keys),
     )
 
 
@@ -316,15 +355,15 @@ def hash_32bit_fast(x, seed=0):
     return x
 
 
-BLOOM_FILTER_SIZE = 131072
-BLOOM_FILTER_N_BLOCKS = BLOOM_FILTER_SIZE // 32
+DECOMP_BLOOM_FILTER_SIZE = 131072
+DECOMP_BLOOM_FILTER_N_BLOCKS = DECOMP_BLOOM_FILTER_SIZE // 32
 
 
-def create_bloom_mask(c: int) -> tuple[int, int]:
+def create_decomp_bloom_mask(c: int) -> tuple[int, int]:
     h1 = multiply_shift_hash(c)
     h2 = xorshift_hash(c)
     h3 = hash_32bit_fast(c)
-    block = h1 % BLOOM_FILTER_N_BLOCKS
+    block = h1 % DECOMP_BLOOM_FILTER_N_BLOCKS
     shift1 = h2 % 32
     shift2 = h3 % 32
     shift3 = (h2 + h3) % 32
@@ -335,14 +374,50 @@ def create_bloom_mask(c: int) -> tuple[int, int]:
     return block, mask
 
 
-def generate_bloom_filter(writer, decomp_map: DecompMap) -> BloomFilterInfo:
-    blocks = [0] * BLOOM_FILTER_N_BLOCKS
+def generate_decomp_bloom_filter(writer, decomp_map: DecompMap) -> BloomFilterInfo:
+    blocks = [0] * DECOMP_BLOOM_FILTER_N_BLOCKS
     for c in decomp_map:
-        block, mask = create_bloom_mask(c)
+        block, mask = create_decomp_bloom_mask(c)
         blocks[block] |= mask
 
     writer.write(
-        f"\nconst uint32_t NORMDATA_BLOOM_FILTER[{BLOOM_FILTER_N_BLOCKS}] = {{\n"
+        f"\nconst uint32_t NORMDATA_BLOOM_FILTER[{DECOMP_BLOOM_FILTER_N_BLOCKS}] = {{\n"
+    )
+    for row in batched(blocks, 10):
+        writer.write(" ")
+        for block in row:
+            writer.write(f" 0x{block:08X},")
+        writer.write("\n")
+    writer.write("};\n")
+
+    return BloomFilterInfo(blocks)
+
+
+NFC_QC_BLOOM_FILTER_SIZE = 65536
+NFC_QC_BLOOM_FILTER_N_BLOCKS = NFC_QC_BLOOM_FILTER_SIZE // 32
+
+
+def create_nfc_qc_bloom_mask(c: int) -> tuple[int, int]:
+    h1 = multiply_shift_hash(c)
+    h2 = xorshift_hash(c, seed=0xDEADBEEF)
+    h3 = hash_32bit_fast(c, seed=0x4B71D390)
+    block = h1 % NFC_QC_BLOOM_FILTER_N_BLOCKS
+    shift1 = h2 % 32
+    shift2 = h3 % 32
+    mask = 0
+    mask |= 1 << shift1
+    mask |= 1 << shift2
+    return block, mask
+
+
+def generate_nfc_qc_bloom_filter(writer, qc_vals: list[int]) -> BloomFilterInfo:
+    blocks = [0] * NFC_QC_BLOOM_FILTER_N_BLOCKS
+    for c in qc_vals:
+        block, mask = create_nfc_qc_bloom_mask(c)
+        blocks[block] |= mask
+
+    writer.write(
+        f"\nconst uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[{NFC_QC_BLOOM_FILTER_N_BLOCKS}] = {{\n"
     )
     for row in batched(blocks, 10):
         writer.write(" ")
@@ -355,16 +430,26 @@ def generate_bloom_filter(writer, decomp_map: DecompMap) -> BloomFilterInfo:
 
 
 def generate_header(
-    writer, table_info: TableInfo, shuf_info: ShuffleInfo, bloom_info: BloomFilterInfo
+    writer,
+    table_info: TableInfo,
+    shuf_info: ShuffleInfo,
+    decomp_bloom_info: BloomFilterInfo,
+    nfc_qc_bloom_info: BloomFilterInfo,
 ):
     writer.write(
         f"extern const uint8_t NORMDATA_DECOMPOSED_CHARS[{table_info.decomp_bytes_len}];\n"
     )
     writer.write(
-        f"extern const uint16_t NORMDATA_DECOMPOSED_SALT[{table_info.salt_len}];\n"
+        f"extern const uint16_t NORMDATA_DECOMPOSED_SALT[{table_info.decomp_len}];\n"
     )
     writer.write(
-        f"extern const NormdataEntry NORMDATA_DECOMPOSED_KV[{table_info.kv_len}];\n"
+        f"extern const NormdataEntry NORMDATA_DECOMPOSED_KV[{table_info.decomp_len}];\n"
+    )
+    writer.write(
+        f"extern const uint16_t NORMDATA_COMPOSITION_SALT[{table_info.comp_len}];\n"
+    )
+    writer.write(
+        f"extern const uint32_t NORMDATA_COMPOSITION_KV[{table_info.comp_len}][2];\n"
     )
     writer.write(
         f"extern const uint8_t NORMDATA_SHUFUTF8[{shuf_info.shufutf8_len}][16];\n"
@@ -377,7 +462,10 @@ def generate_header(
     writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;\n")
     writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
     writer.write(
-        f"extern const uint32_t NORMDATA_BLOOM_FILTER[{len(bloom_info.blocks)}];\n"
+        f"extern const uint32_t NORMDATA_BLOOM_FILTER[{len(decomp_bloom_info.blocks)}];\n"
+    )
+    writer.write(
+        f"extern const uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[{len(nfc_qc_bloom_info.blocks)}];\n"
     )
 
 
@@ -387,6 +475,9 @@ PREAMBLE_H = """// This file was generated by gen/gen.py
 #define UTF8NORM_NORMDATA_H
 
 #include <stdint.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 
 typedef struct NormdataEntry {
   uint8_t len;
@@ -410,10 +501,28 @@ static const uint16_t NORMDATA_T_COUNT = 28;
 static const uint16_t NORMDATA_N_COUNT = NORMDATA_V_COUNT * NORMDATA_T_COUNT;
 static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 
+uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
+
 """
 
 POSTAMBLE_H = """
 static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
+static const uint32_t NORMDATA_COMPOSED_TABLE_SIZE = sizeof(NORMDATA_COMPOSITION_KV) / sizeof(uint64_t);
+
+static const uint8_t NORMDATA_UTF8_SIZE[256] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0};
+
+#pragma GCC diagnostic pop
 
 #endif // UTF8NORM_NORMDATA_H
 """
@@ -422,6 +531,14 @@ PREAMBLE = """// This file was generated by gen/gen.py
 
 #include "normdata.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
+"""
+
+POSTAMBLE = """
+
+#pragma GCC diagnostic pop
 """
 
 
@@ -446,15 +563,15 @@ def code_points():
 
 
 def bloom_filter_fps(
-    code_points, info: BloomFilterInfo, decomp_map: DecompMap
+    code_points, info: BloomFilterInfo, mask_fn, negative_fn
 ) -> tuple[list[int], float]:
     fps = []
     n = 0
     for c in code_points:
         n += 1
-        block_idx, mask = create_bloom_mask(c)
+        block_idx, mask = mask_fn(c)
         block = info.blocks[block_idx]
-        if (block & mask) == mask and c not in decomp_map:
+        if (block & mask) == mask and negative_fn(c):
             fps.append(c)
     return fps, len(fps) / n
 
@@ -476,9 +593,8 @@ def align_key_value_lines(lines: list[str]) -> list[str]:
     return aligned
 
 
-def main() -> None:
+def load_decomp_map() -> DecompMap:
     decomp_map: DecompMap = {}
-    ccc_map: CCCMap = {}
 
     # Read in UnicodeData.txt and generate a decomposition mapping
     with open("UnicodeData.txt", "r") as f:
@@ -491,7 +607,6 @@ def main() -> None:
             if ccc > 0:
                 # Add all CCC > 0 characters to the decomp map
                 decomp_map[value] = DecompValue([value], ccc)
-                ccc_map[value] = ccc
 
             # Skip decomp if there is nothing or if it is a compatibility decomposition
             if mappings[0] == "" or mappings[0].startswith("<"):
@@ -499,24 +614,65 @@ def main() -> None:
 
             decomp_map[value] = DecompValue([int(x, 16) for x in mappings], ccc)
 
+    return decomp_map
+
+
+@dataclass
+class DerivedProps:
+    comp_exclusions: list[int]
+    nfc_qc: list[int]
+
+
+def load_derived_props() -> DerivedProps:
+    exclusions = []
+    nfc_qc = []
+
+    with open("DerivedNormalizationProps.txt", "r") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+
+            parts = line.split(";")
+            raw_code_points = parts[0].strip().split("..")
+            assert len(raw_code_points) <= 2
+            if len(raw_code_points) == 1:
+                c = int(raw_code_points[0], 16)
+                code_points = range(c, c + 1)
+            else:
+                start = int(raw_code_points[0], 16)
+                end = int(raw_code_points[1], 16)
+                code_points = range(start, end + 1)
+
+            if "Full_Composition_Exclusion" in line:
+                exclusions.extend(code_points)
+            if "NFC_QC" in line:
+                nfc_qc.extend(code_points)
+
+    return DerivedProps(comp_exclusions=exclusions, nfc_qc=nfc_qc)
+
+
+def main() -> None:
+    decomp_map = load_decomp_map()
+    derived = load_derived_props()
+
+    comp_map: CompMap = {}
+    for x, decomp in decomp_map.items():
+        if x in derived.comp_exclusions or decomp.decomps[0] == x:
+            continue
+        assert len(decomp.decomps) == 2
+        comp_map[(decomp.decomps[0], decomp.decomps[1])] = x
+
     # Get the full expansion of each code point
-    max_decomps = 0
     for x, decomp in decomp_map.items():
         final_decomp: list[int] = []
         for c in decomp.decomps:
             # Get the full expansion of each code point that makes up `x`
             expansion = expand(c, decomp_map)
             final_decomp.extend(expansion)
-        s = sorted(final_decomp, key=lambda c: ccc_map.get(c, 0))
-        if s != final_decomp:
-            print("Unsorted decomp detected. Re-check data")
-            exit(1)
         decomp_map[x].decomps = final_decomp
-        max_decomps = max(max_decomps, len(final_decomp))
-
-    # It is a generally good assumption that precomposed code points don't decompose into
-    # more than four code points.
-    assert max_decomps <= 4
+        # It is a generally good assumption that precomposed code points don't decompose into
+        # more than four code points.
+        assert len(final_decomp) <= 4
 
     for x, decomps in decomp_map.items():
         if (
@@ -548,34 +704,52 @@ def main() -> None:
 
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
-        hash_info = generate_hash_tables(f, decomp_map)
+        hash_info = generate_hash_tables(f, decomp_map, comp_map)
         shuf_info = generate_shuffle_tables(f)
-        bloom_filter_info = generate_bloom_filter(f, decomp_map)
+        decomp_bloom_info = generate_decomp_bloom_filter(f, decomp_map)
+        nfc_qc_bloom_info = generate_nfc_qc_bloom_filter(f, derived.nfc_qc)
+        f.write(POSTAMBLE)
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
-        generate_header(f, hash_info, shuf_info, bloom_filter_info)
+        generate_header(f, hash_info, shuf_info, decomp_bloom_info, nfc_qc_bloom_info)
         f.write(POSTAMBLE_H)
 
     KILOBYTE = 1024
     lines = []
     lines.append(f"Decomposed chars: {hash_info.decomp_bytes_len / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed salt: {(hash_info.salt_len * 2) / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed KV: {(hash_info.kv_len * 8) / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed salt: {(hash_info.decomp_len * 2) / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed KV: {(hash_info.decomp_len * 8) / KILOBYTE:.1f}KiB")
+    lines.append(f"Composition salt: {(hash_info.comp_len * 2) / KILOBYTE:.1f}KiB")
+    lines.append(f"Composition KV: {(hash_info.comp_len * 8) / KILOBYTE:.1f}KiB")
     lines.append(f"UTF-8 shuffle: {(shuf_info.shufutf8_len * 16) / KILOBYTE:.1f}KiB")
     lines.append(
         f"Code point index: {(shuf_info.codepoint_index_len * 2) / KILOBYTE:.1f}KiB"
     )
     lines.append(
-        f"Bloom filter: {(len(bloom_filter_info.blocks) * 4) / KILOBYTE:.1f}KiB"
+        f"NFD bloom filter: {(len(decomp_bloom_info.blocks) * 4) / KILOBYTE:.1f}KiB"
     )
-    fp_list, fpr = bloom_filter_fps(code_points(), bloom_filter_info, decomp_map)
+    fp_list, fpr = bloom_filter_fps(
+        code_points(),
+        decomp_bloom_info,
+        create_decomp_bloom_mask,
+        lambda c: c not in decomp_map,
+    )
     lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
-    bmp = len([c for c in fp_list if c <= 0xFFFF])
-    lines.append(f"NFD bloom filter BMP count: {bmp}")
-    ascii = len([c for c in fp_list if c < 128])
-    lines.append(f"NFD bloom filter ASCII count: {ascii}")
-    hangul = len([c for c in fp_list if 0xAC00 <= c <= 0xD7AF])
-    lines.append(f"NFD bloom filter Hangul count: {hangul}")
+    lines.append(f"NFD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
+    lines.append(f"NFD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
+    lines.append(
+        f"NFC QC bloom filter: {(len(nfc_qc_bloom_info.blocks) * 4) / KILOBYTE:.1f}KiB"
+    )
+    fp_list, fpr = bloom_filter_fps(
+        code_points(),
+        nfc_qc_bloom_info,
+        create_nfc_qc_bloom_mask,
+        lambda c: c not in derived.nfc_qc,
+    )
+    # TODO: might be worth it to make a BMP-specific bloom filter
+    lines.append(f"NFC QC bloom filter FPR: {fpr:.5f}")
+    lines.append(f"NFC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
+    lines.append(f"NFC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
 
     aligned = align_key_value_lines(lines)
     for line in aligned:

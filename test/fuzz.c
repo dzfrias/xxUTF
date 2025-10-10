@@ -93,11 +93,24 @@ static char *utf8proc_normalize_utf8_nfd(const char *input, int32_t len) {
   return (char *)normalized;
 }
 
+static char *utf8proc_normalize_utf8_nfc(const char *input, int32_t len) {
+  utf8proc_uint8_t *normalized = NULL;
+  utf8proc_ssize_t result =
+      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
+                   UTF8PROC_COMPOSE | UTF8PROC_STABLE);
+
+  if (result < 0) {
+    return NULL;
+  }
+
+  return (char *)normalized;
+}
+
 #ifdef __AFL_FUZZ_TESTCASE_LEN
 __AFL_FUZZ_INIT();
 #endif
 
-void print_codepoints(char const *s, ssize_t len) {
+static void print_codepoints(char const *s, ssize_t len) {
   if (!s)
     return;
 
@@ -133,7 +146,7 @@ void print_codepoints(char const *s, ssize_t len) {
   }
 }
 
-int main(int argc, char **argv) {
+int main() {
 #ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
@@ -172,33 +185,58 @@ int main(int argc, char **argv) {
   while ((nread = read(0, buf, sizeof(buf) - 1)) > 0) {
     buf[nread] = '\0';
 
-    char utf8norm_out[16384];
-    size_t nwritten = utf8norm_normalize_utf8_nfd(buf, nread, utf8norm_out);
+    char utf8norm_out_nfd[16384];
+    size_t nwritten_nfd =
+        utf8norm_normalize_utf8_nfd(buf, nread, utf8norm_out_nfd);
+    char utf8norm_out_nfc[16384];
+    size_t nwritten_nfc =
+        utf8norm_normalize_utf8_nfc(buf, nread, utf8norm_out_nfc);
 
     size_t pos;
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten, &pos)) {
-      printf("normalized output is invaild UTF-8, position %zu\n", pos);
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfd, nwritten_nfd, &pos)) {
+      printf("normalized (NFD) output is invaild UTF-8, position %zu\n", pos);
       continue;
     }
-    utf8norm_out[nwritten] = '\0';
+    utf8norm_out_nfd[nwritten_nfd] = '\0';
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfc, nwritten_nfc, &pos)) {
+      printf("normalized (NFC) output is invaild UTF-8, position %zu\n", pos);
+      continue;
+    }
+    utf8norm_out_nfc[nwritten_nfc] = '\0';
 
-    char *utf8proc_out = utf8proc_normalize_utf8_nfd(buf, nread);
+    char *utf8proc_out_nfd = utf8proc_normalize_utf8_nfd(buf, nread);
+    char *utf8proc_out_nfc = utf8proc_normalize_utf8_nfc(buf, nread);
 
-    if (equal(utf8norm_out, utf8proc_out)) {
-      printf("Both buffers equal!\n");
+    if (equal(utf8norm_out_nfd, utf8proc_out_nfd)) {
+      printf("Both buffers (NFD) equal!\n");
     } else {
-      printf("Buffers not equal\n");
+      printf("Buffers (NFC) not equal\n");
       printf("   input: ");
       print_codepoints(buf, nread);
       printf("\n");
       printf("utf8norm: ");
-      print_codepoints(utf8norm_out, -1);
+      print_codepoints(utf8norm_out_nfd, -1);
       printf("\n");
       printf("utf8proc: ");
-      print_codepoints(utf8proc_out, -1);
+      print_codepoints(utf8proc_out_nfd, -1);
       printf("\n");
     }
-    free(utf8proc_out);
+    if (equal(utf8norm_out_nfc, utf8proc_out_nfc)) {
+      printf("Both buffers (NFC) equal!\n");
+    } else {
+      printf("Buffers (NFC) not equal\n");
+      printf("   input: ");
+      print_codepoints(buf, nread);
+      printf("\n");
+      printf("utf8norm: ");
+      print_codepoints(utf8norm_out_nfc, -1);
+      printf("\n");
+      printf("utf8proc: ");
+      print_codepoints(utf8proc_out_nfc, -1);
+      printf("\n");
+    }
+    free(utf8proc_out_nfd);
+    free(utf8proc_out_nfc);
   }
 
   return 0;
