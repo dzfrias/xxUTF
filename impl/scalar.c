@@ -1,5 +1,6 @@
 #include "impl/scalar.h"
 #include "normdata.h"
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,7 +19,7 @@ static uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
 
 // Write a code point into the output buffer as UTF-8 bytes. Returns the number
 // of bytes written.
-static size_t scalar_write_codepoint(uint32_t codepoint, uint8_t *utf8_bytes) {
+static size_t scalar_write_code_point(uint32_t codepoint, uint8_t *utf8_bytes) {
   if (codepoint <= 0x7F) {
     utf8_bytes[0] = (uint8_t)(codepoint & 0xFF);
     return 1;
@@ -72,11 +73,12 @@ static size_t scalar_decompose_hangul(uint32_t code_point, uint8_t *out) {
   uint32_t t_index = s_index % NORMDATA_T_COUNT;
 
   size_t nwritten = 0;
-  nwritten += scalar_write_codepoint(NORMDATA_L_BASE + l_index, out);
-  nwritten += scalar_write_codepoint(NORMDATA_V_BASE + v_index, out + nwritten);
+  nwritten += scalar_write_code_point(NORMDATA_L_BASE + l_index, out);
+  nwritten +=
+      scalar_write_code_point(NORMDATA_V_BASE + v_index, out + nwritten);
   if (t_index > 0) {
     nwritten +=
-        scalar_write_codepoint(NORMDATA_T_BASE + t_index, out + nwritten);
+        scalar_write_code_point(NORMDATA_T_BASE + t_index, out + nwritten);
   }
   return nwritten;
 }
@@ -111,6 +113,19 @@ size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
 // composed code point if the composition is valid, or zero if the composition
 // is not valid.
 static uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
+  if (c1 >= NORMDATA_L_BASE && c1 < NORMDATA_L_BASE + NORMDATA_L_COUNT &&
+      c2 >= NORMDATA_V_BASE && c2 < NORMDATA_V_BASE + NORMDATA_V_COUNT) {
+    uint32_t l_index = c1 - NORMDATA_L_BASE;
+    uint32_t v_index = c2 - NORMDATA_V_BASE;
+    uint32_t lv_index = l_index * NORMDATA_N_COUNT + v_index * NORMDATA_T_COUNT;
+    return NORMDATA_S_BASE + lv_index;
+  }
+  if (c1 >= NORMDATA_S_BASE && c1 < NORMDATA_S_BASE + NORMDATA_S_COUNT &&
+      (c1 - NORMDATA_S_BASE) % NORMDATA_T_COUNT == 0 && c2 >= NORMDATA_T_BASE &&
+      c2 < NORMDATA_T_BASE + NORMDATA_T_COUNT) {
+    return c1 + (c2 - NORMDATA_T_BASE);
+  }
+
   uint32_t wide = c1;
   uint32_t key = (wide << 16) | c2;
   uint32_t salt_hash = scalar_phash(key, 0, NORMDATA_COMPOSED_TABLE_SIZE);
@@ -185,6 +200,11 @@ static void scalar_rotate(uint8_t *array, size_t size, size_t k) {
   scalar_reverse(array, k, size - 1);
 }
 
+// Check if a given byte is the leading byte of a UTF-8 code point
+static bool scalar_is_leading_utf8_byte(uint8_t b) {
+  return (b & 0b11000000) != 0b10000000;
+}
+
 // Sort combining characters in-place (implementation of the canonical ordering
 // algorithm). This is done by walking backwards from the end of the buffer
 // until a starter character is found and sorting the combining characters from
@@ -196,7 +216,7 @@ void scalar_sort_characters(uint8_t *out) {
   uint8_t last_ccc = 255;
   bool needs_sort = false;
   while (true) {
-    while ((*out & 0b11000000) == 0b10000000) {
+    while (!scalar_is_leading_utf8_byte(*out)) {
       out--;
     }
     uint8_t size;
@@ -367,6 +387,14 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x, uint32_t seed) {
 }
 
 static bool scalar_is_nfc_relevant(uint32_t code_point) {
+  // It is relevant automatically if it is a Hangul code point
+  if ((code_point >= NORMDATA_S_BASE &&
+       code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT) ||
+      (code_point >= NORMDATA_L_BASE &&
+       code_point < NORMDATA_L_BASE + NORMDATA_L_COUNT)) {
+    return true;
+  }
+
   uint32_t h1 = scalar_multiply_shift_hash(code_point);
   uint32_t h2 = scalar_xorshift_hash(code_point, 0xDEADBEEF);
   uint32_t h3 = scalar_xorshift_mul_hash(code_point, 0x4B71D390);
@@ -381,79 +409,8 @@ static bool scalar_is_nfc_relevant(uint32_t code_point) {
   return (block & mask) == mask;
 }
 
-// Search for a composition match, starting from the given `starter` code point.
-// `delete_pos` is set to the position of the code point that should be
-// deleted after composition (if any), and `next_starter_pos` is set to the
-// position of the next starter character, or the end of the string.
-static uint32_t scalar_search_for_match(const uint8_t *input, size_t length,
-                                        uint32_t starter, size_t *delete_pos,
-                                        size_t *next_starter_pos) {
-  *delete_pos = (size_t)-1;
-  size_t p = 0;
-  uint32_t composed = 0;
-  while (p < length) {
-    uint8_t size;
-    uint32_t c = scalar_parse_code_point(input + p, &size);
-    uint8_t ccc = scalar_lookup_ccc(c);
-
-    if (composed == 0) {
-      if (starter <= 0xFFFF && c <= 0xFFFF) {
-        *delete_pos = p;
-        composed = scalar_try_compose_bmp(starter, c);
-      } else {
-        *delete_pos = p;
-        composed = normdata_compose_supplementary(starter, c);
-      }
-    }
-
-    // If we find a starter and we _didn't_ combine with this starter, then
-    // we should break.
-    if (ccc == 0 && *delete_pos != p) {
-      *next_starter_pos = p;
-      break;
-    }
-
-    p += size;
-  }
-
-  return composed;
-}
-
-// Compose a Hangul syllable from the L, V, and (possibly) T parts. The L part
-// is given as an input parameter, while the V and T parts are parsed from the
-// input buffer. The function returns the composed Hangul syllable and sets
-// `has_t` to based on if a T syllable was found.
-//
-// Returns zero if the composition is not valid.
-static uint32_t scalar_try_compose_hangul(const uint8_t *input, uint32_t l_part,
-                                          bool *has_t) {
-  uint8_t size;
-  uint32_t v_part = scalar_parse_code_point(input, &size);
-  if (v_part < NORMDATA_V_BASE ||
-      v_part >= NORMDATA_V_BASE + NORMDATA_V_COUNT) {
-    // Invalid V part, return zero
-    *has_t = false;
-    return 0;
-  }
-  uint32_t t_part = scalar_parse_code_point(input + 3, &size);
-  uint32_t l_index = l_part - NORMDATA_L_BASE;
-  uint32_t v_index = v_part - NORMDATA_V_BASE;
-  uint32_t lv_index = l_index * NORMDATA_N_COUNT + v_index * NORMDATA_T_COUNT;
-
-  if (t_part >= NORMDATA_T_BASE &&
-      t_part < NORMDATA_T_BASE + NORMDATA_T_COUNT) {
-    uint32_t t_index = t_part - NORMDATA_T_BASE;
-    // T part is present, so we return the LV part plus the T part
-    *has_t = true;
-    return NORMDATA_S_BASE + lv_index + t_index;
-  } else {
-    // T part is not present, so we return the LV part only
-    *has_t = false;
-    return NORMDATA_S_BASE + lv_index;
-  }
-}
-
-static void scalar_print_code_points(const uint8_t *input, size_t length) {
+__attribute__((unused)) static void
+scalar_print_code_points(const uint8_t *input, size_t length) {
   size_t p = 0;
   while (p < length) {
     uint8_t size;
@@ -464,192 +421,165 @@ static void scalar_print_code_points(const uint8_t *input, size_t length) {
   printf("\n");
 }
 
+// Shift the bytes in a byte buffer to the right by a certain amount.
+static void scalar_shift_right(uint8_t *buf, size_t length, size_t amt) {
+  for (uint8_t *i = buf + length - 1; i >= buf; i--) {
+    *(i + amt) = *i;
+  }
+}
+
+// Shift the bytes in a byte buffer to the left by a certain amount.
+static void scalar_shift_left(uint8_t *buf, size_t length, size_t amt) {
+  for (uint8_t *i = buf; i < buf + (length - amt); i++) {
+    *i = *(i + amt);
+  }
+}
+
+// Find a starter character in a UTF-8 buffer, searching from right to left.
+static size_t scalar_rfind_starter(const uint8_t *input, size_t length) {
+  size_t p = 0;
+  while (p < length) {
+    while (!scalar_is_leading_utf8_byte(input[length - p - 1])) {
+      p++;
+    }
+    uint8_t size;
+    uint32_t c = scalar_parse_code_point(input + (length - p - 1), &size);
+    uint8_t ccc = scalar_lookup_ccc(c);
+    // If we found a starter, then we're done
+    if (ccc == 0) {
+      return length - p - 1;
+    }
+    p++;
+  }
+  return -1;
+}
+
 size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
                                  uint8_t *out) {
   uint8_t *start = out;
   size_t p = 0;
-  uint32_t last_yes = 0;
-  size_t last_yes_pos = 0;
-  uint8_t *last_yes_write_pos = out;
+  uint8_t last_ccc = 0;
 
   while (p < length) {
     uint8_t size;
     uint32_t c = scalar_parse_code_point(input + p, &size);
     uint8_t ccc = scalar_lookup_ccc(c);
 
-    printf("%u\n", c);
-
-    // Check if the syllable is an L part of a Hangul syllable
-    if (c >= NORMDATA_L_BASE && c < NORMDATA_L_BASE + NORMDATA_L_COUNT) {
-      bool has_t;
-      uint32_t composed =
-          scalar_try_compose_hangul(input + p + size, c, &has_t);
-      if (composed == 0) {
-        for (size_t i = 0; i < size; i++) {
-          *out++ = input[p + i];
-        }
-        p += size;
-      } else {
-        out += scalar_write_codepoint(composed, out);
-        p += size + (has_t ? 6 : 3);
-      }
-      continue;
-    }
-
-    // TODO: handle false positives using the true ph table. Not
-    //       sure if we should actually do this.
-    if (!scalar_is_nfc_relevant(c)) {
-      if (ccc == 0) {
-        last_yes = c;
-        last_yes_pos = p;
-        last_yes_write_pos = out;
-      }
+    // We can skip this character if it the combining classes are in the right
+    // order and if it is irrelevant
+    if (ccc <= last_ccc && !scalar_is_nfc_relevant(c)) {
       for (size_t i = 0; i < size; i++) {
         *out++ = input[p + i];
       }
       p += size;
+      last_ccc = ccc;
       continue;
     }
 
-    uint8_t last_yes_size = NORMDATA_UTF8_SIZE[input[last_yes_pos]];
+    // TODO: probably not correct. What happens when we decompose this character
+    //       and the ccc changes? We should set it to the final character in the
+    //       decomposition.
+    last_ccc = ccc;
 
-    // At this point, `next_starter_offset` is the length of the rest
-    // of the input buffer
-    size_t next_starter_offset = length - (last_yes_pos + last_yes_size);
-    size_t delete_offset = 0;
-    // Search for a match past the last NFC QC "yes"
-    uint32_t composed = scalar_search_for_match(
-        input + last_yes_pos + last_yes_size, next_starter_offset, last_yes,
-        &delete_offset, &next_starter_offset);
-
-    // If we didn't find a composition, just copy the character as is.
-    // The code past this point is fairly complicated because composition
-    // is a fairly complicated algorithm. Fortunately, unlike with NFD,
-    // if we reach this point, we're already in an unusual case.
-    if (composed == 0) {
-      if (ccc == 0) {
-        last_yes = c;
-        last_yes_pos = p;
-        last_yes_write_pos = out;
-      }
-      for (size_t i = 0; i < size; i++) {
-        *out++ = input[p + i];
-      }
-      p += size;
-      continue;
+    // This starter should be NFC irrelevant
+    size_t previous_starter_pos = scalar_rfind_starter(input, p);
+    if (previous_starter_pos == (size_t)-1) {
+      previous_starter_pos = 0;
     }
 
-    printf("composed into: %u\n", composed);
-    uint8_t dummy;
-    printf("deleting: %u\n",
-           scalar_parse_code_point(
-               input + last_yes_pos + last_yes_size + delete_offset, &dummy));
-
-    // This new composed character will be put in place of the last
-    // NFC QC yes, so we need to move everything over by the size
-    // of the new character.
-    uint8_t composed_size = scalar_code_point_size(composed);
-    uint8_t shift = composed_size - last_yes_size;
-    for (uint8_t *i = out - 1; i >= last_yes_write_pos; i--) {
-      *(i + shift) = *i;
-    }
-    out = last_yes_write_pos;
-
-    p = last_yes_pos + last_yes_size;
-    delete_offset += p;
-    next_starter_offset += p;
-    out += scalar_write_codepoint(composed, out);
-
-    // Copy until the character we're deleting
-    for (size_t i = p; i < delete_offset; i++) {
-      *out++ = input[i];
-    }
-
-    // Skip over the character we're deleting
-    uint8_t delete_size = NORMDATA_UTF8_SIZE[input[delete_offset]];
-    p = delete_offset + delete_size;
-
-    // Copy until the next starter character
-    for (size_t i = p; i < next_starter_offset; i++) {
-      *out++ = input[i];
-    }
-    p = next_starter_offset;
-
-    // Put the next starter into the out buffer in order to consider it for a
-    // match
-    uint8_t next_starter_size = NORMDATA_UTF8_SIZE[input[next_starter_offset]];
-    for (size_t i = 0; i < next_starter_size; i++) {
-      out[i] = input[p + i];
-    }
-
-    // This is the length of the output buffer that we're currently considering
-    // for composition (not including the initial starter character)
-    size_t out_len =
-        (out + next_starter_size) - (last_yes_write_pos + composed_size);
-
-    uint8_t last_composed_size = composed_size;
-    uint32_t last_composed = composed;
-    // Try to compose within the output buffer for as long as possible
-    while (true) {
-      delete_offset = 0;
-      next_starter_offset = 0;
-      // Search for a match past the initial starter character in the output
-      // buffer
-      composed = scalar_search_for_match(
-          last_yes_write_pos + last_composed_size, out_len, last_composed,
-          &delete_offset, &next_starter_offset);
-      printf("next composed into: %u\n", composed);
-      printf("next deleting: %u\n",
-             scalar_parse_code_point(last_yes_write_pos + last_composed_size +
-                                         delete_offset,
-                                     &dummy));
-
-      if (composed == 0) {
+    uint32_t next_irrelevant_starter_pos = p + size;
+    // Find the next starter character that is NFC irrelevant
+    while (next_irrelevant_starter_pos < length) {
+      uint8_t next_irrelevant_starter_size;
+      uint32_t next_irrelevant_starter = scalar_parse_code_point(
+          input + next_irrelevant_starter_pos, &next_irrelevant_starter_size);
+      uint8_t next_irrelevant_starter_ccc =
+          scalar_lookup_ccc(next_irrelevant_starter);
+      if (next_irrelevant_starter_ccc == 0 && !scalar_is_nfc_relevant(c)) {
         break;
       }
-
-      uint8_t *c_start = last_yes_write_pos;
-      composed_size = scalar_code_point_size(composed);
-      shift = composed_size - last_composed_size;
-      // Shift all bytes after the composed character to the right (to make
-      // space for the new composed character).
-      for (uint8_t *i = out - 1; i >= c_start + last_composed_size; i--) {
-        *(i + shift) = *i;
-      }
-
-      c_start += scalar_write_codepoint(composed, c_start);
-
-      delete_size = NORMDATA_UTF8_SIZE[c_start[delete_offset]];
-
-      scalar_print_code_points(last_yes_write_pos, out_len + composed_size);
-
-      uint8_t const *copy_base = c_start + delete_offset + delete_size;
-      uint8_t const *copy_end = out + shift;
-      uint8_t *copy_pos = c_start + delete_offset;
-      // Shift to the left starting from the character to delete, shifted
-      // by the size of the character to delete.
-      for (uint8_t const *i = copy_base; i < copy_end; i++) {
-        *copy_pos++ = *i;
-        c_start++;
-      }
-
-      // This happens in a special case: we got code points <x, y, z> where
-      // their respective ccc's are <0, 0, 0> and both y and z combine.
-      // If we end up in this case, we need to make sure to advance past z.
-      if (copy_end < copy_base) {
-        printf("HIHI\n");
-        p += next_starter_size;
-      }
-
-      out = c_start + delete_offset;
-      out_len -= delete_size;
-
-      last_composed_size = composed_size;
-      last_composed = composed;
+      next_irrelevant_starter_pos += next_irrelevant_starter_size;
     }
-  }
 
-  printf("DONE\n");
+    // NOTE: scary!
+    uint8_t *normalized_out = out - (p - previous_starter_pos);
+    // NFD normalize a localized region in between the two starters that are NFC
+    // irrelevant.
+    size_t normalized_length = scalar_normalize_utf8_nfd(
+        input + previous_starter_pos,
+        next_irrelevant_starter_pos - previous_starter_pos, normalized_out);
+
+    size_t normalized_pos = 0;
+    uint8_t normalized_last_ccc = 255;
+    // Iterate through each code point, seeking back until a starter is found
+    // and trying to combine with that. This part of the algorithm closely
+    // matches up with the spec. See:
+    // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614
+    while (normalized_pos < normalized_length) {
+      uint8_t normalized_size;
+      uint32_t normalized_c = scalar_parse_code_point(
+          normalized_out + normalized_pos, &normalized_size);
+      uint8_t normalized_ccc = scalar_lookup_ccc(normalized_c);
+
+      // Find the preceding starter. It should be NFC irrelevant
+      // TODO: we can cache this
+      size_t starter_pos = scalar_rfind_starter(normalized_out, normalized_pos);
+      assert(starter_pos != normalized_pos);
+      uint8_t starter_size;
+      uint32_t starter =
+          scalar_parse_code_point(normalized_out + starter_pos, &starter_size);
+
+      // Skip if there's no starter before this character
+      if (starter_pos == (size_t)-1) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+      // Can't combine when we're blocked
+      if (normalized_ccc <= normalized_last_ccc &&
+          starter_pos + starter_size != normalized_pos) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+
+      uint32_t composed;
+      if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {
+        composed = scalar_try_compose_bmp(starter, normalized_c);
+      } else {
+        composed = normdata_compose_supplementary(starter, normalized_c);
+      }
+      // Skip if no composed character
+      if (composed == 0) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+      uint8_t composed_size = scalar_code_point_size(composed);
+      assert(composed_size >= starter_size);
+
+      // Shift left to delete the combinnig character
+      scalar_shift_left(normalized_out + normalized_pos,
+                        normalized_length - normalized_pos, normalized_size);
+      // Account for combining character deletion
+      normalized_length -= normalized_size;
+
+      // Shift everything right to make room for new composed code point
+      scalar_shift_right(normalized_out + starter_pos + starter_size,
+                         normalized_length - starter_pos - starter_size,
+                         composed_size - starter_size);
+      // Overwrite the starter with the new composed code point
+      (void)scalar_write_code_point(composed, normalized_out + starter_pos);
+      normalized_length += composed_size - starter_size;
+      normalized_pos += composed_size - starter_size;
+    }
+
+    // Set the out pointer to the end of the normalized buffer
+    out = normalized_out + normalized_length;
+    // Set the input offset to the next starter that is garuanteed to not be
+    // relevant to NFC
+    p = next_irrelevant_starter_pos;
+  }
 
   return out - start;
 }

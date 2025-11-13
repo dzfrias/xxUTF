@@ -74,13 +74,6 @@ fn testEqualNormalized(
     }
 }
 
-fn normalizeNFC(input: [*c]const u8, len: usize, buf: [*c]u8) callconv(.c) usize {
-    var tmp: [64]u8 = undefined;
-    const nwritten = c.utf8norm_normalize_utf8_nfd(input, len, &tmp);
-    // TODO: eventually, we shouldn't have to call NFD first on the user end
-    return c.utf8norm_normalize_utf8_nfc(&tmp, nwritten, buf);
-}
-
 fn testNFD(test_info: TestInfo) ?Failure {
     const expected = test_info.cols[2];
 
@@ -106,18 +99,18 @@ fn testNFC(test_info: TestInfo) ?Failure {
     const expected = test_info.cols[1];
 
     // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
-    if (testEqualNormalized(normalizeNFC, expected, test_info.cols[0])) |failure|
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[0])) |failure|
         return failure
-    else if (testEqualNormalized(normalizeNFC, expected, test_info.cols[1])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[1])) |failure|
         return failure
-    else if (testEqualNormalized(normalizeNFC, expected, test_info.cols[2])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[2])) |failure|
         return failure;
 
     // c4 ==  toNFC(c4) ==  toNFC(c5)
     const alt_expected = test_info.cols[3];
-    if (testEqualNormalized(normalizeNFC, alt_expected, test_info.cols[3])) |failure|
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, alt_expected, test_info.cols[3])) |failure|
         return failure
-    else if (testEqualNormalized(normalizeNFC, alt_expected, test_info.cols[4])) |failure|
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, alt_expected, test_info.cols[4])) |failure|
         return failure;
 
     return null;

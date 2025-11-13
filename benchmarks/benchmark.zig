@@ -29,7 +29,7 @@ pub fn main() !void {
     );
     // try stdout.writer().writeByte('\n');
     // try writeHeader(stdout.writer(), "UTF8PROC");
-    // try benchmarkImplementation(stdout.writer(), input_dir, specific_test, utf8proc_normalize);
+    // try benchmarkImplementation(stdout.writer(), input_dir, out_dir, specific_test, utf8proc_normalize);
 }
 
 fn writeHeader(out: anytype, title: []const u8) !void {
