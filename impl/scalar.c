@@ -388,10 +388,8 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x, uint32_t seed) {
 
 static bool scalar_is_nfc_relevant(uint32_t code_point) {
   // It is relevant automatically if it is a Hangul code point
-  if ((code_point >= NORMDATA_S_BASE &&
-       code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT) ||
-      (code_point >= NORMDATA_L_BASE &&
-       code_point < NORMDATA_L_BASE + NORMDATA_L_COUNT)) {
+  if (code_point >= NORMDATA_S_BASE &&
+      code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT) {
     return true;
   }
 
@@ -495,7 +493,8 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
           input + next_irrelevant_starter_pos, &next_irrelevant_starter_size);
       uint8_t next_irrelevant_starter_ccc =
           scalar_lookup_ccc(next_irrelevant_starter);
-      if (next_irrelevant_starter_ccc == 0 && !scalar_is_nfc_relevant(c)) {
+      if (next_irrelevant_starter_ccc == 0 &&
+          !scalar_is_nfc_relevant(next_irrelevant_starter)) {
         break;
       }
       next_irrelevant_starter_pos += next_irrelevant_starter_size;
@@ -504,7 +503,11 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
     // NOTE: scary!
     uint8_t *normalized_out = out - (p - previous_starter_pos);
     // NFD normalize a localized region in between the two starters that are NFC
-    // irrelevant.
+    // irrelevant. This guarantees that, if we NFC normalize this range, no
+    // characters after the end of the range in the input will combine/interact
+    // with the range we normalized. In other words, we run NFC on the largest
+    // possible sub-range of characters that may (or may not) have to do with
+    // the NFC relevant character `c` that we initially detected.
     size_t normalized_length = scalar_normalize_utf8_nfd(
         input + previous_starter_pos,
         next_irrelevant_starter_pos - previous_starter_pos, normalized_out);
@@ -525,17 +528,17 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
       // TODO: we can cache this
       size_t starter_pos = scalar_rfind_starter(normalized_out, normalized_pos);
       assert(starter_pos != normalized_pos);
-      uint8_t starter_size;
-      uint32_t starter =
-          scalar_parse_code_point(normalized_out + starter_pos, &starter_size);
-
-      // Skip if there's no starter before this character
+      // Skip if we don't have a starter before this
       if (starter_pos == (size_t)-1) {
         normalized_pos += normalized_size;
         normalized_last_ccc = normalized_ccc;
         continue;
       }
-      // Can't combine when we're blocked
+
+      uint8_t starter_size;
+      uint32_t starter =
+          scalar_parse_code_point(normalized_out + starter_pos, &starter_size);
+      // Skip if we're blocked from the starter
       if (normalized_ccc <= normalized_last_ccc &&
           starter_pos + starter_size != normalized_pos) {
         normalized_pos += normalized_size;
