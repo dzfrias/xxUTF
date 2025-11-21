@@ -5,47 +5,90 @@ const c = @cImport({
 });
 
 const print_alignment = 30;
+const full_line_length = print_alignment + 16;
+
+const ImplementationFunc = fn ([]const u8) void;
+const implementations: [4]struct { []const u8, ImplementationFunc } = .{
+    .{ "utf8norm_nfd", utf8normNormalizeNFD },
+    .{ "utf8proc_nfd", utf8procNormalizeNFD },
+    .{ "utf8norm_nfc", utf8normNormalizeNFC },
+    .{ "utf8proc_nfc", utf8procNormalizeNFC },
+};
 
 pub fn main() !void {
     var args_it = std.process.args();
     _ = args_it.next().?;
     const input_dir_path = args_it.next() orelse return error.ArgumentError;
-    const output_dir_path = args_it.next() orelse return error.ArgumentError;
-    const specific_test = args_it.next();
+    const arguments = try parseArgs(&args_it);
     var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
     defer input_dir.close();
-    std.fs.cwd().makeDir(output_dir_path) catch {};
-    var out_dir = try std.fs.cwd().openDir(output_dir_path, .{});
-    defer out_dir.close();
+    var out_dir = if (arguments.output_dir) |path|
+        try std.fs.cwd().makeOpenPath(path, .{})
+    else
+        null;
+    defer if (out_dir) |*dir| dir.close();
     const stdout = std.io.getStdOut();
 
-    try writeHeader(stdout.writer(), "UTF8NORM");
-    try benchmarkImplementation(
-        stdout.writer(),
-        input_dir,
-        out_dir,
-        specific_test,
-        utf8norm_normalize,
-    );
-    // try stdout.writer().writeByte('\n');
-    // try writeHeader(stdout.writer(), "UTF8PROC");
-    // try benchmarkImplementation(stdout.writer(), input_dir, out_dir, specific_test, utf8proc_normalize);
+    inline for (implementations) |impl| {
+        if (arguments.pattern == null or std.mem.indexOf(u8, impl[0], arguments.pattern.?) != null) {
+            try benchmarkImplementation(
+                impl[0],
+                stdout.writer(),
+                input_dir,
+                out_dir,
+                arguments.specific_test,
+                impl[1],
+            );
+            try stdout.writer().writeByte('\n');
+        }
+    }
+}
+
+const Arguments = struct {
+    output_dir: ?[]const u8 = null,
+    specific_test: ?[]const u8 = null,
+    pattern: ?[]const u8 = null,
+};
+
+fn parseArgs(args: *std.process.ArgIterator) error{ArgumentError}!Arguments {
+    var arguments: Arguments = .{};
+    while (args.next()) |arg| {
+        const eq_pos = std.mem.indexOfScalar(u8, arg, '=') orelse return error.ArgumentError;
+        const arg_name = arg[0..eq_pos];
+        const value = arg[eq_pos + 1 ..];
+
+        if (std.mem.eql(u8, arg_name, "-o"))
+            arguments.output_dir = value
+        else if (std.mem.eql(u8, arg_name, "-p"))
+            arguments.pattern = value
+        else if (std.mem.eql(u8, arg_name, "-t"))
+            arguments.specific_test = value
+        else
+            return error.ArgumentError;
+    }
+
+    return arguments;
 }
 
 fn writeHeader(out: anytype, title: []const u8) !void {
-    try out.writeByteNTimes('=', (print_alignment / 2) + 4);
     try out.writeAll(title);
-    try out.writeByteNTimes('=', (print_alignment / 2) + 4);
+    try out.writeByteNTimes('-', full_line_length - title.len);
     try out.writeByte('\n');
 }
 
 fn benchmarkImplementation(
+    name: []const u8,
     out: anytype,
     inputs: std.fs.Dir,
-    data_out: std.fs.Dir,
+    data_out: ?std.fs.Dir,
     specific_test: ?[]const u8,
     comptime impl: fn ([]const u8) void,
 ) !void {
+    try writeHeader(out, name);
+
+    var out_dir = if (data_out) |dir| try dir.makeOpenPath(name, .{}) else null;
+    defer if (out_dir) |*dir| dir.close();
+
     var inputs_it = inputs.iterate();
     while (try inputs_it.next()) |entry| {
         if (entry.kind != .file) {
@@ -65,26 +108,44 @@ fn benchmarkImplementation(
             .{ entry.name, result.mean_ms, result.sd_ms },
         );
 
-        const out_file = try data_out.createFile(entry.name, .{});
-        defer out_file.close();
-        for (result.data) |x| {
-            try out_file.writer().print("{d:.3}\n", .{x});
+        if (out_dir) |dir| {
+            const out_file = try dir.createFile(entry.name, .{});
+            defer out_file.close();
+            for (result.data) |x| {
+                try out_file.writer().print("{d:.3}\n", .{x});
+            }
         }
     }
 }
 
-fn utf8norm_normalize(src: []const u8) void {
+fn utf8normNormalizeNFD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf8_nfd(src.ptr, src.len, &out);
 }
 
-fn utf8proc_normalize(src: []const u8) void {
+fn utf8procNormalizeNFD(src: []const u8) void {
     var out: [*c]c_char = undefined;
     _ = c.utf8proc_map(
         src.ptr,
         @intCast(src.len),
         &out,
         c.UTF8PROC_STABLE | c.UTF8PROC_DECOMPOSE,
+    );
+    c.free(out);
+}
+
+fn utf8normNormalizeNFC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf8_nfc(src.ptr, src.len, &out);
+}
+
+fn utf8procNormalizeNFC(src: []const u8) void {
+    var out: [*c]c_char = undefined;
+    _ = c.utf8proc_map(
+        src.ptr,
+        @intCast(src.len),
+        &out,
+        c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE,
     );
     c.free(out);
 }
@@ -97,7 +158,7 @@ const BenchResult = struct {
 
 const n_iters = 500;
 
-fn trim_partial_utf8(input: []const u8) []const u8 {
+fn trimPartialUTF8(input: []const u8) []const u8 {
     if (input.len > 0 and input[input.len - 1] >= 0xC0) {
         return input[0 .. input.len - 1];
     }
@@ -121,7 +182,7 @@ fn runBenchmark(file: std.fs.File, comptime impl: fn ([]const u8) void) !BenchRe
         var carry: std.BoundedArray(u8, 4) = .{};
         while (nread > 0) {
             const buf = read_buf[0..(nread + carry.len)];
-            const trimmed = trim_partial_utf8(buf);
+            const trimmed = trimPartialUTF8(buf);
             impl(trimmed);
             carry.clear();
             carry.appendSlice(buf[trimmed.len..]) catch unreachable;
