@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <utf8proc.h>
 
@@ -150,6 +151,11 @@ int main() {
 #ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
+  const char *normalization_form = getenv("UTF8NORM_FUZZ_NORMALIZATION_FORM");
+  if (normalization_form == NULL) {
+    normalization_form = "NFD";
+  }
+
   while (__AFL_LOOP(1000)) {
     int len = __AFL_FUZZ_TESTCASE_LEN;
 
@@ -160,15 +166,30 @@ int main() {
     }
 
     char utf8norm_out[16384];
-    size_t nwritten =
-        utf8norm_normalize_utf8_nfd((char const *)buf, len, utf8norm_out);
+    size_t nwritten;
+    if (strcmp(normalization_form, "NFD") == 0) {
+      nwritten =
+          utf8norm_normalize_utf8_nfd((char const *)buf, len, utf8norm_out);
+    } else if (strcmp(normalization_form, "NFC") == 0) {
+      nwritten =
+          utf8norm_normalize_utf8_nfc((char const *)buf, len, utf8norm_out);
+    } else {
+      printf("Invalid normalization form: %s\n", normalization_form);
+      abort();
+    }
 
     if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten, &pos)) {
       abort();
     }
     utf8norm_out[nwritten] = '\0';
 
-    char *utf8proc_out = utf8proc_normalize_utf8_nfd((char const *)buf, len);
+    char *utf8proc_out;
+    if (strcmp(normalization_form, "NFD") == 0) {
+      utf8proc_out = utf8proc_normalize_utf8_nfd((char const *)buf, len);
+    } else if (strcmp(normalization_form, "NFC") == 0) {
+      utf8proc_out = utf8proc_normalize_utf8_nfc((char const *)buf, len);
+    }
+
     bool eql = equal(utf8norm_out, utf8proc_out);
     free(utf8proc_out);
 

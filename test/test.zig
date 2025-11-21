@@ -67,11 +67,10 @@ fn testEqualNormalized(
 ) ?Failure {
     const nwritten = impl(input.ptr, input.len, &out);
     const normalized = out[0..nwritten];
-    if (!std.mem.eql(u8, expected, normalized)) {
-        return .{ .expected = expected, .input = input, .got = normalized };
-    } else {
+    return if (!std.mem.eql(u8, expected, normalized))
+        .{ .expected = expected, .input = input, .got = normalized }
+    else
         return null;
-    }
 }
 
 fn testNFD(test_info: TestInfo) ?Failure {
@@ -117,16 +116,16 @@ fn testNFC(test_info: TestInfo) ?Failure {
 }
 
 fn writeHex(writer: anytype, s: []const u8) !void {
-    if (std.unicode.utf8ValidateSlice(s)) {
-        var code_points: std.unicode.Utf8Iterator = .{ .bytes = s, .i = 0 };
-        while (code_points.nextCodepoint()) |cp| {
-            try writer.print("{X:0>6} ", .{cp});
-        }
-    } else {
+    const utf8_view = std.unicode.Utf8View.init(s) catch {
         for (s) |b| {
             try writer.print("{X:0>2} ", .{b});
         }
-        try writer.writeAll("(invalid UTF-8)");
+        try writer.writeAll("(invalid UTF-8)\n");
+        return;
+    };
+    var code_points = utf8_view.iterator();
+    while (code_points.nextCodepoint()) |cp| {
+        try writer.print("{X:0>6} ", .{cp});
     }
     try writer.writeByte('\n');
 }
@@ -151,7 +150,8 @@ pub fn main() !void {
     while (try file.reader().readUntilDelimiterOrEof(&in_buf, '\n')) |line| : (i += 1) {
         if (std.mem.startsWith(u8, line, "#")) {
             continue;
-        } else if (std.mem.startsWith(u8, line, "@Part")) {
+        }
+        if (std.mem.startsWith(u8, line, "@Part")) {
             if (current_part) |n| n.end();
             const part_num = line["@Part".len];
             const comment = if (extractComment(line)) |e| e[1] else null;
