@@ -463,6 +463,15 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
   while (p < length) {
     uint8_t size;
     uint32_t c = scalar_parse_code_point(input + p, &size);
+
+    // ASCII fast path to skip ccc lookup
+    if (c <= 0x7F) {
+      *out++ = (uint8_t)c;
+      p++;
+      last_ccc = 0;
+      continue;
+    }
+
     uint8_t ccc = scalar_lookup_ccc(c);
 
     // We can skip this character if it the combining classes are in the right
