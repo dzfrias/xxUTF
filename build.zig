@@ -17,31 +17,6 @@ pub fn build(b: *std.Build) !void {
     if (add_neon) {
         try sources.append(b.allocator, "impl/neon.c");
     }
-
-    const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
-    run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
-    for (all_sources) |source| {
-        run_amalgamate.addFileArg(b.path(source));
-    }
-    for (all_files) |file| {
-        run_amalgamate.addFileInput(b.path(file));
-    }
-    run_amalgamate.addArg("-o");
-    const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
-    const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
-    const amalgamate_step = b.step("amalgamate", "Create the utf8norm amalgamation file");
-    amalgamate_step.dependOn(&amalgamate_install_file.step);
-
-    const lib = b.addLibrary(.{
-        .name = "utf8norm",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .sanitize_c = false,
-        }),
-        .linkage = .static,
-    });
-    lib.addIncludePath(b.path(""));
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, &.{
@@ -67,18 +42,22 @@ pub fn build(b: *std.Build) !void {
     if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
-    if (optimize == .Debug) {
-        lib.addCSourceFiles(.{
-            .root = b.path(""),
-            .files = sources.items,
-            .flags = flags.items,
-        });
-    } else {
-        // Use single header for release builds. This gives worse compiler errors, but
-        // better performance.
-        lib.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
+
+    const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
+    run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
+    for (all_sources) |source| {
+        run_amalgamate.addFileArg(b.path(source));
     }
-    lib.installHeader(b.path("utf8norm.h"), "utf8norm.h");
+    for (all_files) |file| {
+        run_amalgamate.addFileInput(b.path(file));
+    }
+    run_amalgamate.addArg("-o");
+    const amalgamation = run_amalgamate.addOutputFileArg("utf8norm_amalgamation.c");
+    const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
+    const amalgamate_step = b.step("amalgamate", "Create the utf8norm amalgamation file");
+    amalgamate_step.dependOn(&amalgamate_install_file.step);
+
+    const lib = createLibrary(b, target, optimize, sources.items, flags.items, amalgamation);
     b.installArtifact(lib);
 
     const test_exe = b.addExecutable(.{
@@ -113,10 +92,25 @@ pub fn build(b: *std.Build) !void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("benchmarks/benchmark.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = if (optimize == .Debug)
+                .ReleaseFast
+            else
+                optimize,
         }),
     });
-    benchmark_exe.linkLibrary(lib);
+    const optimized_lib = createLibrary(
+        b,
+        target,
+        // Do not run benchmarks on a debug compilation
+        if (optimize == .Debug)
+            .ReleaseFast
+        else
+            optimize,
+        sources.items,
+        flags.items,
+        amalgamation,
+    );
+    benchmark_exe.linkLibrary(optimized_lib);
     benchmark_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
     run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
@@ -127,6 +121,40 @@ pub fn build(b: *std.Build) !void {
     const benchmark_install = b.addInstallArtifact(benchmark_exe, .{});
     benchmark_step.dependOn(&run_benchmark_exe.step);
     benchmark_step.dependOn(&benchmark_install.step);
+}
+
+fn createLibrary(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    sources: []const []const u8,
+    flags: []const []const u8,
+    amalgamation_path: std.Build.LazyPath,
+) *std.Build.Step.Compile {
+    const lib = b.addLibrary(.{
+        .name = "utf8norm",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .sanitize_c = false,
+        }),
+        .linkage = .static,
+    });
+    lib.addIncludePath(b.path(""));
+    if (optimize == .Debug) {
+        lib.addCSourceFiles(.{
+            .root = b.path(""),
+            .files = sources,
+            .flags = flags,
+        });
+    } else {
+        // Use single header for release builds. This gives worse compiler errors, but
+        // better performance.
+        lib.addCSourceFile(.{ .file = amalgamation_path, .flags = flags });
+    }
+    lib.installHeader(b.path("utf8norm.h"), "utf8norm.h");
+
+    return lib;
 }
 
 const all_sources: []const []const u8 = &.{
