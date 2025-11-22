@@ -387,12 +387,6 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x, uint32_t seed) {
 }
 
 static bool scalar_is_nfc_relevant(uint32_t code_point) {
-  // It is relevant automatically if it is a Hangul code point
-  if (code_point >= NORMDATA_S_BASE &&
-      code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT) {
-    return true;
-  }
-
   uint32_t h1 = scalar_multiply_shift_hash(code_point);
   uint32_t h2 = scalar_xorshift_hash(code_point, 0xDEADBEEF);
   uint32_t h3 = scalar_xorshift_mul_hash(code_point, 0x4B71D390);
