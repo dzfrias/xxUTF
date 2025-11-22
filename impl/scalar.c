@@ -120,8 +120,16 @@ static uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
     uint32_t lv_index = l_index * NORMDATA_N_COUNT + v_index * NORMDATA_T_COUNT;
     return NORMDATA_S_BASE + lv_index;
   }
+  // Check if we have an LV syllable and a T jamo. Note that we check c2 >
+  // NORMDATA_T_BASE, not c2 >= NORMDATA_T_BASE for a good reason: the first
+  // valid T jamo is NORMDATA_T_BASE + 1! The spec defines the T base constant
+  // to be off by one in order to make the math for algorithmic decomposition
+  // cleaner.
+  //
+  // See:
+  // https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G59434
   if (c1 >= NORMDATA_S_BASE && c1 < NORMDATA_S_BASE + NORMDATA_S_COUNT &&
-      (c1 - NORMDATA_S_BASE) % NORMDATA_T_COUNT == 0 && c2 >= NORMDATA_T_BASE &&
+      (c1 - NORMDATA_S_BASE) % NORMDATA_T_COUNT == 0 && c2 > NORMDATA_T_BASE &&
       c2 < NORMDATA_T_BASE + NORMDATA_T_COUNT) {
     return c1 + (c2 - NORMDATA_T_BASE);
   }
@@ -394,8 +402,8 @@ static bool scalar_is_nfc_relevant(uint32_t code_point) {
   uint32_t shift1 = h2 % 32;
   uint32_t shift2 = h3 % 32;
   uint32_t mask = 0;
-  mask |= 1 << shift1;
-  mask |= 1 << shift2;
+  mask |= 1u << shift1;
+  mask |= 1u << shift2;
 
   uint32_t block = NORMDATA_NFC_QC_BLOOM_FILTER[block_idx];
   return (block & mask) == mask;
