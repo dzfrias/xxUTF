@@ -242,20 +242,9 @@ static inline uint32x4_t neon_hangul_mask(uint32x4_t input) {
 // indicates which code points should be decomposed (0 meaning irrelevant).
 //
 // This function assumes that the input code points are not Hangul syllables.
-static void neon_decompose_non_hangul(uint32x4_t values, uint8x16_t in,
-                                      uint32x4_t relevant, uint8_t **out,
-                                      const uint8_t *input, bool *end_is_cc) {
-  // Pre-emptively write the input into the output buffer. This is done so we
-  // can skip copying the input bytes if the code point is not relevant until
-  // we reach the first relevant code point. SIMD copying is generally much
-  // faster than scalar copying.
-  // This change leads to a solid 7% speedup on some benchmarks.
-  vst1q_u8(*out, in);
-  // The broken flag indicates whether we have encountered a code point that
-  // requires decomposition. If we have not encountered such a code point, we
-  // can skip the decomposition _and_ skip copying the input bytes since we've
-  // done so above.
-  bool broken = false;
+static void neon_decompose_non_hangul(uint32x4_t values, uint32x4_t relevant,
+                                      uint8_t **out, const uint8_t *input,
+                                      bool *end_is_cc) {
   bool last_is_cc = *end_is_cc;
 #pragma clang loop unroll(enable)
   for (size_t i = 0; i < 4; i++) {
@@ -280,13 +269,11 @@ static void neon_decompose_non_hangul(uint32x4_t values, uint8x16_t in,
     size_t nwritten = 0;
     // If the code point is not relevant or, (if it is relevant) but
     // decomposition yields no results, we just copy the input
-    if (broken && (!r || (nwritten = scalar_decompose(v, *out, &is_cc)) == 0)) {
+    if (!r || (nwritten = scalar_decompose(v, *out, &is_cc)) == 0) {
       for (size_t j = 0; j < size; j++) {
         (*out)[j] = input[j];
       }
       nwritten = size;
-    } else {
-      broken = true;
     }
     if (last_is_cc && !is_cc) {
       scalar_sort_characters(*out - 1);
@@ -431,7 +418,7 @@ static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
     neon_decompose_hangul(chars, hangul_mask, out, input, end_is_cc);
   } else if (bloom_result && !hangul_result) {
     // Case where we have precomposed characters, but no Hangul
-    neon_decompose_non_hangul(chars, in, bloom, out, input, end_is_cc);
+    neon_decompose_non_hangul(chars, bloom, out, input, end_is_cc);
   } else {
     // Case where we have both precomposed characters and Hangul syllables.
     // Very rare in practice, so we just fall back to the scalar implementation.
@@ -572,7 +559,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     if (vaddvq_u32(bloom) == 0) {
       neon_skip(in, 8, out, end_is_cc);
     } else {
-      neon_decompose_non_hangul(wide, in, bloom, out, input, end_is_cc);
+      neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }
     return 8;
   }
@@ -590,7 +577,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     if (vaddvq_u32(bloom) == 0) {
       neon_skip(in, nchars, out, end_is_cc);
     } else {
-      neon_decompose_non_hangul(wide, in, bloom, out, input, end_is_cc);
+      neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }
   } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
     // Four code points
