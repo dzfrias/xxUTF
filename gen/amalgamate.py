@@ -24,7 +24,6 @@ var_re = re.compile(r"^([_a-zA-Z][a-zA-Z_0-9 ]+ \**)([_a-zA-Z0-9]+)(\[|;| =)")
 add_re = re.compile(r"^// amalgamate add: (.*)")
 
 
-
 def copy_file(out, file: Path, seen_headers: set[str]) -> None:
     out.write(f"/*amalgamate: BEGIN {file}*/\n")
     with open(file, "r", encoding="utf-8") as f:
@@ -39,16 +38,20 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
             elif (decl_match := decl_re.match(line)) is not None:
                 name = decl_match.group(2)
                 if not line.startswith("static") and not name.startswith("utf8norm_"):
-                    out.write(f"static {line}")
+                    out.write(f"__attribute__((unused)) static {line}")
                 else:
                     out.write(line)
             elif (var_match := var_re.match(line)) is not None:
                 name = var_match.group(2)
-                if not line.startswith("static") and not name.lower().startswith("utf8norm_"):
+                if not line.startswith("static") and not name.lower().startswith(
+                    "utf8norm_"
+                ):
                     if line.startswith("extern"):
-                        out.write(f"static {line[len("extern "):]}")
+                        out.write(
+                            f"__attribute__((unused)) static {line[len("extern "):]}"
+                        )
                     else:
-                        out.write(f"static {line}")
+                        out.write(f"__attribute__((unused)) static {line}")
                 else:
                     out.write(line)
             elif (add_match := add_re.match(line)) is not None:
@@ -66,9 +69,13 @@ def main() -> None:
         prog="amalgamate",
         description="Amalgamate the entire utf8norm codebase into one file",
     )
-    parser.add_argument("sources", help="directory with the utf8norm codebase", nargs="+")
-    parser.add_argument("-o", "--output", type=str, help="output file (default: stdout)")
-    
+    parser.add_argument(
+        "sources", help="directory with the utf8norm codebase", nargs="+"
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, help="output file (default: stdout)"
+    )
+
     args = parser.parse_args()
 
     cwd = Path.cwd()
