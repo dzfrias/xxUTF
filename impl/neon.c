@@ -738,8 +738,9 @@ static size_t neon_nfc_fallback(const uint8_t *input, const uint8_t *input_base,
                                 size_t input_length, uint8_t **out,
                                 size_t length) {
   size_t offset = input - input_base;
+  size_t first_size = NORMDATA_UTF8_SIZE[input[0]];
   // Get the region that we will NFC normalize
-  size_t prev_starter = scalar_rfind_starter(input_base, offset);
+  size_t prev_starter = scalar_rfind_starter(input_base, offset + first_size);
   if (prev_starter == (size_t)-1) {
     prev_starter = 0;
   }
