@@ -231,7 +231,7 @@ int main() {
     if (equal(utf8norm_out_nfd, utf8proc_out_nfd)) {
       printf("Both buffers (NFD) equal!\n");
     } else {
-      printf("Buffers (NFC) not equal\n");
+      printf("Buffers (NFD) not equal\n");
       printf("   input: ");
       print_codepoints(buf, nread);
       printf("\n");
