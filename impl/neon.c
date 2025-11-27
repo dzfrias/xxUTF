@@ -3,7 +3,6 @@
 #include "impl/neon.h"
 #include "impl/scalar.h"
 #include "normdata.h"
-#include <arm_acle.h>
 #include <arm_neon.h>
 #include <assert.h>
 #include <stdbool.h>
@@ -522,8 +521,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
                                              uint64_t mask, uint8_t **out,
                                              bool *end_is_cc) {
   // Count trailing ones to get number of ASCII bytes at the start of input
-  uint64_t rmask = __rbitll(mask);
-  unsigned int t1 = __clzll(~rmask);
+  int t1 = __builtin_ctzll(~mask);
   // Skip as many ASCII bytes as possible. We eagerly skip ASCII because, even
   // if the number of ASCII bytes is small, benchmarks show that the cost of
   // falling into the slow path for a majority ASCII input vector is quite high,
@@ -772,8 +770,7 @@ static size_t neon_normalize_masked_utf8_nfc(const uint8_t *input,
                                              const uint8_t *input_base,
                                              size_t length, uint64_t mask,
                                              uint8_t **out) {
-  uint64_t rmask = __rbitll(mask);
-  unsigned int t1 = __clzll(~rmask);
+  int t1 = __builtin_ctzll(~mask);
   // Eagerly skip ASCII, similar to NFD
   if (t1 > 2) {
     size_t min = t1 > 52 ? 52 : t1;
