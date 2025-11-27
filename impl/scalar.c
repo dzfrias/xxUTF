@@ -109,6 +109,18 @@ size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
   return out - start;
 }
 
+size_t scalar_copy_code_points(const uint8_t *input, uint8_t *out, size_t amt) {
+  uint8_t *start = out;
+  for (size_t i = 0; i < amt; i++) {
+    uint8_t size = NORMDATA_UTF8_SIZE[input[0]];
+    for (uint8_t j = 0; j < size; j++) {
+      *out++ = input[j];
+    }
+    input += size;
+  }
+  return out - start;
+}
+
 // Try to compose two BMP code points into a single code point. Returns the
 // composed code point if the composition is valid, or zero if the composition
 // is not valid.
@@ -217,6 +229,9 @@ static bool scalar_is_leading_utf8_byte(uint8_t b) {
 // algorithm). This is done by walking backwards from the end of the buffer
 // until a starter character is found and sorting the combining characters from
 // there.
+//
+// TODO: undefined behavior when we can't find a starter when walking backwards?
+//       We don't know when to stop.
 void scalar_sort_characters(uint8_t *out) {
   uint8_t *start = out;
 
@@ -373,44 +388,45 @@ size_t scalar_normalize_utf8_nfd(const uint8_t *input, size_t length,
 }
 
 static uint32_t scalar_multiply_shift_hash(uint32_t x) {
-  uint32_t mul = x * 2654435761;
+  uint32_t mul = x * 2654435761UL;
   uint32_t shift = mul >> 16;
   return shift & 65535;
 }
 
-static uint32_t scalar_xorshift_hash(uint32_t x, uint32_t seed) {
-  x ^= seed;
+static uint32_t scalar_xorshift_hash(uint32_t x) {
   x ^= x >> 13;
   x ^= x << 17;
   x ^= x >> 5;
   return x;
 }
 
-static uint32_t scalar_xorshift_mul_hash(uint32_t x, uint32_t seed) {
-  x ^= seed;
-  x = ((x >> 16) ^ x) * 0x45D9F3B;
-  x = ((x >> 16) ^ x) * 0x45D9F3B;
+static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
+  x = ((x >> 16) ^ x) * 0x45D9F3BUL;
+  x = ((x >> 16) ^ x) * 0x45D9F3BUL;
   x = (x >> 16) ^ x;
   return x;
 }
 
 static bool scalar_is_nfc_relevant(uint32_t code_point) {
-  uint32_t h1 = scalar_multiply_shift_hash(code_point);
-  uint32_t h2 = scalar_xorshift_hash(code_point, 0xDEADBEEF);
-  uint32_t h3 = scalar_xorshift_mul_hash(code_point, 0x4B71D390);
+  uint32_t h1 = scalar_multiply_shift_hash(code_point ^ 0xDEADBEEFUL);
+  uint32_t h2 = scalar_xorshift_hash(code_point);
+  uint32_t h3 = scalar_xorshift_mul_hash(code_point);
+  uint32_t h4 = h2 + 3 * h3;
   uint32_t block_idx = h1 % 2048;
   uint32_t shift1 = h2 % 32;
   uint32_t shift2 = h3 % 32;
+  uint32_t shift3 = h4 % 32;
   uint32_t mask = 0;
   mask |= 1u << shift1;
   mask |= 1u << shift2;
+  mask |= 1u << shift3;
 
   uint32_t block = NORMDATA_NFC_QC_BLOOM_FILTER[block_idx];
   return (block & mask) == mask;
 }
 
-__attribute__((unused)) static void
-scalar_print_code_points(const uint8_t *input, size_t length) {
+__attribute__((unused)) void scalar_print_code_points(const uint8_t *input,
+                                                      size_t length) {
   size_t p = 0;
   while (p < length) {
     uint8_t size;
@@ -436,7 +452,7 @@ static void scalar_shift_left(uint8_t *buf, size_t length, size_t amt) {
 }
 
 // Find a starter character in a UTF-8 buffer, searching from right to left.
-static size_t scalar_rfind_starter(const uint8_t *input, size_t length) {
+size_t scalar_rfind_starter(const uint8_t *input, size_t length) {
   size_t p = 0;
   while (p < length) {
     while (!scalar_is_leading_utf8_byte(input[length - p - 1])) {
@@ -452,6 +468,23 @@ static size_t scalar_rfind_starter(const uint8_t *input, size_t length) {
     p++;
   }
   return -1;
+}
+
+// Find the next starter character that is NFC irrelevant, or -1 if one is not
+// found.
+size_t scalar_find_nfc_irrelevant_starter(const uint8_t *input, size_t length) {
+  uint32_t p = 0;
+  while (p < length) {
+    uint8_t size;
+    uint32_t c = scalar_parse_code_point(input + p, &size);
+    uint8_t ccc = scalar_lookup_ccc(c);
+    if (ccc == 0 && !scalar_is_nfc_relevant(c)) {
+      return p;
+    }
+    p += size;
+  }
+
+  return (size_t)-1;
 }
 
 size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
@@ -496,19 +529,12 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
       previous_starter_pos = 0;
     }
 
-    uint32_t next_irrelevant_starter_pos = p + size;
-    // Find the next starter character that is NFC irrelevant
-    while (next_irrelevant_starter_pos < length) {
-      uint8_t next_irrelevant_starter_size;
-      uint32_t next_irrelevant_starter = scalar_parse_code_point(
-          input + next_irrelevant_starter_pos, &next_irrelevant_starter_size);
-      uint8_t next_irrelevant_starter_ccc =
-          scalar_lookup_ccc(next_irrelevant_starter);
-      if (next_irrelevant_starter_ccc == 0 &&
-          !scalar_is_nfc_relevant(next_irrelevant_starter)) {
-        break;
-      }
-      next_irrelevant_starter_pos += next_irrelevant_starter_size;
+    size_t next_irrelevant_starter_pos =
+        scalar_find_nfc_irrelevant_starter(input + p + size, length - p - size);
+    if (next_irrelevant_starter_pos == (size_t)-1) {
+      next_irrelevant_starter_pos = length;
+    } else {
+      next_irrelevant_starter_pos += p + size;
     }
 
     // NOTE: scary!

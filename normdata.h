@@ -45,6 +45,7 @@ extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;
 extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
 extern const uint32_t NORMDATA_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[2048];
+extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[2048];
 
 static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
 static const uint32_t NORMDATA_COMPOSED_TABLE_SIZE = sizeof(NORMDATA_COMPOSITION_KV) / sizeof(uint64_t);

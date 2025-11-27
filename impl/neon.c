@@ -5,6 +5,7 @@
 #include "normdata.h"
 #include <arm_acle.h>
 #include <arm_neon.h>
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,7 +39,7 @@ NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
 
 // Parse four three-byte UTF-8 code points into their 16-bit code point values.
 // Taken from simdutf
-static uint16x4_t neon_parse_three_byte_utf8(uint8x16_t in) {
+static uint16x4_t neon_parse_3_byte_utf8(uint8x16_t in) {
   const uint8x16_t sh = {0, 2, 3, 5, 6, 8, 9, 11, 1, 1, 4, 4, 7, 7, 10, 10};
   uint8x16_t perm = vqtbl1q_u8(in, sh);
   // Split into half vectors.
@@ -76,6 +77,36 @@ static uint16x4_t neon_parse_2_byte_utf8(uint8x16_t in) {
   // 00000aaa aabbbbbb
   uint16x8_t composed = vsliq_n_u16(lower, upper_masked, 6);
   return vget_low_u16(composed);
+}
+
+static uint32x4_t neon_parse_4_byte_utf8(uint8x16_t in) {
+  // We want to take 3 4-byte UTF-8 code units and turn them into 3 4-byte
+  // UTF-32 code units. This uses the same method as the fixed 3 byte
+  // version, reversing and shift left insert. However, there is no need for
+  // a shuffle mask now, just rev16 and rev32.
+  //
+  // This version does not use the LUT, but 4 byte sequences are less common
+  // and the overhead of the extra memory access is less important than the
+  // early branch overhead in shorter sequences, so it comes last.
+
+  // Swap pairs of bytes
+  // 10dddddd|10cccccc|10bbbbbb|11110aaa
+  // 10cccccc 10dddddd|11110aaa 10bbbbbb
+  uint16x8_t swap1 = vreinterpretq_u16_u8(vrev16q_u8(in));
+  // Shift left and insert
+  // xxxxcccc ccdddddd|xxxxxxxa aabbbbbb
+  uint16x8_t merge1 = vsliq_n_u16(swap1, vreinterpretq_u16_u8(in), 6);
+  // Swap 16-bit lanes
+  // xxxxcccc ccdddddd xxxxxxxa aabbbbbb
+  // xxxxxxxa aabbbbbb xxxxcccc ccdddddd
+  uint32x4_t swap2 = vreinterpretq_u32_u16(vrev32q_u16(merge1));
+  // Shift insert again
+  // xxxxxxxx xxxaaabb bbbbcccc ccdddddd
+  uint32x4_t merge2 = vsliq_n_u32(swap2, vreinterpretq_u32_u16(merge1), 12);
+  // Clear the garbage
+  // 00000000 000aaabb bbbbcccc ccdddddd
+  uint32x4_t composed = vandq_u32(merge2, vmovq_n_u32(0x1FFFFF));
+  return composed;
 }
 
 // Parse four code points encoded in UTF-8 into 16-bit code point values.
@@ -141,6 +172,46 @@ static uint16x4_t neon_parse_4_123_utf8(uint8x16_t in, size_t shufutf8_idx) {
   return composed;
 }
 
+// Parse three code points encoded in UTF-8 into 32-bit code point values.
+// Taken from simdutf
+static uint32x4_t neon_parse_3_1234_utf8(uint8x16_t in, size_t shufutf8_idx) {
+  // Unlike UTF-16, doing a fast codepath doesn't have nearly as much benefit
+  // due to surrogates no longer being involved.
+  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
+  // 1 byte: 00000000 00000000 00000000 0ddddddd
+  // 2 byte: 00000000 00000000 110ccccc 10dddddd
+  // 3 byte: 00000000 1110bbbb 10cccccc 10dddddd
+  // 4 byte: 11110aaa 10bbbbbb 10cccccc 10dddddd
+  uint32x4_t perm = vreinterpretq_u32_u8(vqtbl1q_u8(in, sh));
+  // Ascii
+  uint32x4_t ascii = vandq_u32(perm, vmovq_n_u32(0x7F));
+  uint32x4_t middle = vandq_u32(perm, vmovq_n_u32(0x3f00));
+  // When converting the way we do, the 3 byte prefix will be interpreted as
+  // the 18th bit being set, since the code would interpret the lead byte
+  // (0b1110bbbb) as a continuation byte (0b10bbbbbb). To fix this, we can
+  // either xor or do an 8 bit add of the 6th bit shifted right by 1. Since
+  // NEON has shift right accumulate, we use that.
+  //  4 byte   3 byte
+  // 10bbbbbb 1110bbbb
+  // 00000000 01000000 6th bit
+  // 00000000 00100000 shift right
+  // 10bbbbbb 0000bbbb add
+  // 00bbbbbb 0000bbbb mask
+  uint8x16_t correction =
+      vreinterpretq_u8_u32(vandq_u32(perm, vmovq_n_u32(0x00400000)));
+  uint32x4_t corrected = vreinterpretq_u32_u8(
+      vsraq_n_u8(vreinterpretq_u8_u32(perm), correction, 1));
+  // 00000000 00000000 0000cccc ccdddddd
+  uint32x4_t cd = vsraq_n_u32(ascii, middle, 2);
+  // Insert twice
+  // xxxxxxxx xxxaaabb bbbbxxxx xxxxxxxx
+  uint32x4_t ab = vbslq_u32(vmovq_n_u32(0x01C0000), vshrq_n_u32(corrected, 6),
+                            vshrq_n_u32(corrected, 4));
+  // 00000000 000aaabb bbbbcccc ccdddddd
+  uint32x4_t composed = vbslq_u32(vmovq_n_u32(0xFFE00FFF), cd, ab);
+  return composed;
+}
+
 // Write 8 code points, assuming they all expand to three bytes.
 static void neon_write_8_3_byte_utf8(uint16x8_t in, uint8_t *out) {
   uint8x8x3_t bytes;
@@ -195,7 +266,7 @@ static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
 // Pass a code point vector through the decomp+cc bloom filter, which will
 // return a vector of 0s and 0xFFFFFFFFs probabilistically indicating whether
 // the corresponding code point has a decomposition or is a combining character.
-static uint32x4_t neon_evaluate_bloom(uint32x4_t input) {
+static uint32x4_t neon_evaluate_bloom_nfd(uint32x4_t input) {
   uint32x4_t h1 = neon_mul_shift_hash(input);
   uint32x4_t h2 = neon_xorshift_hash(input);
   uint32x4_t h3 = neon_xorshift_mul_hash(input);
@@ -404,7 +475,7 @@ static inline void neon_skip(uint8x16_t in, size_t nchars, uint8_t **out,
 static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
                                   size_t nchars, const uint8_t *input,
                                   uint8_t **out, bool *end_is_cc) {
-  uint32x4_t bloom = neon_evaluate_bloom(chars);
+  uint32x4_t bloom = neon_evaluate_bloom_nfd(chars);
   uint32x4_t hangul_mask = neon_hangul_mask(chars);
   // We use these results to split the input into four cases that have
   // specialized handling for each case.
@@ -474,7 +545,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
 
   // Fast path for 4 3-byte code points
   if (sml_mask == 0x924) {
-    uint16x4_t chars = neon_parse_three_byte_utf8(in);
+    uint16x4_t chars = neon_parse_3_byte_utf8(in);
     uint16_t min = vminv_u16(chars);
     uint16_t max = vmaxv_u16(chars);
 
@@ -554,7 +625,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
   if ((sml_mask & 0xFF) == 0xAA) {
     uint16x4_t chars = neon_parse_2_byte_utf8(in);
     uint32x4_t wide = vmovl_u16(chars);
-    uint32x4_t bloom = neon_evaluate_bloom(wide);
+    uint32x4_t bloom = neon_evaluate_bloom_nfd(wide);
     // Hangul syllables are not possible here.
     if (vaddvq_u32(bloom) == 0) {
       neon_skip(in, 8, out, end_is_cc);
@@ -572,7 +643,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
     // Only the first four code points are used
     uint32x4_t wide = vmovl_u16(chars);
-    uint32x4_t bloom = neon_evaluate_bloom(wide);
+    uint32x4_t bloom = neon_evaluate_bloom_nfd(wide);
     // Hangul isn't possible here, so we don't need to check for it.
     if (vaddvq_u32(bloom) == 0) {
       neon_skip(in, nchars, out, end_is_cc);
@@ -595,6 +666,178 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
   }
 
   return nchars;
+}
+
+static uint32x4x2_t neon_nfc_hash(uint32x4_t input) {
+  uint32x4_t h1 =
+      neon_mul_shift_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
+  uint32x4_t h2 = neon_xorshift_hash(input);
+  uint32x4_t h3 = neon_xorshift_mul_hash(input);
+  uint32x4_t h4 = vmlaq_n_u32(h2, h3, 3);
+
+  // h1 % 2048
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(2047));
+  // h2 % 32
+  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
+  // h3 % 32
+  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
+  // h4 % 32
+  uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));
+
+  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
+
+  uint32x4x2_t vals;
+  vals.val[0] = block_idx;
+  vals.val[1] = mask;
+  return vals;
+}
+
+static uint32x4_t neon_evaluate_bloom_nfc_qc(uint32x4_t block_idx,
+                                             uint32x4_t mask) {
+  uint32x4_t block = {
+      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return result_eq;
+}
+
+static uint32x4_t neon_evaluate_bloom_non_starters(uint32x4_t block_idx,
+                                                   uint32x4_t mask) {
+  uint32x4_t block = {
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return result_eq;
+}
+
+static uint32x4_t neon_evaluate_bloom_nfc(uint32x4_t input) {
+  uint32x4x2_t hash_info = neon_nfc_hash(input);
+  // NFC QC and the non starters bloom filter use the same hashing scheme
+  uint32x4_t nfc_qc =
+      neon_evaluate_bloom_nfc_qc(hash_info.val[0], hash_info.val[1]);
+  uint32x4_t non_starters =
+      neon_evaluate_bloom_non_starters(hash_info.val[0], hash_info.val[1]);
+  uint32x4_t combined = vorrq_u32(nfc_qc, non_starters);
+  return combined;
+}
+
+// Fallback to scalar implementation when encountering an NFC relevant
+// character. Returns the number of characters of the input consumed,
+// and updates the output pointer to be in the correct place.
+static size_t neon_nfc_fallback(const uint8_t *input, const uint8_t *input_base,
+                                size_t input_length, uint8_t **out,
+                                size_t length) {
+  size_t offset = input - input_base;
+  // Get the region that we will NFC normalize
+  size_t prev_starter = scalar_rfind_starter(input_base, offset);
+  if (prev_starter == (size_t)-1) {
+    prev_starter = 0;
+  }
+  size_t next_starter = scalar_find_nfc_irrelevant_starter(
+      input_base + offset + length, input_length - offset - length);
+  if (next_starter == (size_t)-1) {
+    next_starter = input_length;
+  } else {
+    next_starter += offset + length;
+  }
+  size_t region_size = next_starter - prev_starter;
+  // This is the position we will write to
+  uint8_t *prev_out = *out - (offset - prev_starter);
+  size_t nwritten = scalar_normalize_utf8_nfc(input_base + prev_starter,
+                                              region_size, prev_out);
+  *out = prev_out + nwritten;
+
+  return next_starter - offset;
+}
+
+static uint8_t neon_first_true(uint32x4_t v) {
+  uint16x8_t v16 = vreinterpretq_u16_u8(v);
+  uint8x8_t res = vshrn_n_u16(v16, 4);
+  uint64_t bitmask4 = vget_lane_u64(vreinterpret_u64_u8(res), 0);
+  return __builtin_ctzll(bitmask4) / 16;
+}
+
+static size_t neon_normalize_masked_utf8_nfc(const uint8_t *input,
+                                             const uint8_t *input_base,
+                                             size_t length, uint64_t mask,
+                                             uint8_t **out) {
+  uint64_t rmask = __rbitll(mask);
+  unsigned int t1 = __clzll(~rmask);
+  // Eagerly skip ASCII, similar to NFD
+  if (t1 > 2) {
+    size_t min = t1 > 52 ? 52 : t1;
+    neon_memcpy_small(*out, input, min);
+    *out += min;
+    return min;
+  }
+
+  // TODO: improve detecting bad ccc orderings
+  //
+  //       Idea: like with decomp, put every ccc > 0 into the bloom filter.
+  //       Then we'll fall back to scalar path a lot, but it might still be
+  //       worth it. But we can use even more information. If we use
+  //       last_is_cc information, we can make sure to only fall back when we
+  //       have two contiguous combining characters (can check with NEON using
+  //       vpadd). But will have to check if first of current and last_is_cc
+  //       is set.
+
+  uint8x16_t in = vld1q_u8(input);
+  uint16_t sml_mask = mask & 0xFFF;
+
+  uint32x4_t code_points;
+  size_t n_bytes;
+
+  if (sml_mask == 0x924) {
+    uint16x4_t chars = neon_parse_3_byte_utf8(in);
+    code_points = vmovl_u16(chars);
+    n_bytes = 12;
+  } else if ((sml_mask & 0xFF) == 0xAA) {
+    uint16x4_t chars = neon_parse_2_byte_utf8(in);
+    code_points = vmovl_u16(chars);
+    n_bytes = 8;
+  } else {
+    uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
+    n_bytes = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
+    if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+      uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
+      code_points = vmovl_u16(chars);
+    } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
+      uint16x4_t chars = neon_parse_4_123_utf8(in, idx);
+      code_points = vmovl_u16(chars);
+    } else {
+      assert(idx < NORMDATA_SHUFUTF8_INDEX_1234);
+      if (sml_mask == 0x888) {
+        code_points = neon_parse_4_byte_utf8(in);
+      } else {
+        code_points = neon_parse_3_1234_utf8(in, idx);
+      }
+      // Set the last code point to 0 to make sure it doesn't accidentally
+      // get recognized by the bloom filter.
+      code_points = vsetq_lane_u32(0, code_points, 3);
+    }
+  }
+
+  uint32x4_t bloom = neon_evaluate_bloom_nfc(code_points);
+  if (vaddvq_u32(bloom) == 0) {
+    vst1q_u8(*out, in);
+    *out += n_bytes;
+    return n_bytes;
+  }
+  uint8_t first_relevant = neon_first_true(bloom);
+  size_t copied = scalar_copy_code_points(input, *out, first_relevant);
+  *out += copied;
+  return copied + neon_nfc_fallback(input + copied, input_base, length, out,
+                                    n_bytes - copied);
 }
 
 static inline uint8x16_t neon_get_codepoint_starts(uint8x16_t in) {
@@ -652,6 +895,31 @@ size_t neon_normalize_utf8_nfd(uint8_t const *input, size_t length,
 
     // Write the rest using scalar code
     *out_ptr += scalar_normalize_utf8_nfd(input + p, length - p, *out_ptr);
+  }
+
+  return *out_ptr - start;
+}
+
+size_t neon_normalize_utf8_nfc(uint8_t const *input, size_t length,
+                               uint8_t *out) {
+  uint8_t **out_ptr = &out;
+  uint8_t *start = out;
+
+  const size_t SAFETY_MARGIN = 16;
+  size_t p = 0;
+  while (p + 64 + SAFETY_MARGIN <= length) {
+    uint64_t mask = neon_make_code_point_mask(input + p);
+    size_t pmax = (p + 64) - 12;
+    while (p < pmax) {
+      size_t consumed = neon_normalize_masked_utf8_nfc(input + p, input, length,
+                                                       mask, out_ptr);
+      p += consumed;
+      mask >>= consumed;
+    }
+  }
+
+  if (p < length) {
+    (void)neon_nfc_fallback(input + p, input, length, out_ptr, length - p);
   }
 
   return *out_ptr - start;

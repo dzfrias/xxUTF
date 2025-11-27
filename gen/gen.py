@@ -355,86 +355,59 @@ def hash_32bit_fast(x, seed=0):
     return x
 
 
-DECOMP_BLOOM_FILTER_SIZE = 131072
-DECOMP_BLOOM_FILTER_N_BLOCKS = DECOMP_BLOOM_FILTER_SIZE // 32
+class BloomFilter:
+    def __init__(self, size: int, block_fn, hash_fns: list, data: list[int]) -> None:
+        self.size = size
+        self.block_fn = block_fn
+        self.hash_fns = hash_fns
+        self.data = data
+
+        self.blocks = [0] * self.n_blocks()
+        for c in data:
+            block, mask = self.create_mask(c)
+            self.blocks[block] |= mask
+
+    def create_mask(self, c: int) -> tuple[int, int]:
+        block = self.block_fn(c) % self.n_blocks()
+        mask = 0
+        for hash_fn in self.hash_fns:
+            h = hash_fn(c)
+            shift = h % 32
+            mask |= 1 << shift
+        return block, mask
+
+    def false_positives(self, universe) -> tuple[list[int], float]:
+        fps = []
+        n = 0
+        for c in universe:
+            n += 1
+            block_idx, mask = self.create_mask(c)
+            block = self.blocks[block_idx]
+            if (block & mask) == mask and c not in self.data:
+                fps.append(c)
+        return fps, len(fps) / n
+
+    def n_blocks(self) -> int:
+        return self.size // 32
 
 
-def create_decomp_bloom_mask(c: int) -> tuple[int, int]:
-    h1 = multiply_shift_hash(c)
-    h2 = xorshift_hash(c)
-    h3 = hash_32bit_fast(c)
-    block = h1 % DECOMP_BLOOM_FILTER_N_BLOCKS
-    shift1 = h2 % 32
-    shift2 = h3 % 32
-    shift3 = (h2 + h3) % 32
-    mask = 0
-    mask |= 1 << shift1
-    mask |= 1 << shift2
-    mask |= 1 << shift3
-    return block, mask
-
-
-def generate_decomp_bloom_filter(writer, decomp_map: DecompMap) -> BloomFilterInfo:
-    blocks = [0] * DECOMP_BLOOM_FILTER_N_BLOCKS
-    for c in decomp_map:
-        block, mask = create_decomp_bloom_mask(c)
-        blocks[block] |= mask
-
-    writer.write(
-        f"\nconst uint32_t NORMDATA_BLOOM_FILTER[{DECOMP_BLOOM_FILTER_N_BLOCKS}] = {{\n"
-    )
-    for row in batched(blocks, 10):
+def generate_bloom_filter(writer, name: str, bloom: BloomFilter):
+    writer.write(f"\nconst uint32_t {name}[{bloom.n_blocks()}] = {{\n")
+    for row in batched(bloom.blocks, 10):
         writer.write(" ")
         for block in row:
             writer.write(f" 0x{block:08X},")
         writer.write("\n")
     writer.write("};\n")
-
-    return BloomFilterInfo(blocks)
-
-
-NFC_QC_BLOOM_FILTER_SIZE = 65536
-NFC_QC_BLOOM_FILTER_N_BLOCKS = NFC_QC_BLOOM_FILTER_SIZE // 32
-
-
-def create_nfc_qc_bloom_mask(c: int) -> tuple[int, int]:
-    h1 = multiply_shift_hash(c)
-    h2 = xorshift_hash(c, seed=0xDEADBEEF)
-    h3 = hash_32bit_fast(c, seed=0x4B71D390)
-    block = h1 % NFC_QC_BLOOM_FILTER_N_BLOCKS
-    shift1 = h2 % 32
-    shift2 = h3 % 32
-    mask = 0
-    mask |= 1 << shift1
-    mask |= 1 << shift2
-    return block, mask
-
-
-def generate_nfc_qc_bloom_filter(writer, qc_vals: list[int]) -> BloomFilterInfo:
-    blocks = [0] * NFC_QC_BLOOM_FILTER_N_BLOCKS
-    for c in qc_vals:
-        block, mask = create_nfc_qc_bloom_mask(c)
-        blocks[block] |= mask
-
-    writer.write(
-        f"\nconst uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[{NFC_QC_BLOOM_FILTER_N_BLOCKS}] = {{\n"
-    )
-    for row in batched(blocks, 10):
-        writer.write(" ")
-        for block in row:
-            writer.write(f" 0x{block:08X},")
-        writer.write("\n")
-    writer.write("};\n")
-
-    return BloomFilterInfo(blocks)
 
 
 def generate_header(
     writer,
     table_info: TableInfo,
     shuf_info: ShuffleInfo,
-    decomp_bloom_info: BloomFilterInfo,
-    nfc_qc_bloom_info: BloomFilterInfo,
+    decomp_bloom: BloomFilter,
+    nfc_bloom: BloomFilter,
+    non_starters_bloom: BloomFilter,
 ):
     writer.write(
         f"extern const uint8_t NORMDATA_DECOMPOSED_CHARS[{table_info.decomp_bytes_len}];\n"
@@ -462,10 +435,13 @@ def generate_header(
     writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;\n")
     writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
     writer.write(
-        f"extern const uint32_t NORMDATA_BLOOM_FILTER[{len(decomp_bloom_info.blocks)}];\n"
+        f"extern const uint32_t NORMDATA_BLOOM_FILTER[{decomp_bloom.n_blocks()}];\n"
     )
     writer.write(
-        f"extern const uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[{len(nfc_qc_bloom_info.blocks)}];\n"
+        f"extern const uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[{nfc_bloom.n_blocks()}];\n"
+    )
+    writer.write(
+        f"extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[{non_starters_bloom.n_blocks()}];\n"
     )
 
 
@@ -655,6 +631,8 @@ def main() -> None:
     decomp_map = load_decomp_map()
     derived = load_derived_props()
 
+    non_starters = [x for x, decomp in decomp_map.items() if decomp.ccc > 0]
+
     comp_map: CompMap = {}
     for x, decomp in decomp_map.items():
         if x in derived.comp_exclusions or decomp.decomps[0] == x:
@@ -706,12 +684,47 @@ def main() -> None:
         f.write(PREAMBLE)
         hash_info = generate_hash_tables(f, decomp_map, comp_map)
         shuf_info = generate_shuffle_tables(f)
-        decomp_bloom_info = generate_decomp_bloom_filter(f, decomp_map)
-        nfc_qc_bloom_info = generate_nfc_qc_bloom_filter(f, derived.nfc_qc)
+        decomp_bloom = BloomFilter(
+            131072,
+            multiply_shift_hash,
+            [
+                xorshift_hash,
+                hash_32bit_fast,
+                lambda c: xorshift_hash(c) + hash_32bit_fast(c),
+            ],
+            decomp_map,
+        )
+        generate_bloom_filter(f, "NORMDATA_BLOOM_FILTER", decomp_bloom)
+        nfc_bloom = BloomFilter(
+            65536,
+            lambda c: multiply_shift_hash(c ^ 0xDEADBEEF),
+            [
+                xorshift_hash,
+                hash_32bit_fast,
+                lambda c: xorshift_hash(c) + 3 * hash_32bit_fast(c),
+            ],
+            derived.nfc_qc,
+        )
+        generate_bloom_filter(f, "NORMDATA_NFC_QC_BLOOM_FILTER", nfc_bloom)
+        non_starters_bloom = BloomFilter(
+            65536,
+            lambda c: multiply_shift_hash(c ^ 0xDEADBEEF),
+            [
+                xorshift_hash,
+                hash_32bit_fast,
+                lambda c: xorshift_hash(c) + 3 * hash_32bit_fast(c),
+            ],
+            non_starters,
+        )
+        generate_bloom_filter(
+            f, "NORMDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
+        )
         f.write(POSTAMBLE)
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
-        generate_header(f, hash_info, shuf_info, decomp_bloom_info, nfc_qc_bloom_info)
+        generate_header(
+            f, hash_info, shuf_info, decomp_bloom, nfc_bloom, non_starters_bloom
+        )
         f.write(POSTAMBLE_H)
 
     KILOBYTE = 1024
@@ -725,31 +738,26 @@ def main() -> None:
     lines.append(
         f"Code point index: {(shuf_info.codepoint_index_len * 2) / KILOBYTE:.1f}KiB"
     )
-    lines.append(
-        f"NFD bloom filter: {(len(decomp_bloom_info.blocks) * 4) / KILOBYTE:.1f}KiB"
-    )
-    fp_list, fpr = bloom_filter_fps(
-        code_points(),
-        decomp_bloom_info,
-        create_decomp_bloom_mask,
-        lambda c: c not in decomp_map,
-    )
+
+    lines.append(f"NFD bloom filter: {(decomp_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
+    fp_list, fpr = decomp_bloom.false_positives(code_points())
     lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
     lines.append(f"NFD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
     lines.append(f"NFD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-    lines.append(
-        f"NFC QC bloom filter: {(len(nfc_qc_bloom_info.blocks) * 4) / KILOBYTE:.1f}KiB"
-    )
-    fp_list, fpr = bloom_filter_fps(
-        code_points(),
-        nfc_qc_bloom_info,
-        create_nfc_qc_bloom_mask,
-        lambda c: c not in derived.nfc_qc,
-    )
+
+    lines.append(f"NFC QC bloom filter: {(nfc_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
+    fp_list, fpr = nfc_bloom.false_positives(code_points())
     # TODO: might be worth it to make a BMP-specific bloom filter
     lines.append(f"NFC QC bloom filter FPR: {fpr:.5f}")
     lines.append(f"NFC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
     lines.append(f"NFC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
+
+    fp_list, fpr = non_starters_bloom.false_positives(code_points())
+    lines.append(f"ccc > 0 bloom filter FPR: {fpr:.5f}")
+    lines.append(
+        f"ccc > 0 bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}"
+    )
+    lines.append(f"ccc > 0 bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
 
     aligned = align_key_value_lines(lines)
     for line in aligned:
