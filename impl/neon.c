@@ -284,10 +284,10 @@ static uint32x4_t neon_evaluate_bloom_nfd(uint32x4_t input) {
   mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
 
   uint32x4_t block = {
-      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
-      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
-      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
-      NORMDATA_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+      NORMDATA_NFD_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NFD_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NFD_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NFD_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
   };
 
   uint32x4_t result = vandq_u32(mask, block);
@@ -456,8 +456,8 @@ static void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
 }
 
 // Copy a 16-byte input vector into the output buffer.
-static inline void neon_skip(uint8x16_t in, size_t nchars, uint8_t **out,
-                             bool *end_is_cc) {
+static inline void neon_skip_nfd(uint8x16_t in, size_t nchars, uint8_t **out,
+                                 bool *end_is_cc) {
   if (*end_is_cc) {
     scalar_sort_characters(*out - 1);
   }
@@ -482,7 +482,7 @@ static inline void neon_decompose(uint8x16_t in, uint32x4_t chars,
   bool hangul_result = vmaxvq_u32(hangul_mask) > 0;
   if (!bloom_result && !hangul_result) {
     // Case where we have no precomposed characters and no Hangul syllables
-    neon_skip(in, nchars, out, end_is_cc);
+    neon_skip_nfd(in, nchars, out, end_is_cc);
   } else if (hangul_result && !bloom_result) {
     // Case where we have Hangul syllables, but no precomposed characters
     neon_decompose_hangul(chars, hangul_mask, out, input, end_is_cc);
@@ -552,7 +552,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     // language-specific optimization like this (excluding ASCII), but the
     // speedups are so large for such a low cost that it seems worth it.
     if (min >= 0x30FF && max <= 0x9FFF) {
-      neon_skip(in, 12, out, end_is_cc);
+      neon_skip_nfd(in, 12, out, end_is_cc);
       return 12;
     }
 
@@ -626,7 +626,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint32x4_t bloom = neon_evaluate_bloom_nfd(wide);
     // Hangul syllables are not possible here.
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip(in, 8, out, end_is_cc);
+      neon_skip_nfd(in, 8, out, end_is_cc);
     } else {
       neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }
@@ -644,7 +644,7 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
     uint32x4_t bloom = neon_evaluate_bloom_nfd(wide);
     // Hangul isn't possible here, so we don't need to check for it.
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip(in, nchars, out, end_is_cc);
+      neon_skip_nfd(in, nchars, out, end_is_cc);
     } else {
       neon_decompose_non_hangul(wide, bloom, out, input, end_is_cc);
     }
@@ -695,10 +695,10 @@ static uint32x4x2_t neon_nfc_hash(uint32x4_t input) {
 static uint32x4_t neon_evaluate_bloom_nfc_qc(uint32x4_t block_idx,
                                              uint32x4_t mask) {
   uint32x4_t block = {
-      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
-      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
-      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
-      NORMDATA_NFC_QC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+      NORMDATA_NFC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NFC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NFC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NFC_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
   };
   uint32x4_t result = vandq_u32(mask, block);
   uint32x4_t result_eq = vceqq_u32(result, mask);

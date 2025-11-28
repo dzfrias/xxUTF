@@ -8,12 +8,12 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
-typedef struct NormdataEntry {
+typedef struct NormdataTableEntry {
   uint8_t len;
   uint8_t ccc;
   uint16_t offset;
   uint32_t k;
-} NormdataEntry;
+} NormdataTableEntry;
 
 typedef struct NormdataHangulShuf {
   uint8_t len;
@@ -32,23 +32,23 @@ static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 
 uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
 
-extern const uint8_t NORMDATA_DECOMPOSED_CHARS[10804];
-extern const uint16_t NORMDATA_DECOMPOSED_SALT[3011];
-extern const NormdataEntry NORMDATA_DECOMPOSED_KV[3011];
-extern const uint16_t NORMDATA_COMPOSITION_SALT[928];
-extern const uint32_t NORMDATA_COMPOSITION_KV[928][2];
+extern const uint8_t NORMDATA_NFD_CHARS[10804];
+extern const uint16_t NORMDATA_NFD_SALT[3011];
+extern const NormdataTableEntry NORMDATA_NFD_KV[3011];
+extern const uint16_t NORMDATA_NFC_SALT[928];
+extern const uint32_t NORMDATA_NFC_KV[928][2];
 extern const uint8_t NORMDATA_SHUFUTF8[145][16];
 extern const uint8_t NORMDATA_CODEPOINT_INDEX[4096][2];
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;
 extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
-extern const uint32_t NORMDATA_BLOOM_FILTER[4096];
-extern const uint32_t NORMDATA_NFC_QC_BLOOM_FILTER[2048];
+extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[4096];
+extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[2048];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[2048];
 
-static const uint32_t NORMDATA_DECOMPOSED_TABLE_SIZE = sizeof(NORMDATA_DECOMPOSED_KV) / sizeof(NormdataEntry);
-static const uint32_t NORMDATA_COMPOSED_TABLE_SIZE = sizeof(NORMDATA_COMPOSITION_KV) / sizeof(uint64_t);
+static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
+static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
 
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

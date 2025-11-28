@@ -90,14 +90,12 @@ static size_t scalar_decompose_hangul(uint32_t code_point, uint8_t *out) {
 // Note that this does not handle Hangul code points.
 size_t scalar_decompose(uint32_t code_point, uint8_t *out, bool *is_cc) {
   uint8_t *start = out;
-  uint32_t salt_hash =
-      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_TABLE_SIZE);
-  uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
-  uint32_t key_hash =
-      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_TABLE_SIZE);
-  NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
+  uint32_t salt_hash = scalar_phash(code_point, 0, NORMDATA_NFD_TABLE_SIZE);
+  uint32_t salt = NORMDATA_NFD_SALT[salt_hash];
+  uint32_t key_hash = scalar_phash(code_point, salt, NORMDATA_NFD_TABLE_SIZE);
+  NormdataTableEntry kv = NORMDATA_NFD_KV[key_hash];
   if (kv.k == code_point) {
-    uint8_t const *bytes = &NORMDATA_DECOMPOSED_CHARS[kv.offset];
+    uint8_t const *bytes = &NORMDATA_NFD_CHARS[kv.offset];
     for (uint8_t k = 0; k < kv.len; k++) {
       *out++ = bytes[k];
     }
@@ -148,11 +146,11 @@ static uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
 
   uint32_t wide = c1;
   uint32_t key = (wide << 16) | c2;
-  uint32_t salt_hash = scalar_phash(key, 0, NORMDATA_COMPOSED_TABLE_SIZE);
-  uint32_t salt = NORMDATA_COMPOSITION_SALT[salt_hash];
-  uint32_t key_hash = scalar_phash(key, salt, NORMDATA_COMPOSED_TABLE_SIZE);
-  uint32_t k = NORMDATA_COMPOSITION_KV[key_hash][1];
-  uint32_t comp = NORMDATA_COMPOSITION_KV[key_hash][0];
+  uint32_t salt_hash = scalar_phash(key, 0, NORMDATA_NFC_TABLE_SIZE);
+  uint32_t salt = NORMDATA_NFC_SALT[salt_hash];
+  uint32_t key_hash = scalar_phash(key, salt, NORMDATA_NFC_TABLE_SIZE);
+  uint32_t k = NORMDATA_NFC_KV[key_hash][1];
+  uint32_t comp = NORMDATA_NFC_KV[key_hash][0];
   if (k == key) {
     // The composition is valid, return the composed code point
     return comp;
@@ -165,12 +163,10 @@ static uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
 //
 // See: https://www.unicode.org/reports/tr44/#Canonical_Combining_Class_Values
 static uint8_t scalar_lookup_ccc(uint32_t code_point) {
-  uint32_t salt_hash =
-      scalar_phash(code_point, 0, NORMDATA_DECOMPOSED_TABLE_SIZE);
-  uint32_t salt = NORMDATA_DECOMPOSED_SALT[salt_hash];
-  uint32_t key_hash =
-      scalar_phash(code_point, salt, NORMDATA_DECOMPOSED_TABLE_SIZE);
-  NormdataEntry kv = NORMDATA_DECOMPOSED_KV[key_hash];
+  uint32_t salt_hash = scalar_phash(code_point, 0, NORMDATA_NFD_TABLE_SIZE);
+  uint32_t salt = NORMDATA_NFD_SALT[salt_hash];
+  uint32_t key_hash = scalar_phash(code_point, salt, NORMDATA_NFD_TABLE_SIZE);
+  NormdataTableEntry kv = NORMDATA_NFD_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
   }
@@ -421,7 +417,7 @@ static bool scalar_is_nfc_relevant(uint32_t code_point) {
   mask |= 1u << shift2;
   mask |= 1u << shift3;
 
-  uint32_t block = NORMDATA_NFC_QC_BLOOM_FILTER[block_idx];
+  uint32_t block = NORMDATA_NFC_BLOOM_FILTER[block_idx];
   return (block & mask) == mask;
 }
 
