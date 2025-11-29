@@ -94,12 +94,16 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
 
 @dataclass
 class TableInfo:
-    decomp_bytes_len: int
-    decomp_len: int
+    nfd_bytes_len: int
+    nfd_len: int
+    nfkd_bytes_len: int
+    nfkd_len: int
     comp_len: int
 
 
-def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> TableInfo:
+def generate_decomp_hash_table(
+    writer, decomp_map: DecompMap, name: str
+) -> tuple[int, int]:
     offsets = {}
     lengths = {}
     offset = 0
@@ -115,17 +119,16 @@ def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> Ta
         offset += len(decomp_bytes)
     assert offset <= 2**16 - 1
 
-    writer.write(f"const uint8_t NORMDATA_NFD_CHARS[{len(all_decomp_bytes)}] = {{\n")
+    writer.write(f"const uint8_t NORMDATA_{name}_CHARS[{len(all_decomp_bytes)}] = {{\n")
     for row in batched(all_decomp_bytes, 13):
         writer.write(" ")
         for b in row:
             writer.write(f" 0x{b:02X},")
         writer.write("\n")
     writer.write("};\n")
-    assert offset <= 2**16 - 1
 
     decomp_salt, decomp_keys = minimal_perfect_hash(decomp_map)
-    writer.write(f"\nconst uint16_t NORMDATA_NFD_SALT[{len(decomp_salt)}] = {{\n")
+    writer.write(f"\nconst uint16_t NORMDATA_{name}_SALT[{len(decomp_salt)}] = {{\n")
     for salts in batched(decomp_salt, 14):
         writer.write(" ")
         for s in salts:
@@ -134,7 +137,7 @@ def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> Ta
     writer.write("};\n")
 
     writer.write(
-        f"\nconst NormdataTableEntry NORMDATA_NFD_KV[{len(decomp_keys)}] = {{\n"
+        f"\nconst NormdataTableEntry NORMDATA_{name}_KV[{len(decomp_keys)}] = {{\n"
     )
     for batch in batched(decomp_keys, 5):
         writer.write(" ")
@@ -143,6 +146,15 @@ def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> Ta
             writer.write(f" {{{lengths[k]}, {ccc}, 0x{offsets[k]:03X}, 0x{k:05X}}},")
         writer.write("\n")
     writer.write("};\n")
+
+    return len(all_decomp_bytes), len(decomp_keys)
+
+
+def generate_hash_tables(
+    writer, nfd_map: DecompMap, nfkd_map: DecompMap, comp_map: CompMap
+) -> TableInfo:
+    nfd_bytes_len, nfd_len = generate_decomp_hash_table(writer, nfd_map, "NFD")
+    nfkd_bytes_len, nfkd_len = generate_decomp_hash_table(writer, nfkd_map, "NFKD")
 
     # Write the composition map
     comp_table = {}
@@ -176,8 +188,10 @@ def generate_hash_tables(writer, decomp_map: DecompMap, comp_map: CompMap) -> Ta
     writer.write("  return 0;\n}\n")
 
     return TableInfo(
-        decomp_bytes_len=len(all_decomp_bytes),
-        decomp_len=len(decomp_keys),
+        nfd_bytes_len=nfd_bytes_len,
+        nfd_len=nfd_len,
+        nfkd_bytes_len=nfkd_bytes_len,
+        nfkd_len=nfkd_len,
         comp_len=len(comp_keys),
     )
 
@@ -399,16 +413,24 @@ def generate_header(
     writer,
     table_info: TableInfo,
     shuf_info: ShuffleInfo,
-    decomp_bloom: BloomFilter,
+    nfd_bloom: BloomFilter,
+    nfkd_bloom: BloomFilter,
     nfc_bloom: BloomFilter,
     non_starters_bloom: BloomFilter,
 ):
     writer.write(
-        f"extern const uint8_t NORMDATA_NFD_CHARS[{table_info.decomp_bytes_len}];\n"
+        f"extern const uint8_t NORMDATA_NFD_CHARS[{table_info.nfd_bytes_len}];\n"
     )
-    writer.write(f"extern const uint16_t NORMDATA_NFD_SALT[{table_info.decomp_len}];\n")
+    writer.write(f"extern const uint16_t NORMDATA_NFD_SALT[{table_info.nfd_len}];\n")
     writer.write(
-        f"extern const NormdataTableEntry NORMDATA_NFD_KV[{table_info.decomp_len}];\n"
+        f"extern const NormdataTableEntry NORMDATA_NFD_KV[{table_info.nfd_len}];\n"
+    )
+    writer.write(
+        f"extern const uint8_t NORMDATA_NFKD_CHARS[{table_info.nfkd_bytes_len}];\n"
+    )
+    writer.write(f"extern const uint16_t NORMDATA_NFKD_SALT[{table_info.nfkd_len}];\n")
+    writer.write(
+        f"extern const NormdataTableEntry NORMDATA_NFKD_KV[{table_info.nfkd_len}];\n"
     )
     writer.write(f"extern const uint16_t NORMDATA_NFC_SALT[{table_info.comp_len}];\n")
     writer.write(f"extern const uint32_t NORMDATA_NFC_KV[{table_info.comp_len}][2];\n")
@@ -423,7 +445,10 @@ def generate_header(
     writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;\n")
     writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
     writer.write(
-        f"extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[{decomp_bloom.n_blocks()}];\n"
+        f"extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[{nfd_bloom.n_blocks()}];\n"
+    )
+    writer.write(
+        f"extern const uint32_t NORMDATA_NFKD_BLOOM_FILTER[{nfkd_bloom.n_blocks()}];\n"
     )
     writer.write(
         f"extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[{nfc_bloom.n_blocks()}];\n"
@@ -683,9 +708,9 @@ def main() -> None:
 
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
-        hash_info = generate_hash_tables(f, nfd_map, comp_map)
+        hash_info = generate_hash_tables(f, nfd_map, nfkd_map, comp_map)
         shuf_info = generate_shuffle_tables(f)
-        decomp_bloom = BloomFilter(
+        nfd_bloom = BloomFilter(
             131072,
             multiply_shift_hash,
             [
@@ -695,7 +720,18 @@ def main() -> None:
             ],
             list(nfd_map.keys()),
         )
-        generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", decomp_bloom)
+        generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom)
+        nfkd_bloom = BloomFilter(
+            262144,
+            multiply_shift_hash,
+            [
+                xorshift_hash,
+                hash_32bit_fast,
+                lambda c: xorshift_hash(c) + hash_32bit_fast(c),
+            ],
+            list(nfkd_map.keys()),
+        )
+        generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)
         nfc_bloom = BloomFilter(
             65536,
             lambda c: multiply_shift_hash(c ^ 0xDEADBEEF),
@@ -724,15 +760,21 @@ def main() -> None:
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
         generate_header(
-            f, hash_info, shuf_info, decomp_bloom, nfc_bloom, non_starters_bloom
+            f,
+            hash_info,
+            shuf_info,
+            nfd_bloom,
+            nfkd_bloom,
+            nfc_bloom,
+            non_starters_bloom,
         )
         f.write(POSTAMBLE_H)
 
     KILOBYTE = 1024
     lines = []
-    lines.append(f"Decomposed chars: {hash_info.decomp_bytes_len / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed salt: {(hash_info.decomp_len * 2) / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed KV: {(hash_info.decomp_len * 8) / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed chars: {hash_info.nfd_bytes_len / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed salt: {(hash_info.nfd_len * 2) / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed KV: {(hash_info.nfd_len * 8) / KILOBYTE:.1f}KiB")
     lines.append(f"Composition salt: {(hash_info.comp_len * 2) / KILOBYTE:.1f}KiB")
     lines.append(f"Composition KV: {(hash_info.comp_len * 8) / KILOBYTE:.1f}KiB")
     lines.append(f"UTF-8 shuffle: {(shuf_info.shufutf8_len * 16) / KILOBYTE:.1f}KiB")
@@ -740,11 +782,17 @@ def main() -> None:
         f"Code point index: {(shuf_info.codepoint_index_len * 2) / KILOBYTE:.1f}KiB"
     )
 
-    lines.append(f"NFD bloom filter: {(decomp_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
-    fp_list, fpr = decomp_bloom.false_positives(code_points())
+    lines.append(f"NFD bloom filter: {(nfd_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
+    fp_list, fpr = nfd_bloom.false_positives(code_points())
     lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
     lines.append(f"NFD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
     lines.append(f"NFD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
+
+    lines.append(f"NFKD bloom filter: {(nfkd_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
+    fp_list, fpr = nfkd_bloom.false_positives(code_points())
+    lines.append(f"NFKD bloom filter FPR: {fpr:.5f}")
+    lines.append(f"NFKD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
+    lines.append(f"NFKD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
 
     lines.append(f"NFC QC bloom filter: {(nfc_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
     fp_list, fpr = nfc_bloom.false_positives(code_points())

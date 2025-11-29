@@ -35,6 +35,9 @@ uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
 extern const uint8_t NORMDATA_NFD_CHARS[10804];
 extern const uint16_t NORMDATA_NFD_SALT[3011];
 extern const NormdataTableEntry NORMDATA_NFD_KV[3011];
+extern const uint8_t NORMDATA_NFKD_CHARS[21355];
+extern const uint16_t NORMDATA_NFKD_SALT[6843];
+extern const NormdataTableEntry NORMDATA_NFKD_KV[6843];
 extern const uint16_t NORMDATA_NFC_SALT[928];
 extern const uint32_t NORMDATA_NFC_KV[928][2];
 extern const uint8_t NORMDATA_SHUFUTF8[145][16];
@@ -44,6 +47,7 @@ extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;
 extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];
 extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[4096];
+extern const uint32_t NORMDATA_NFKD_BLOOM_FILTER[8192];
 extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[2048];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[2048];
 
