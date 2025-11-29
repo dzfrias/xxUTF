@@ -8,9 +8,11 @@ const print_alignment = 30;
 const full_line_length = print_alignment + 16;
 
 const ImplementationFunc = fn ([]const u8) void;
-const implementations: [4]struct { []const u8, ImplementationFunc } = .{
+const implementations: []const struct { []const u8, ImplementationFunc } = &.{
     .{ "utf8norm_nfd", utf8normNormalizeNFD },
     .{ "utf8proc_nfd", utf8procNormalizeNFD },
+    .{ "utf8norm_nfkd", utf8normNormalizeNFKD },
+    .{ "utf8proc_nfkd", utf8procNormalizeNFKD },
     .{ "utf8norm_nfc", utf8normNormalizeNFC },
     .{ "utf8proc_nfc", utf8procNormalizeNFC },
 };
@@ -130,6 +132,22 @@ fn utf8procNormalizeNFD(src: []const u8) void {
         @intCast(src.len),
         &out,
         c.UTF8PROC_STABLE | c.UTF8PROC_DECOMPOSE,
+    );
+    c.free(out);
+}
+
+fn utf8normNormalizeNFKD(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf8_nfkd(src.ptr, src.len, &out);
+}
+
+fn utf8procNormalizeNFKD(src: []const u8) void {
+    var out: [*c]c_char = undefined;
+    _ = c.utf8proc_map(
+        src.ptr,
+        @intCast(src.len),
+        &out,
+        c.UTF8PROC_STABLE | c.UTF8PROC_DECOMPOSE | c.UTF8PROC_COMPAT,
     );
     c.free(out);
 }

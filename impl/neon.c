@@ -339,7 +339,7 @@ static void neon_decompose_non_hangul(uint32x4_t values, uint32x4_t relevant,
     size_t nwritten = 0;
     // If the code point is not relevant or, (if it is relevant) but
     // decomposition yields no results, we just copy the input
-    if (!r || (nwritten = scalar_decompose(v, *out, &is_cc)) == 0) {
+    if (!r || (nwritten = scalar_decompose_nfd(v, *out, &is_cc)) == 0) {
       for (size_t j = 0; j < size; j++) {
         (*out)[j] = input[j];
       }

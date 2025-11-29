@@ -8,6 +8,8 @@ extern "C" {
 #endif // __cplusplus
 
 size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length, char *out);
+size_t utf8norm_normalize_utf8_nfkd(char const *input, size_t length,
+                                    char *out);
 size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length, char *out);
 
 #ifdef __cplusplus

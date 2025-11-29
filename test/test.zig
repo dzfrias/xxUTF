@@ -94,6 +94,23 @@ fn testNFD(test_info: TestInfo) ?Failure {
     return null;
 }
 
+fn testNFKD(test_info: TestInfo) ?Failure {
+    const expected = test_info.cols[4];
+    // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[0])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[1])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[2])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[3])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[4])) |failure|
+        return failure;
+
+    return null;
+}
+
 fn testNFC(test_info: TestInfo) ?Failure {
     const expected = test_info.cols[1];
 
@@ -128,6 +145,15 @@ fn writeHex(writer: anytype, s: []const u8) !void {
         try writer.print("{X:0>6} ", .{cp});
     }
     try writer.writeByte('\n');
+}
+
+fn printFailure(writer: anytype, failure: Failure) !void {
+    try writer.writeAll("input:    ");
+    try writeHex(writer, failure.input);
+    try writer.writeAll("expected: ");
+    try writeHex(writer, failure.expected);
+    try writer.writeAll("got:      ");
+    try writeHex(writer, failure.got);
 }
 
 pub fn main() !void {
@@ -170,12 +196,15 @@ pub fn main() !void {
                 "NFD test at line {} failed: {?s}\n",
                 .{ i + 1, test_info.comment },
             );
-            try stderr.writeAll("input:    ");
-            try writeHex(stderr.writer(), failure.input);
-            try stderr.writeAll("expected: ");
-            try writeHex(stderr.writer(), failure.expected);
-            try stderr.writeAll("got:      ");
-            try writeHex(stderr.writer(), failure.got);
+            try printFailure(stderr.writer(), failure);
+            return error.Failed;
+        }
+        if (testNFKD(test_info)) |failure| {
+            try stderr.writer().print(
+                "NFKD test at line {} failed: {?s}\n",
+                .{ i + 1, test_info.comment },
+            );
+            try printFailure(stderr.writer(), failure);
             return error.Failed;
         }
         if (testNFC(test_info)) |failure| {
@@ -183,12 +212,7 @@ pub fn main() !void {
                 "NFC test at line {} failed: {?s}\n",
                 .{ i + 1, test_info.comment },
             );
-            try stderr.writeAll("input:    ");
-            try writeHex(stderr.writer(), failure.input);
-            try stderr.writeAll("expected: ");
-            try writeHex(stderr.writer(), failure.expected);
-            try stderr.writeAll("got:      ");
-            try writeHex(stderr.writer(), failure.got);
+            try printFailure(stderr.writer(), failure);
             return error.Failed;
         }
     }

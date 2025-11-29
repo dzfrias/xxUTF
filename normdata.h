@@ -52,6 +52,7 @@ extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[2048];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[2048];
 
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
+static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
 
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {

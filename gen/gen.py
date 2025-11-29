@@ -496,6 +496,7 @@ uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
 
 POSTAMBLE_H = """
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
+static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
 
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {

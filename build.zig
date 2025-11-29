@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) !void {
     try sources.appendSlice(b.allocator, &.{
         "utf8norm.c",
         "normdata.c",
+        "impl/scalar_common.c",
         "impl/scalar.c",
     });
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
@@ -160,6 +161,7 @@ fn createLibrary(
 const all_sources: []const []const u8 = &.{
     "utf8norm.c",
     "normdata.c",
+    "impl/scalar_common.c",
     "impl/scalar.c",
     "impl/neon.c",
 };
@@ -171,6 +173,8 @@ const all_files: []const []const u8 = &.{
     "normdata.c",
     "impl/scalar.h",
     "impl/scalar.c",
+    "impl/scalar_common.h",
+    "impl/scalar_common.c",
     "impl/neon.h",
     "impl/neon.c",
 };

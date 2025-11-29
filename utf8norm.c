@@ -25,6 +25,12 @@ size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length,
 #endif
 }
 
+size_t utf8norm_normalize_utf8_nfkd(char const *input, size_t length,
+                                    char *out) {
+  return scalar_normalize_utf8_nfkd((uint8_t const *)input, length,
+                                    (uint8_t *)out);
+}
+
 size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length,
                                    char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
