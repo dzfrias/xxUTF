@@ -175,6 +175,7 @@ const all_files: []const []const u8 = &.{
     "impl/scalar.c",
     "impl/scalar_common.h",
     "impl/scalar_common.c",
+    "impl/scalar_impl.c",
     "impl/neon.h",
     "impl/neon.c",
 };

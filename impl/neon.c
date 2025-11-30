@@ -667,14 +667,14 @@ static size_t neon_normalize_masked_utf8_nfd(const uint8_t *input,
 }
 
 static uint32x4x2_t neon_nfc_hash(uint32x4_t input) {
-  uint32x4_t h1 =
-      neon_mul_shift_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
+  uint32x4_t h1 = neon_mul_shift_hash(input);
   uint32x4_t h2 = neon_xorshift_hash(input);
-  uint32x4_t h3 = neon_xorshift_mul_hash(input);
-  uint32x4_t h4 = vmlaq_n_u32(h2, h3, 3);
+  uint32x4_t h3 =
+      neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
+  uint32x4_t h4 = neon_xorshift_mul_hash(input);
 
-  // h1 % 2048
-  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(2047));
+  // h1 % 4096
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
   // h2 % 32
   uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
   // h3 % 32

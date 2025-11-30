@@ -42,3 +42,9 @@ size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length,
                                    (uint8_t *)out);
 #endif
 }
+
+size_t utf8norm_normalize_utf8_nfkc(char const *input, size_t length,
+                                    char *out) {
+  return scalar_normalize_utf8_nfkc((uint8_t const *)input, length,
+                                    (uint8_t *)out);
+}

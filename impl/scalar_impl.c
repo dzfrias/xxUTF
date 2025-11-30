@@ -6,6 +6,14 @@
 #error "DECOMP_TABLE_NAME must be defined"
 #endif
 
+#ifndef COMP_SUFFIX
+#error "COMP_SUFFIX must be defined"
+#endif
+
+#ifndef COMP_TABLE_NAME
+#error "COMP_TABLE_NAME must be defined"
+#endif
+
 #include "impl/scalar_common.h"
 #include "normdata.h"
 #include <stdbool.h>
@@ -135,6 +143,160 @@ size_t CONCAT2(scalar_normalize_utf8_, DECOMP_SUFFIX)(const uint8_t *input,
   bool end_is_cc = false;
   return CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
                  _with_context)(input, length, out, &end_is_cc);
+}
+
+// Find the next starter character that is composition irrelevant, or -1 if one
+// is not found.
+size_t CONCAT3(scalar_find_, COMP_SUFFIX,
+               _irrelevant_starter)(const uint8_t *input, size_t length) {
+  uint32_t p = 0;
+  while (p < length) {
+    uint8_t size;
+    uint32_t c = scalar_parse_code_point(input + p, &size);
+    uint8_t ccc = scalar_lookup_ccc(c);
+    if (ccc == 0 && !CONCAT3(scalar_is_, COMP_SUFFIX, _relevant)(c)) {
+      return p;
+    }
+    p += size;
+  }
+
+  return (size_t)-1;
+}
+
+size_t CONCAT2(scalar_normalize_utf8_,
+               COMP_SUFFIX)(const uint8_t *input, size_t length, uint8_t *out) {
+  uint8_t *start = out;
+  size_t p = 0;
+  uint8_t last_ccc = 0;
+
+  while (p < length) {
+    uint8_t size;
+    uint32_t c = scalar_parse_code_point(input + p, &size);
+
+    // ASCII fast path to skip ccc lookup
+    if (c <= 0x7F) {
+      *out++ = (uint8_t)c;
+      p++;
+      last_ccc = 0;
+      continue;
+    }
+
+    uint8_t ccc = scalar_lookup_ccc(c);
+
+    // We can skip this character if it the combining classes are in the right
+    // order and if it is irrelevant
+    if (ccc <= last_ccc && !CONCAT3(scalar_is_, COMP_SUFFIX, _relevant)(c)) {
+      for (size_t i = 0; i < size; i++) {
+        *out++ = input[p + i];
+      }
+      p += size;
+      last_ccc = ccc;
+      continue;
+    }
+
+    last_ccc = ccc;
+
+    // This starter should be NF(K)C irrelevant
+    size_t previous_starter_pos = scalar_rfind_starter(input, p);
+    if (previous_starter_pos == (size_t)-1) {
+      previous_starter_pos = 0;
+    }
+
+    size_t next_irrelevant_starter_pos =
+        CONCAT3(scalar_find_, COMP_SUFFIX,
+                _irrelevant_starter)(input + p + size, length - p - size);
+    if (next_irrelevant_starter_pos == (size_t)-1) {
+      next_irrelevant_starter_pos = length;
+    } else {
+      next_irrelevant_starter_pos += p + size;
+    }
+
+    // NOTE: scary!
+    uint8_t *normalized_out = out - (p - previous_starter_pos);
+    // NF(K)D normalize a localized region in between the two starters that are
+    // NF(K)C irrelevant. This guarantees that, if we NF(K)C normalize this
+    // range, no characters after the end of the range in the input will
+    // combine/interact with the range we normalized. In other words, we run
+    // NF(K)C on the largest possible sub-range of characters that may (or may
+    // not) have to do with the NF(K)C relevant character `c` that we initially
+    // detected.
+    size_t normalized_length = CONCAT2(scalar_normalize_utf8_, DECOMP_SUFFIX)(
+        input + previous_starter_pos,
+        next_irrelevant_starter_pos - previous_starter_pos, normalized_out);
+
+    size_t normalized_pos = 0;
+    uint8_t normalized_last_ccc = 255;
+    // Iterate through each code point, seeking back until a starter is found
+    // and trying to combine with that. This part of the algorithm closely
+    // matches up with the spec. See:
+    // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614
+    while (normalized_pos < normalized_length) {
+      uint8_t normalized_size;
+      uint32_t normalized_c = scalar_parse_code_point(
+          normalized_out + normalized_pos, &normalized_size);
+      uint8_t normalized_ccc = scalar_lookup_ccc(normalized_c);
+
+      // Find the preceding starter. It should be composition irrelevant
+      // TODO: we can cache this
+      size_t starter_pos = scalar_rfind_starter(normalized_out, normalized_pos);
+      assert(starter_pos != normalized_pos);
+      // Skip if we don't have a starter before this
+      if (starter_pos == (size_t)-1) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+
+      uint8_t starter_size;
+      uint32_t starter =
+          scalar_parse_code_point(normalized_out + starter_pos, &starter_size);
+      // Skip if we're blocked from the starter
+      if (normalized_ccc <= normalized_last_ccc &&
+          starter_pos + starter_size != normalized_pos) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+
+      uint32_t composed;
+      if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {
+        composed = scalar_try_compose_bmp(starter, normalized_c);
+      } else {
+        composed = normdata_compose_supplementary(starter, normalized_c);
+      }
+      // Skip if no composed character
+      if (composed == 0) {
+        normalized_pos += normalized_size;
+        normalized_last_ccc = normalized_ccc;
+        continue;
+      }
+      uint8_t composed_size = scalar_code_point_size(composed);
+      assert(composed_size >= starter_size);
+
+      // Shift left to delete the combining character
+      scalar_shift_left(normalized_out + normalized_pos,
+                        normalized_length - normalized_pos, normalized_size);
+      // Account for combining character deletion
+      normalized_length -= normalized_size;
+
+      // Shift everything right to make room for new composed code point
+      scalar_shift_right(normalized_out + starter_pos + starter_size,
+                         normalized_length - starter_pos - starter_size,
+                         composed_size - starter_size);
+      // Overwrite the starter with the new composed code point
+      (void)scalar_write_code_point(composed, normalized_out + starter_pos);
+      normalized_length += composed_size - starter_size;
+      normalized_pos += composed_size - starter_size;
+    }
+
+    // Set the out pointer to the end of the normalized buffer
+    out = normalized_out + normalized_length;
+    // Set the input offset to the next starter that is garuanteed to not be
+    // relevant to NF(K)C
+    p = next_irrelevant_starter_pos;
+  }
+
+  return out - start;
 }
 
 #undef _CONCAT

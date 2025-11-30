@@ -416,6 +416,7 @@ def generate_header(
     nfd_bloom: BloomFilter,
     nfkd_bloom: BloomFilter,
     nfc_bloom: BloomFilter,
+    nfkc_bloom: BloomFilter,
     non_starters_bloom: BloomFilter,
 ):
     writer.write(
@@ -452,6 +453,9 @@ def generate_header(
     )
     writer.write(
         f"extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[{nfc_bloom.n_blocks()}];\n"
+    )
+    writer.write(
+        f"extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[{nfkc_bloom.n_blocks()}];\n"
     )
     writer.write(
         f"extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[{non_starters_bloom.n_blocks()}];\n"
@@ -620,11 +624,13 @@ def load_decomp_maps() -> tuple[DecompMap, DecompMap]:
 class DerivedProps:
     comp_exclusions: list[int]
     nfc_qc: list[int]
+    nfkc_qc: list[int]
 
 
 def load_derived_props() -> DerivedProps:
     exclusions = []
     nfc_qc = []
+    nfkc_qc = []
 
     with open("DerivedNormalizationProps.txt", "r") as f:
         for line in f:
@@ -646,8 +652,10 @@ def load_derived_props() -> DerivedProps:
                 exclusions.extend(code_points)
             if "NFC_QC" in line:
                 nfc_qc.extend(code_points)
+            if "NFKC_QC" in line:
+                nfkc_qc.extend(code_points)
 
-    return DerivedProps(comp_exclusions=exclusions, nfc_qc=nfc_qc)
+    return DerivedProps(comp_exclusions=exclusions, nfc_qc=nfc_qc, nfkc_qc=nfkc_qc)
 
 
 # Flatten a decomposition map so that any recursive decompositions are resolved.
@@ -734,23 +742,34 @@ def main() -> None:
         )
         generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)
         nfc_bloom = BloomFilter(
-            65536,
-            lambda c: multiply_shift_hash(c ^ 0xDEADBEEF),
+            131072,
+            multiply_shift_hash,
             [
                 xorshift_hash,
+                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
                 hash_32bit_fast,
-                lambda c: xorshift_hash(c) + 3 * hash_32bit_fast(c),
             ],
             derived.nfc_qc,
         )
         generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom)
-        non_starters_bloom = BloomFilter(
-            65536,
-            lambda c: multiply_shift_hash(c ^ 0xDEADBEEF),
+        nfkc_bloom = BloomFilter(
+            131072,
+            multiply_shift_hash,
             [
                 xorshift_hash,
+                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
                 hash_32bit_fast,
-                lambda c: xorshift_hash(c) + 3 * hash_32bit_fast(c),
+            ],
+            derived.nfkc_qc,
+        )
+        generate_bloom_filter(f, "NORMDATA_NFKC_BLOOM_FILTER", nfkc_bloom)
+        non_starters_bloom = BloomFilter(
+            131072,
+            multiply_shift_hash,
+            [
+                xorshift_hash,
+                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
+                hash_32bit_fast,
             ],
             non_starters,
         )
@@ -767,6 +786,7 @@ def main() -> None:
             nfd_bloom,
             nfkd_bloom,
             nfc_bloom,
+            nfkc_bloom,
             non_starters_bloom,
         )
         f.write(POSTAMBLE_H)
@@ -801,6 +821,16 @@ def main() -> None:
     lines.append(f"NFC QC bloom filter FPR: {fpr:.5f}")
     lines.append(f"NFC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
     lines.append(f"NFC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
+
+    lines.append(
+        f"NFKC QC bloom filter: {(nfkc_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB"
+    )
+    fp_list, fpr = nfkc_bloom.false_positives(code_points())
+    lines.append(f"NFKC QC bloom filter FPR: {fpr:.5f}")
+    lines.append(
+        f"NFKC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}"
+    )
+    lines.append(f"NFKC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
 
     fp_list, fpr = non_starters_bloom.false_positives(code_points())
     lines.append(f"ccc > 0 bloom filter FPR: {fpr:.5f}")

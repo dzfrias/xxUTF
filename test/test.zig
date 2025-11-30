@@ -132,6 +132,23 @@ fn testNFC(test_info: TestInfo) ?Failure {
     return null;
 }
 
+fn testNFKC(test_info: TestInfo) ?Failure {
+    const expected = test_info.cols[3];
+    // c4 == toNFKC(c1) == toNFKC(c2) == toNFKC(c3) == toNFKC(c4) == toNFKC(c5)
+    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[0])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[1])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[2])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[3])) |failure|
+        return failure
+    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[4])) |failure|
+        return failure;
+
+    return null;
+}
+
 fn writeHex(writer: anytype, s: []const u8) !void {
     const utf8_view = std.unicode.Utf8View.init(s) catch {
         for (s) |b| {
@@ -210,6 +227,14 @@ pub fn main() !void {
         if (testNFC(test_info)) |failure| {
             try stderr.writer().print(
                 "NFC test at line {} failed: {?s}\n",
+                .{ i + 1, test_info.comment },
+            );
+            try printFailure(stderr.writer(), failure);
+            return error.Failed;
+        }
+        if (testNFKC(test_info)) |failure| {
+            try stderr.writer().print(
+                "NFKC test at line {} failed: {?s}\n",
                 .{ i + 1, test_info.comment },
             );
             try printFailure(stderr.writer(), failure);
