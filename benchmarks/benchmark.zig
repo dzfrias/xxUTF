@@ -15,6 +15,8 @@ const implementations: []const struct { []const u8, ImplementationFunc } = &.{
     .{ "utf8proc_nfkd", utf8procNormalizeNFKD },
     .{ "utf8norm_nfc", utf8normNormalizeNFC },
     .{ "utf8proc_nfc", utf8procNormalizeNFC },
+    .{ "utf8norm_nfkc", utf8normNormalizeNFKC },
+    .{ "utf8proc_nfkc", utf8procNormalizeNFKC },
 };
 
 pub fn main() !void {
@@ -164,6 +166,22 @@ fn utf8procNormalizeNFC(src: []const u8) void {
         @intCast(src.len),
         &out,
         c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE,
+    );
+    c.free(out);
+}
+
+fn utf8normNormalizeNFKC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf8_nfkc(src.ptr, src.len, &out);
+}
+
+fn utf8procNormalizeNFKC(src: []const u8) void {
+    var out: [*c]c_char = undefined;
+    _ = c.utf8proc_map(
+        src.ptr,
+        @intCast(src.len),
+        &out,
+        c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE | c.UTF8PROC_COMPAT,
     );
     c.free(out);
 }
