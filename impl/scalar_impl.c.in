@@ -1,47 +1,34 @@
-#ifndef DECOMP_SUFFIX
-#error "DECOMP_SUFFIX must be defined"
-#endif
+// This file should be processed at build time to have CMake-style variable
+// substiutions for the following variables:
+// - DECOMP_SUFFIX
+// - DECOMP_TABLE_NAME
+// - COMP_SUFFIX
+// - COMP_TABLE_NAME
 
-#ifndef DECOMP_TABLE_NAME
-#error "DECOMP_TABLE_NAME must be defined"
-#endif
-
-#ifndef COMP_SUFFIX
-#error "COMP_SUFFIX must be defined"
-#endif
-
-#ifndef COMP_TABLE_NAME
-#error "COMP_TABLE_NAME must be defined"
-#endif
-
+#include "impl/scalar.h"
 #include "impl/scalar_common.h"
 #include "normdata.h"
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define _CONCAT2(a, b) a##b
-#define CONCAT2(a, b) _CONCAT2(a, b)
-#define _CONCAT3(a, b, c) a##b##c
-#define CONCAT3(a, b, c) _CONCAT3(a, b, c)
 
 // Decompose a code point and write it into the output buffer. Returns the
 // number of bytes written, or zero if the provided code point doesn't have a
 // decomposition.
 //
 // Note that this does not handle Hangul code points.
-size_t CONCAT2(scalar_decompose_, DECOMP_SUFFIX)(uint32_t code_point,
-                                                 uint8_t *out, bool *is_cc) {
+size_t scalar_decompose_@DECOMP_SUFFIX@(uint32_t code_point, uint8_t *out, bool *is_cc) {
   uint8_t *start = out;
   uint32_t salt_hash = scalar_phash(
-      code_point, 0, CONCAT3(NORMDATA_, DECOMP_TABLE_NAME, _TABLE_SIZE));
-  uint32_t salt = CONCAT3(NORMDATA_, DECOMP_TABLE_NAME, _SALT)[salt_hash];
+      code_point, 0, NORMDATA_@DECOMP_TABLE_NAME@_TABLE_SIZE);
+  uint32_t salt = NORMDATA_@DECOMP_TABLE_NAME@_SALT[salt_hash];
   uint32_t key_hash = scalar_phash(
-      code_point, salt, CONCAT3(NORMDATA_, DECOMP_TABLE_NAME, _TABLE_SIZE));
-  NormdataTableEntry kv = CONCAT3(NORMDATA_, DECOMP_TABLE_NAME, _KV)[key_hash];
+      code_point, salt, NORMDATA_@DECOMP_TABLE_NAME@_TABLE_SIZE);
+  NormdataTableEntry kv = NORMDATA_@DECOMP_TABLE_NAME@_KV[key_hash];
   if (kv.k == code_point) {
     uint8_t const *bytes =
-        &CONCAT3(NORMDATA_, DECOMP_TABLE_NAME, _CHARS)[kv.offset];
+        &NORMDATA_@DECOMP_TABLE_NAME@_CHARS[kv.offset];
     for (uint8_t k = 0; k < kv.len; k++) {
       *out++ = bytes[k];
     }
@@ -53,8 +40,7 @@ size_t CONCAT2(scalar_decompose_, DECOMP_SUFFIX)(uint32_t code_point,
   return out - start;
 }
 
-size_t CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
-               _with_context)(uint8_t const *input, size_t length, uint8_t *out,
+size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, size_t length, uint8_t *out,
                               bool *end_is_cc) {
   uint8_t *start = out;
 
@@ -74,7 +60,7 @@ size_t CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
       uint32_t code_point =
           (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);
       size_t nwritten =
-          CONCAT2(scalar_decompose_, DECOMP_SUFFIX)(code_point, out, &is_cc);
+          scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = input[p + 1];
@@ -92,7 +78,7 @@ size_t CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
         out += scalar_decompose_hangul(code_point, out);
       } else {
         size_t nwritten =
-            CONCAT2(scalar_decompose_, DECOMP_SUFFIX)(code_point, out, &is_cc);
+            scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
         if (nwritten == 0) {
           *out++ = leading;
           *out++ = input[p + 1];
@@ -107,7 +93,7 @@ size_t CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
           (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |
           (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);
       size_t nwritten =
-          CONCAT2(scalar_decompose_, DECOMP_SUFFIX)(code_point, out, &is_cc);
+          scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = input[p + 1];
@@ -137,24 +123,22 @@ size_t CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
   return out - start;
 }
 
-size_t CONCAT2(scalar_normalize_utf8_, DECOMP_SUFFIX)(const uint8_t *input,
+size_t scalar_normalize_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
                                                       size_t length,
                                                       uint8_t *out) {
   bool end_is_cc = false;
-  return CONCAT3(scalar_normalize_utf8_, DECOMP_SUFFIX,
-                 _with_context)(input, length, out, &end_is_cc);
+  return scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(input, length, out, &end_is_cc);
 }
 
 // Find the next starter character that is composition irrelevant, or -1 if one
 // is not found.
-size_t CONCAT3(scalar_find_, COMP_SUFFIX,
-               _irrelevant_starter)(const uint8_t *input, size_t length) {
+size_t scalar_find_@COMP_SUFFIX@_irrelevant_starter(const uint8_t *input, size_t length) {
   uint32_t p = 0;
   while (p < length) {
     uint8_t size;
     uint32_t c = scalar_parse_code_point(input + p, &size);
     uint8_t ccc = scalar_lookup_ccc(c);
-    if (ccc == 0 && !CONCAT3(scalar_is_, COMP_SUFFIX, _relevant)(c)) {
+    if (ccc == 0 && !scalar_is_@COMP_SUFFIX@_relevant(c)) {
       return p;
     }
     p += size;
@@ -163,8 +147,7 @@ size_t CONCAT3(scalar_find_, COMP_SUFFIX,
   return (size_t)-1;
 }
 
-size_t CONCAT2(scalar_normalize_utf8_,
-               COMP_SUFFIX)(const uint8_t *input, size_t length, uint8_t *out) {
+size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, uint8_t *out) {
   uint8_t *start = out;
   size_t p = 0;
   uint8_t last_ccc = 0;
@@ -185,7 +168,7 @@ size_t CONCAT2(scalar_normalize_utf8_,
 
     // We can skip this character if it the combining classes are in the right
     // order and if it is irrelevant
-    if (ccc <= last_ccc && !CONCAT3(scalar_is_, COMP_SUFFIX, _relevant)(c)) {
+    if (ccc <= last_ccc && !scalar_is_@COMP_SUFFIX@_relevant(c)) {
       for (size_t i = 0; i < size; i++) {
         *out++ = input[p + i];
       }
@@ -203,8 +186,7 @@ size_t CONCAT2(scalar_normalize_utf8_,
     }
 
     size_t next_irrelevant_starter_pos =
-        CONCAT3(scalar_find_, COMP_SUFFIX,
-                _irrelevant_starter)(input + p + size, length - p - size);
+        scalar_find_@COMP_SUFFIX@_irrelevant_starter(input + p + size, length - p - size);
     if (next_irrelevant_starter_pos == (size_t)-1) {
       next_irrelevant_starter_pos = length;
     } else {
@@ -220,7 +202,7 @@ size_t CONCAT2(scalar_normalize_utf8_,
     // NF(K)C on the largest possible sub-range of characters that may (or may
     // not) have to do with the NF(K)C relevant character `c` that we initially
     // detected.
-    size_t normalized_length = CONCAT2(scalar_normalize_utf8_, DECOMP_SUFFIX)(
+    size_t normalized_length = scalar_normalize_utf8_@DECOMP_SUFFIX@(
         input + previous_starter_pos,
         next_irrelevant_starter_pos - previous_starter_pos, normalized_out);
 
@@ -298,8 +280,3 @@ size_t CONCAT2(scalar_normalize_utf8_,
 
   return out - start;
 }
-
-#undef _CONCAT
-#undef CONCAT
-#undef _CONCAT3
-#undef CONCAT3

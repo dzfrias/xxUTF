@@ -1,7 +1,6 @@
 #include "impl/scalar.h"
 #include "impl/scalar_common.h"
 #include "normdata.h"
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -29,23 +28,3 @@ void scalar_print_code_points(const uint8_t *input, size_t length) {
   }
   printf("\n");
 }
-
-#define DECOMP_SUFFIX nfd
-#define DECOMP_TABLE_NAME NFD
-#define COMP_SUFFIX nfc
-#define COMP_TABLE_NAME NFC
-#include "impl/scalar_impl.c" // amalgamate no_include
-#undef DECOMP_SUFFIX
-#undef DECOMP_TABLE_NAME
-#undef COMP_SUFFIX
-#undef COMP_TABLE_NAME
-
-#define DECOMP_SUFFIX nfkd
-#define DECOMP_TABLE_NAME NFKD
-#define COMP_SUFFIX nfkc
-#define COMP_TABLE_NAME NFKC
-#include "impl/scalar_impl.c" // amalgamate no_include
-#undef DECOMP_SUFFIX
-#undef DECOMP_TABLE_NAME
-#undef COMP_SUFFIX
-#undef COMP_TABLE_NAME

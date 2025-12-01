@@ -28,9 +28,7 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
     out.write(f"/*amalgamate: BEGIN {file}*/\n")
     with open(file, "r", encoding="utf-8") as f:
         for line in f:
-            if (
-                include_match := include_re.match(line)
-            ) is not None and not line.endswith("amalgamate no_include\n"):
+            if (include_match := include_re.match(line)) is not None:
                 include = include_match.group(1)
                 if include not in seen_headers:
                     copy_file(out, Path(include), seen_headers)
