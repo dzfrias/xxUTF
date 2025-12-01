@@ -6,7 +6,7 @@
 // - COMP_TABLE_NAME
 
 #include "impl/scalar.h"
-#include "impl/scalar_common.h"
+#include "impl/scalar/scalar_common.h"
 #include "normdata.h"
 #include <assert.h>
 #include <stdbool.h>

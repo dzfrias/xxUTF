@@ -11,12 +11,12 @@ pub fn build(b: *std.Build) !void {
     try sources.appendSlice(b.allocator, &.{
         "utf8norm.c",
         "normdata.c",
-        "impl/scalar_common.c",
-        "impl/scalar.c",
+        "impl/scalar/scalar_common.c",
+        "impl/scalar/scalar.c",
     });
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
     if (add_neon) {
-        try sources.append(b.allocator, "impl/neon.c");
+        try sources.append(b.allocator, "impl/neon/neon.c");
     }
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
@@ -50,7 +50,7 @@ pub fn build(b: *std.Build) !void {
     // Handle generated files with CMake-style substitutions
     const scalar_impl = substitute(
         b,
-        b.path("impl/scalar_impl.c.in"),
+        b.path("impl/scalar/scalar_impl.c.in"),
         "scalar_impl.c",
         &.{
             .{ .name = "DECOMP_SUFFIX", .value = "nfd" },
@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) !void {
     );
     const scalar_impl_compat = substitute(
         b,
-        b.path("impl/scalar_impl.c.in"),
+        b.path("impl/scalar/scalar_impl.c.in"),
         "scalar_impl_compat.c",
         &.{
             .{ .name = "DECOMP_SUFFIX", .value = "nfkd" },
@@ -235,9 +235,9 @@ fn substitute(
 const all_sources: []const []const u8 = &.{
     "utf8norm.c",
     "normdata.c",
-    "impl/scalar_common.c",
-    "impl/scalar.c",
-    "impl/neon.c",
+    "impl/scalar/scalar_common.c",
+    "impl/scalar/scalar.c",
+    "impl/neon/neon.c",
 };
 
 const all_files: []const []const u8 = &.{
@@ -246,10 +246,10 @@ const all_files: []const []const u8 = &.{
     "normdata.h",
     "normdata.c",
     "impl/scalar.h",
-    "impl/scalar.c",
-    "impl/scalar_common.h",
-    "impl/scalar_common.c",
-    "impl/scalar_impl.c.in",
+    "impl/scalar/scalar.c",
+    "impl/scalar/scalar_common.h",
+    "impl/scalar/scalar_common.c",
+    "impl/scalar/scalar_impl.c.in",
     "impl/neon.h",
-    "impl/neon.c",
+    "impl/neon/neon.c",
 };

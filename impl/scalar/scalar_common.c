@@ -1,4 +1,4 @@
-#include "impl/scalar_common.h"
+#include "impl/scalar/scalar_common.h"
 #include "normdata.h"
 #include <stdbool.h>
 #include <stddef.h>
