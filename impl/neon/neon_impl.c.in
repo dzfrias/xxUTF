@@ -1,0 +1,436 @@
+// amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
+
+// This file should be processed at build time to have CMake-style variable
+// substiutions for the following variables:
+// - DECOMP_SUFFIX
+// - DECOMP_TABLE_NAME
+// - COMP_SUFFIX
+// - COMP_TABLE_NAME
+
+#include "impl/neon.h"
+#include "impl/neon/neon_common.h"
+#include "impl/scalar.h"
+#include "normdata.h"
+#include <arm_neon.h>
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+// Pass a code point vector through the decomp+cc bloom filter, which will
+// return a vector of 0s and 0xFFFFFFFFs probabilistically indicating whether
+// the corresponding code point has a decomposition or is a combining character.
+static uint32x4_t neon_evaluate_bloom_@DECOMP_SUFFIX@(uint32x4_t input) {
+  uint32x4_t h1 = neon_mul_shift_hash(input);
+  uint32x4_t h2 = neon_xorshift_hash(input);
+  uint32x4_t h3 = neon_xorshift_mul_hash(input);
+
+  // h1 % 4096
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
+  // h2 % 32
+  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
+  // h3 % 32
+  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
+  // (h2 + h3) % 32
+  uint32x4_t shift3 = vandq_u32(vaddq_u32(h2, h3), vdupq_n_u32(31));
+
+  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
+  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
+
+  uint32x4_t block = {
+      NORMDATA_@DECOMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_@DECOMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_@DECOMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_@DECOMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+
+  return result_eq;
+}
+
+// Decompose a 4x32-bit vector of code points into their UTF-8
+// representations, writing them into the output buffer. The relevant mask
+// indicates which code points should be decomposed (0 meaning irrelevant).
+//
+// This function assumes that the input code points are not Hangul syllables.
+static void neon_decompose_non_hangul_@DECOMP_SUFFIX@(uint32x4_t values, uint32x4_t relevant,
+                                      uint8_t **out, const uint8_t *input,
+                                      bool *end_is_cc) {
+  bool last_is_cc = *end_is_cc;
+#pragma clang loop unroll(enable)
+  for (size_t i = 0; i < 4; i++) {
+    uint32_t v = values[i];
+    bool r = relevant[i] > 0;
+
+    uint8_t leading = input[0];
+    uint8_t size = NORMDATA_UTF8_SIZE[leading];
+    if (size == 1) {
+      if (last_is_cc) {
+        scalar_sort_characters(*out - 1);
+      }
+      // ASCII code point, no decomposition needed.
+      *(*out)++ = leading;
+      input++;
+      last_is_cc = false;
+      continue;
+    }
+
+    bool is_cc = false;
+
+    size_t nwritten = 0;
+    // If the code point is not relevant or, (if it is relevant) but
+    // decomposition yields no results, we just copy the input
+    if (!r || (nwritten = scalar_decompose_@DECOMP_SUFFIX@(v, *out, &is_cc)) == 0) {
+      for (size_t j = 0; j < size; j++) {
+        (*out)[j] = input[j];
+      }
+      nwritten = size;
+    }
+    if (last_is_cc && !is_cc) {
+      scalar_sort_characters(*out - 1);
+    }
+    last_is_cc = is_cc;
+    input += size;
+    *out += nwritten;
+  }
+
+  *end_is_cc = last_is_cc;
+}
+
+// Generalized decomposition for a 16-byte input vector of UTF-8 code points.
+// The parsed code points are passed in as a 4x32-bit vector of code points,
+// and the `nchars` parameter indicates how many bytes of the input vector are
+// used for the `chars` parameter. The `input` parameter is the original pointer
+// to UTF-8 bytes.
+static inline void neon_decompose_@DECOMP_SUFFIX@(uint8x16_t in, uint32x4_t chars,
+                                  size_t nchars, const uint8_t *input,
+                                  uint8_t **out, bool *end_is_cc) {
+  uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(chars);
+  uint32x4_t hangul_mask = neon_hangul_mask(chars);
+  // We use these results to split the input into four cases that have
+  // specialized handling for each case.
+  bool bloom_result = vmaxvq_u32(bloom) > 0;
+  bool hangul_result = vmaxvq_u32(hangul_mask) > 0;
+  if (!bloom_result && !hangul_result) {
+    // Case where we have no precomposed characters and no Hangul syllables
+    neon_skip_decomp(in, nchars, out, end_is_cc);
+  } else if (hangul_result && !bloom_result) {
+    // Case where we have Hangul syllables, but no precomposed characters
+    neon_decompose_hangul(chars, hangul_mask, out, input, end_is_cc);
+  } else if (bloom_result && !hangul_result) {
+    // Case where we have precomposed characters, but no Hangul
+    neon_decompose_non_hangul_@DECOMP_SUFFIX@(chars, bloom, out, input, end_is_cc);
+  } else {
+    // Case where we have both precomposed characters and Hangul syllables.
+    // Very rare in practice, so we just fall back to the scalar implementation.
+    *out +=
+        scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(input, nchars, *out, end_is_cc);
+  }
+}
+
+// NFD normalize up to 16 bytes of UTF-8 using an end of code point mask.
+// Returns the number of bytes consumed.
+static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
+                                             uint64_t mask, uint8_t **out,
+                                             bool *end_is_cc) {
+  // Count trailing ones to get number of ASCII bytes at the start of input
+  int t1 = __builtin_ctzll(~mask);
+  // Skip as many ASCII bytes as possible. We eagerly skip ASCII because, even
+  // if the number of ASCII bytes is small, benchmarks show that the cost of
+  // falling into the slow path for a majority ASCII input vector is quite high,
+  // especially for heavily Roman alphabetic languages broken up by occasional
+  // diacritics, such as Spanish or French.
+  if (t1 > 2) {
+    if (*end_is_cc) {
+      scalar_sort_characters(*out - 1);
+    }
+    size_t min = t1 > 52 ? 52 : t1;
+    neon_memcpy_small(*out, input, min);
+    *out += min;
+    *end_is_cc = false;
+    return min;
+  }
+
+  uint8x16_t in = vld1q_u8(input);
+  uint16_t sml_mask = mask & 0xFFF;
+
+  // Fast path for 4 3-byte code points
+  if (sml_mask == 0x924) {
+    uint16x4_t chars = neon_parse_3_byte_utf8(in);
+    uint16_t min = vminv_u16(chars);
+    uint16_t max = vmaxv_u16(chars);
+
+    // The large, common 3-byte CJK range (encompasses much of CJK) that has
+    // no precomposed code points. We can just skip these. Not a huge fan of
+    // language-specific optimization like this (excluding ASCII), but the
+    // speedups are so large for such a low cost that it seems worth it.
+    if (min >= 0x30FF && max <= 0x9FFF) {
+      neon_skip_decomp(in, 12, out, end_is_cc);
+      return 12;
+    }
+
+    // Precomposed Hangul range. Characters in this range are algorithmically
+    // decomposable with a few arithmetic operations. They are the only
+    // precomposed characters we can decompose without a table lookup.
+    //
+    // Algorithm described here:
+    // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
+    if (min >= NORMDATA_S_BASE && max < NORMDATA_S_BASE + NORMDATA_S_COUNT) {
+      neon_decompose_all_hangul(chars, out, end_is_cc);
+      return 12;
+    }
+
+    // Fallback path for 4 3-byte characters
+    uint32x4_t wide = vmovl_u16(chars);
+    neon_decompose_@DECOMP_SUFFIX@(in, wide, 12, input, out, end_is_cc);
+    return 12;
+  }
+
+  // Four two-byte code points
+  if ((sml_mask & 0xFF) == 0xAA) {
+    uint16x4_t chars = neon_parse_2_byte_utf8(in);
+    uint32x4_t wide = vmovl_u16(chars);
+    uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(wide);
+    // Hangul syllables are not possible here.
+    if (vaddvq_u32(bloom) == 0) {
+      neon_skip_decomp(in, 8, out, end_is_cc);
+    } else {
+      neon_decompose_non_hangul_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
+    }
+    return 8;
+  }
+
+  uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
+  uint8_t nchars = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
+
+  if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+    // Four one to two byte code points
+    uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
+    // Only the first four code points are used
+    uint32x4_t wide = vmovl_u16(chars);
+    uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(wide);
+    // Hangul isn't possible here, so we don't need to check for it.
+    if (vaddvq_u32(bloom) == 0) {
+      neon_skip_decomp(in, nchars, out, end_is_cc);
+    } else {
+      neon_decompose_non_hangul_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
+    }
+  } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
+    // Four code points
+    uint16x4_t chars = neon_parse_4_123_utf8(in, idx);
+    uint32x4_t wide = vmovl_u16(chars);
+    neon_decompose_@DECOMP_SUFFIX@(in, wide, nchars, input, out, end_is_cc);
+  } else if (idx < NORMDATA_SHUFUTF8_INDEX_1234) {
+    // TODO: right now, anytime we have 3 1..4-byte code points, we just fall
+    //       back to scalar. This is because our functions are designed for
+    //       4 code points, and we don't have a good way to handle the case
+    //       where we have 3 code points. Four byte code points are uncommon
+    //       enough in regular text that I think this path is okay, though.
+    *out +=
+        scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(input, nchars, *out, end_is_cc);
+  }
+
+  return nchars;
+}
+
+static uint32x4_t neon_evaluate_bloom_@COMP_SUFFIX@_qc(uint32x4_t block_idx,
+                                                         uint32x4_t mask) {
+  uint32x4_t block = {
+      NORMDATA_@COMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_@COMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_@COMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_@COMP_TABLE_NAME@_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return result_eq;
+}
+
+static uint32x4_t neon_evaluate_bloom_non_starters_@COMP_SUFFIX@(uint32x4_t block_idx,
+                                                                   uint32x4_t mask) {
+  uint32x4_t block = {
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return result_eq;
+}
+
+static uint32x4_t neon_evaluate_bloom_@COMP_SUFFIX@(uint32x4_t input) {
+  uint32x4x2_t hash_info = neon_comp_hash(input);
+  // NF(K)C QC and the non starters bloom filter use the same hashing scheme
+  uint32x4_t qc =
+      neon_evaluate_bloom_@COMP_SUFFIX@_qc(hash_info.val[0], hash_info.val[1]);
+  uint32x4_t non_starters =
+      neon_evaluate_bloom_non_starters_@COMP_SUFFIX@(hash_info.val[0], hash_info.val[1]);
+  uint32x4_t combined = vorrq_u32(qc, non_starters);
+  return combined;
+}
+
+// Fallback to scalar implementation when encountering an NFC relevant
+// character. Returns the number of characters of the input consumed,
+// and updates the output pointer to be in the correct place.
+static size_t neon_fallback_@COMP_SUFFIX@(const uint8_t *input, const uint8_t *input_base,
+                                            size_t input_length, uint8_t **out,
+                                            size_t length) {
+  size_t offset = input - input_base;
+  size_t first_size = NORMDATA_UTF8_SIZE[input[0]];
+  // Get the region that we will NFC normalize
+  size_t prev_starter = scalar_rfind_starter(input_base, offset + first_size);
+  if (prev_starter == (size_t)-1) {
+    prev_starter = 0;
+  }
+  size_t next_starter = scalar_find_@COMP_SUFFIX@_irrelevant_starter(
+      input_base + offset + length, input_length - offset - length);
+  if (next_starter == (size_t)-1) {
+    next_starter = input_length;
+  } else {
+    next_starter += offset + length;
+  }
+  size_t region_size = next_starter - prev_starter;
+  // This is the position we will write to
+  uint8_t *prev_out = *out - (offset - prev_starter);
+  size_t nwritten = scalar_normalize_utf8_@COMP_SUFFIX@(input_base + prev_starter,
+                                                          region_size, prev_out);
+  *out = prev_out + nwritten;
+
+  return next_starter - offset;
+}
+
+static size_t neon_normalize_masked_utf8_@COMP_SUFFIX@(const uint8_t *input,
+                                                         const uint8_t *input_base,
+                                                         size_t length, uint64_t mask,
+                                                         uint8_t **out) {
+  int t1 = __builtin_ctzll(~mask);
+  // Eagerly skip ASCII, similar to NF(K)D
+  if (t1 > 2) {
+    size_t min = t1 > 52 ? 52 : t1;
+    neon_memcpy_small(*out, input, min);
+    *out += min;
+    return min;
+  }
+
+  // TODO: improve detecting bad ccc orderings
+  //
+  //       Idea: like with decomp, put every ccc > 0 into the bloom filter.
+  //       Then we'll fall back to scalar path a lot, but it might still be
+  //       worth it. But we can use even more information. If we use
+  //       last_is_cc information, we can make sure to only fall back when we
+  //       have two contiguous combining characters (can check with NEON using
+  //       vpadd). But will have to check if first of current and last_is_cc
+  //       is set.
+
+  uint8x16_t in = vld1q_u8(input);
+  uint16_t sml_mask = mask & 0xFFF;
+
+  uint32x4_t code_points;
+  size_t n_bytes;
+
+  if (sml_mask == 0x924) {
+    uint16x4_t chars = neon_parse_3_byte_utf8(in);
+    code_points = vmovl_u16(chars);
+    n_bytes = 12;
+  } else if ((sml_mask & 0xFF) == 0xAA) {
+    uint16x4_t chars = neon_parse_2_byte_utf8(in);
+    code_points = vmovl_u16(chars);
+    n_bytes = 8;
+  } else {
+    uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
+    n_bytes = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
+    if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+      uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
+      code_points = vmovl_u16(chars);
+    } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
+      uint16x4_t chars = neon_parse_4_123_utf8(in, idx);
+      code_points = vmovl_u16(chars);
+    } else {
+      assert(idx < NORMDATA_SHUFUTF8_INDEX_1234);
+      if (sml_mask == 0x888) {
+        code_points = neon_parse_4_byte_utf8(in);
+      } else {
+        code_points = neon_parse_3_1234_utf8(in, idx);
+      }
+      // Set the last code point to 0 to make sure it doesn't accidentally
+      // get recognized by the bloom filter.
+      code_points = vsetq_lane_u32(0, code_points, 3);
+    }
+  }
+
+  uint32x4_t bloom = neon_evaluate_bloom_@COMP_SUFFIX@(code_points);
+  if (vaddvq_u32(bloom) == 0) {
+    vst1q_u8(*out, in);
+    *out += n_bytes;
+    return n_bytes;
+  }
+  uint8_t first_relevant = neon_first_true(bloom);
+  size_t copied = scalar_copy_code_points(input, *out, first_relevant);
+  *out += copied;
+  return copied + neon_fallback_@COMP_SUFFIX@(input + copied, input_base, length, out,
+                                                n_bytes - copied);
+}
+
+size_t neon_normalize_utf8_@DECOMP_SUFFIX@(uint8_t const *input, size_t length,
+                                             uint8_t *out) {
+  uint8_t **out_ptr = &out;
+  uint8_t *start = out;
+
+  // It is possible that we do buffer overruns (but only _use_ the appropriate
+  // number of bytes) in specifc cases. This margin makes sure that those
+  // oversized store operations are safe.
+  const size_t SAFETY_MARGIN = 16;
+  bool end_is_cc = false;
+  size_t p = 0;
+  while (p + 64 + SAFETY_MARGIN <= length) {
+    uint64_t mask = neon_make_code_point_mask(input + p);
+    size_t pmax = (p + 64) - 12;
+    while (p < pmax) {
+      size_t consumed =
+          neon_normalize_masked_utf8_@DECOMP_SUFFIX@(input + p, mask, out_ptr, &end_is_cc);
+      p += consumed;
+      mask >>= consumed;
+    }
+  }
+
+  if (p < length) {
+    if (end_is_cc) {
+      scalar_sort_characters(*out_ptr - 1);
+    }
+
+    // Write the rest using scalar code
+    *out_ptr += scalar_normalize_utf8_@DECOMP_SUFFIX@(input + p, length - p, *out_ptr);
+  }
+
+  return *out_ptr - start;
+}
+
+size_t neon_normalize_utf8_@COMP_SUFFIX@(uint8_t const *input, size_t length,
+                                           uint8_t *out) {
+  uint8_t **out_ptr = &out;
+  uint8_t *start = out;
+
+  const size_t SAFETY_MARGIN = 16;
+  size_t p = 0;
+  while (p + 64 + SAFETY_MARGIN <= length) {
+    uint64_t mask = neon_make_code_point_mask(input + p);
+    size_t pmax = (p + 64) - 12;
+    while (p < pmax) {
+      size_t consumed = neon_normalize_masked_utf8_@COMP_SUFFIX@(input + p, input, length,
+                                                                   mask, out_ptr);
+      p += consumed;
+      mask >>= consumed;
+    }
+  }
+
+  if (p < length) {
+    (void)neon_fallback_@COMP_SUFFIX@(input + p, input, length, out_ptr, length - p);
+  }
+
+  return *out_ptr - start;
+}
+
+// amalgamate add: #endif // UTF8NORM_IMPLEMENTATION_NEON

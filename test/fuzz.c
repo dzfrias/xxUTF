@@ -86,11 +86,9 @@ static char *utf8proc_normalize_utf8_nfd(const char *input, int32_t len) {
   utf8proc_ssize_t result =
       utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
                    UTF8PROC_DECOMPOSE | UTF8PROC_STABLE);
-
   if (result < 0) {
     return NULL;
   }
-
   return (char *)normalized;
 }
 
@@ -99,11 +97,32 @@ static char *utf8proc_normalize_utf8_nfc(const char *input, int32_t len) {
   utf8proc_ssize_t result =
       utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
                    UTF8PROC_COMPOSE | UTF8PROC_STABLE);
+  if (result < 0) {
+    return NULL;
+  }
+  return (char *)normalized;
+}
+
+static char *utf8proc_normalize_utf8_nfkd(const char *input, int32_t len) {
+  utf8proc_uint8_t *normalized = NULL;
+  utf8proc_ssize_t result =
+      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
+                   UTF8PROC_DECOMPOSE | UTF8PROC_STABLE | UTF8PROC_COMPAT);
 
   if (result < 0) {
     return NULL;
   }
+  return (char *)normalized;
+}
 
+static char *utf8proc_normalize_utf8_nfkc(const char *input, int32_t len) {
+  utf8proc_uint8_t *normalized = NULL;
+  utf8proc_ssize_t result =
+      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
+                   UTF8PROC_COMPOSE | UTF8PROC_STABLE | UTF8PROC_COMPAT);
+  if (result < 0) {
+    return NULL;
+  }
   return (char *)normalized;
 }
 
@@ -212,6 +231,12 @@ int main() {
     char utf8norm_out_nfc[16384];
     size_t nwritten_nfc =
         utf8norm_normalize_utf8_nfc(buf, nread, utf8norm_out_nfc);
+    char utf8norm_out_nfkd[16384];
+    size_t nwritten_nfkd =
+        utf8norm_normalize_utf8_nfkd(buf, nread, utf8norm_out_nfkd);
+    char utf8norm_out_nfkc[16384];
+    size_t nwritten_nfkc =
+        utf8norm_normalize_utf8_nfkc(buf, nread, utf8norm_out_nfkc);
 
     size_t pos;
     if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfd, nwritten_nfd, &pos)) {
@@ -224,9 +249,23 @@ int main() {
       continue;
     }
     utf8norm_out_nfc[nwritten_nfc] = '\0';
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfkd, nwritten_nfkd,
+                       &pos)) {
+      printf("normalized (NFKD) output is invaild UTF-8, position %zu\n", pos);
+      continue;
+    }
+    utf8norm_out_nfkd[nwritten_nfkd] = '\0';
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfkc, nwritten_nfkc,
+                       &pos)) {
+      printf("normalized (NFKC) output is invaild UTF-8, position %zu\n", pos);
+      continue;
+    }
+    utf8norm_out_nfkc[nwritten_nfkc] = '\0';
 
     char *utf8proc_out_nfd = utf8proc_normalize_utf8_nfd(buf, nread);
     char *utf8proc_out_nfc = utf8proc_normalize_utf8_nfc(buf, nread);
+    char *utf8proc_out_nfkd = utf8proc_normalize_utf8_nfkd(buf, nread);
+    char *utf8proc_out_nfkc = utf8proc_normalize_utf8_nfkc(buf, nread);
 
     if (equal(utf8norm_out_nfd, utf8proc_out_nfd)) {
       printf("Both buffers (NFD) equal!\n");
@@ -256,8 +295,38 @@ int main() {
       print_codepoints(utf8proc_out_nfc, -1);
       printf("\n");
     }
+    if (equal(utf8norm_out_nfkd, utf8proc_out_nfkd)) {
+      printf("Both buffers (NFKD) equal!\n");
+    } else {
+      printf("Buffers (NFKD) not equal\n");
+      printf("   input: ");
+      print_codepoints(buf, nread);
+      printf("\n");
+      printf("utf8norm: ");
+      print_codepoints(utf8norm_out_nfkd, -1);
+      printf("\n");
+      printf("utf8proc: ");
+      print_codepoints(utf8proc_out_nfkd, -1);
+      printf("\n");
+    }
+    if (equal(utf8norm_out_nfkc, utf8proc_out_nfkc)) {
+      printf("Both buffers (NFKC) equal!\n");
+    } else {
+      printf("Buffers (NFKC) not equal\n");
+      printf("   input: ");
+      print_codepoints(buf, nread);
+      printf("\n");
+      printf("utf8norm: ");
+      print_codepoints(utf8norm_out_nfkc, -1);
+      printf("\n");
+      printf("utf8proc: ");
+      print_codepoints(utf8proc_out_nfkc, -1);
+      printf("\n");
+    }
     free(utf8proc_out_nfd);
     free(utf8proc_out_nfc);
+    free(utf8proc_out_nfkd);
+    free(utf8proc_out_nfkc);
   }
 
   return 0;
