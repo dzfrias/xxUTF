@@ -192,6 +192,12 @@ int main() {
     } else if (strcmp(normalization_form, "NFC") == 0) {
       nwritten =
           utf8norm_normalize_utf8_nfc((char const *)buf, len, utf8norm_out);
+    } else if (strcmp(normalization_form, "NFKD") == 0) {
+      nwritten =
+          utf8norm_normalize_utf8_nfkd((char const *)buf, len, utf8norm_out);
+    } else if (strcmp(normalization_form, "NFKC") == 0) {
+      nwritten =
+          utf8norm_normalize_utf8_nfkc((char const *)buf, len, utf8norm_out);
     } else {
       printf("Invalid normalization form: %s\n", normalization_form);
       abort();
@@ -207,6 +213,10 @@ int main() {
       utf8proc_out = utf8proc_normalize_utf8_nfd((char const *)buf, len);
     } else if (strcmp(normalization_form, "NFC") == 0) {
       utf8proc_out = utf8proc_normalize_utf8_nfc((char const *)buf, len);
+    } else if (strcmp(normalization_form, "NFKD") == 0) {
+      utf8proc_out = utf8proc_normalize_utf8_nfkd((char const *)buf, len);
+    } else if (strcmp(normalization_form, "NFKC") == 0) {
+      utf8proc_out = utf8proc_normalize_utf8_nfkc((char const *)buf, len);
     }
 
     bool eql = equal(utf8norm_out, utf8proc_out);
