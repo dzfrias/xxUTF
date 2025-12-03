@@ -24,8 +24,9 @@ static uint32x4_t neon_evaluate_bloom_@DECOMP_SUFFIX@(uint32x4_t input) {
   uint32x4_t h2 = neon_xorshift_hash(input);
   uint32x4_t h3 = neon_xorshift_mul_hash(input);
 
-  // h1 % 4096
-  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
+  const uint32_t BLOOM_SIZE = sizeof(NORMDATA_@DECOMP_TABLE_NAME@_BLOOM_FILTER) / sizeof(uint32_t);
+  // h1 % BLOOM_SIZE
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));
   // h2 % 32
   uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
   // h3 % 32

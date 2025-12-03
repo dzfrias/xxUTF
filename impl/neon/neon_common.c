@@ -456,8 +456,10 @@ uint32x4x2_t neon_comp_hash(uint32x4_t input) {
       neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
   uint32x4_t h4 = neon_xorshift_mul_hash(input);
 
-  // h1 % 4096
-  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(4095));
+  const uint32_t BLOOM_SIZE =
+      sizeof(NORMDATA_NFC_BLOOM_FILTER) / sizeof(uint32_t);
+  // h1 % BLOOM_SIZE
+  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));
   // h2 % 32
   uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
   // h3 % 32
