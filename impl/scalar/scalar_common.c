@@ -17,7 +17,7 @@ uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
 
 // Write a code point into the output buffer as UTF-8 bytes. Returns the number
 // of bytes written.
-size_t scalar_write_code_point(uint32_t codepoint, uint8_t *utf8_bytes) {
+size_t scalar_write_code_point_utf8(uint32_t codepoint, uint8_t *utf8_bytes) {
   if (codepoint <= 0x7F) {
     utf8_bytes[0] = (uint8_t)(codepoint & 0xFF);
     return 1;
@@ -42,7 +42,7 @@ size_t scalar_write_code_point(uint32_t codepoint, uint8_t *utf8_bytes) {
   }
 }
 
-size_t scalar_code_point_size(uint32_t codepoint) {
+size_t scalar_code_point_size_utf8(uint32_t codepoint) {
   if (codepoint <= 0x7F) {
     return 1;
   } else if (codepoint <= 0x7FF) {
@@ -64,19 +64,19 @@ bool scalar_is_hangul(uint32_t code_point) {
 }
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
-size_t scalar_decompose_hangul(uint32_t code_point, uint8_t *out) {
+size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out) {
   uint32_t s_index = code_point - NORMDATA_S_BASE;
   uint32_t l_index = s_index / NORMDATA_N_COUNT;
   uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;
   uint32_t t_index = s_index % NORMDATA_T_COUNT;
 
   size_t nwritten = 0;
-  nwritten += scalar_write_code_point(NORMDATA_L_BASE + l_index, out);
+  nwritten += scalar_write_code_point_utf8(NORMDATA_L_BASE + l_index, out);
   nwritten +=
-      scalar_write_code_point(NORMDATA_V_BASE + v_index, out + nwritten);
+      scalar_write_code_point_utf8(NORMDATA_V_BASE + v_index, out + nwritten);
   if (t_index > 0) {
     nwritten +=
-        scalar_write_code_point(NORMDATA_T_BASE + t_index, out + nwritten);
+        scalar_write_code_point_utf8(NORMDATA_T_BASE + t_index, out + nwritten);
   }
   return nwritten;
 }
@@ -97,7 +97,7 @@ uint8_t scalar_lookup_ccc(uint32_t code_point) {
 
 // Parse a UTF-8 code point from the input buffer. The size of the code point is
 // written to the `size` pointer.
-uint32_t scalar_parse_code_point(uint8_t const *input, uint8_t *size) {
+uint32_t scalar_parse_code_point_utf8(uint8_t const *input, uint8_t *size) {
   uint8_t leading = *input;
   if (leading < 0b10000000) {
     *size = 1;
@@ -150,7 +150,7 @@ bool scalar_is_leading_utf8_byte(uint8_t b) {
 //
 // TODO: undefined behavior when we can't find a starter when walking backwards?
 //       We don't know when to stop.
-void scalar_sort_characters(uint8_t *out) {
+void scalar_sort_characters_utf8(uint8_t *out) {
   uint8_t *start = out;
 
   // We need to walk backwards until we find a starter character.
@@ -161,7 +161,7 @@ void scalar_sort_characters(uint8_t *out) {
       out--;
     }
     uint8_t size;
-    uint32_t code_point = scalar_parse_code_point(out, &size);
+    uint32_t code_point = scalar_parse_code_point_utf8(out, &size);
     uint8_t ccc = scalar_lookup_ccc(code_point);
     if (last_ccc < ccc) {
       needs_sort = true;
@@ -195,12 +195,12 @@ void scalar_sort_characters(uint8_t *out) {
       uint8_t size2;
       // TODO: odds are we can fit this information into a small cache from the
       //       initial backwards loop
-      uint32_t c1 = scalar_parse_code_point(out + j, &size1);
+      uint32_t c1 = scalar_parse_code_point_utf8(out + j, &size1);
       // Going past the buffer is also a stop condition
       if (j + size1 >= n) {
         break;
       }
-      uint32_t c2 = scalar_parse_code_point(out + j + size1, &size2);
+      uint32_t c2 = scalar_parse_code_point_utf8(out + j + size1, &size2);
       uint8_t ccc1 = scalar_lookup_ccc(c1);
       uint8_t ccc2 = scalar_lookup_ccc(c2);
       last_size = size1;
@@ -315,14 +315,14 @@ bool scalar_is_nfkc_relevant(uint32_t code_point) {
 }
 
 // Find a starter character in a UTF-8 buffer, searching from right to left.
-size_t scalar_rfind_starter(const uint8_t *input, size_t length) {
+size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
   size_t p = 0;
   while (p < length) {
     while (!scalar_is_leading_utf8_byte(input[length - p - 1])) {
       p++;
     }
     uint8_t size;
-    uint32_t c = scalar_parse_code_point(input + (length - p - 1), &size);
+    uint32_t c = scalar_parse_code_point_utf8(input + (length - p - 1), &size);
     uint8_t ccc = scalar_lookup_ccc(c);
     // If we found a starter, then we're done
     if (ccc == 0) {

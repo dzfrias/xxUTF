@@ -18,7 +18,7 @@
 // decomposition.
 //
 // Note that this does not handle Hangul code points.
-size_t scalar_decompose_@DECOMP_SUFFIX@(uint32_t code_point, uint8_t *out, bool *is_cc) {
+size_t scalar_decompose_utf8_@DECOMP_SUFFIX@(uint32_t code_point, uint8_t *out, bool *is_cc) {
   uint8_t *start = out;
   uint32_t salt_hash = scalar_phash(
       code_point, 0, NORMDATA_@DECOMP_TABLE_NAME@_TABLE_SIZE);
@@ -30,7 +30,7 @@ size_t scalar_decompose_@DECOMP_SUFFIX@(uint32_t code_point, uint8_t *out, bool 
     uint32_t const *chars =
         &NORMDATA_@DECOMP_TABLE_NAME@_CHARS[kv.offset];
     for (size_t k = 0; k < kv.len; k++) {
-      out += scalar_write_code_point(chars[k], out);
+      out += scalar_write_code_point_utf8(chars[k], out);
     }
     *is_cc = kv.ccc > 0;
   } else {
@@ -60,7 +60,7 @@ size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, 
       uint32_t code_point =
           (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);
       size_t nwritten =
-          scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
+          scalar_decompose_utf8_@DECOMP_SUFFIX@(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = input[p + 1];
@@ -75,10 +75,10 @@ size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, 
       // The Hangul block exists entirely within the three-byte UTF-8 range.
       if (scalar_is_hangul(code_point)) {
         is_cc = false;
-        out += scalar_decompose_hangul(code_point, out);
+        out += scalar_decompose_hangul_utf8(code_point, out);
       } else {
         size_t nwritten =
-            scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
+            scalar_decompose_utf8_@DECOMP_SUFFIX@(code_point, out, &is_cc);
         if (nwritten == 0) {
           *out++ = leading;
           *out++ = input[p + 1];
@@ -93,7 +93,7 @@ size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, 
           (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |
           (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);
       size_t nwritten =
-          scalar_decompose_@DECOMP_SUFFIX@(code_point, out, &is_cc);
+          scalar_decompose_utf8_@DECOMP_SUFFIX@(code_point, out, &is_cc);
       if (nwritten == 0) {
         *out++ = leading;
         *out++ = input[p + 1];
@@ -108,14 +108,14 @@ size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, 
     // If the last character was a non-starter and the current character is a
     // starter, we need to try to reorder the combining characters
     if (last_is_cc && !is_cc) {
-      scalar_sort_characters(c_start - 1);
+      scalar_sort_characters_utf8(c_start - 1);
     }
     last_is_cc = is_cc;
   }
 
   // Try to sort at EOF
   if (last_is_cc) {
-    scalar_sort_characters(out - 1);
+    scalar_sort_characters_utf8(out - 1);
   }
 
   *end_is_cc = last_is_cc;
@@ -124,19 +124,19 @@ size_t scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(uint8_t const *input, 
 }
 
 size_t scalar_normalize_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
-                                                      size_t length,
-                                                      uint8_t *out) {
+                                             size_t length,
+                                             uint8_t *out) {
   bool end_is_cc = false;
   return scalar_normalize_utf8_@DECOMP_SUFFIX@_with_context(input, length, out, &end_is_cc);
 }
 
 // Find the next starter character that is composition irrelevant, or -1 if one
 // is not found.
-size_t scalar_find_@COMP_SUFFIX@_irrelevant_starter(const uint8_t *input, size_t length) {
+size_t scalar_find_@COMP_SUFFIX@_irrelevant_starter_utf8(const uint8_t *input, size_t length) {
   uint32_t p = 0;
   while (p < length) {
     uint8_t size;
-    uint32_t c = scalar_parse_code_point(input + p, &size);
+    uint32_t c = scalar_parse_code_point_utf8(input + p, &size);
     uint8_t ccc = scalar_lookup_ccc(c);
     if (ccc == 0 && !scalar_is_@COMP_SUFFIX@_relevant(c)) {
       return p;
@@ -154,7 +154,7 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
 
   while (p < length) {
     uint8_t size;
-    uint32_t c = scalar_parse_code_point(input + p, &size);
+    uint32_t c = scalar_parse_code_point_utf8(input + p, &size);
 
     // ASCII fast path to skip ccc lookup
     if (c <= 0x7F) {
@@ -180,13 +180,13 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
     last_ccc = ccc;
 
     // This starter should be NF(K)C irrelevant
-    size_t previous_starter_pos = scalar_rfind_starter(input, p);
+    size_t previous_starter_pos = scalar_rfind_starter_utf8(input, p);
     if (previous_starter_pos == (size_t)-1) {
       previous_starter_pos = 0;
     }
 
     size_t next_irrelevant_starter_pos =
-        scalar_find_@COMP_SUFFIX@_irrelevant_starter(input + p + size, length - p - size);
+        scalar_find_@COMP_SUFFIX@_irrelevant_starter_utf8(input + p + size, length - p - size);
     if (next_irrelevant_starter_pos == (size_t)-1) {
       next_irrelevant_starter_pos = length;
     } else {
@@ -214,13 +214,13 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614
     while (normalized_pos < normalized_length) {
       uint8_t normalized_size;
-      uint32_t normalized_c = scalar_parse_code_point(
+      uint32_t normalized_c = scalar_parse_code_point_utf8(
           normalized_out + normalized_pos, &normalized_size);
       uint8_t normalized_ccc = scalar_lookup_ccc(normalized_c);
 
       // Find the preceding starter. It should be composition irrelevant
       // TODO: we can cache this
-      size_t starter_pos = scalar_rfind_starter(normalized_out, normalized_pos);
+      size_t starter_pos = scalar_rfind_starter_utf8(normalized_out, normalized_pos);
       assert(starter_pos != normalized_pos);
       // Skip if we don't have a starter before this
       if (starter_pos == (size_t)-1) {
@@ -231,7 +231,7 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
 
       uint8_t starter_size;
       uint32_t starter =
-          scalar_parse_code_point(normalized_out + starter_pos, &starter_size);
+          scalar_parse_code_point_utf8(normalized_out + starter_pos, &starter_size);
       // Skip if we're blocked from the starter
       if (normalized_ccc <= normalized_last_ccc &&
           starter_pos + starter_size != normalized_pos) {
@@ -252,7 +252,7 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
         normalized_last_ccc = normalized_ccc;
         continue;
       }
-      uint8_t composed_size = scalar_code_point_size(composed);
+      uint8_t composed_size = scalar_code_point_size_utf8(composed);
       assert(composed_size >= starter_size);
 
       // Shift left to delete the combining character
@@ -266,7 +266,7 @@ size_t scalar_normalize_utf8_@COMP_SUFFIX@(const uint8_t *input, size_t length, 
                          normalized_length - starter_pos - starter_size,
                          composed_size - starter_size);
       // Overwrite the starter with the new composed code point
-      (void)scalar_write_code_point(composed, normalized_out + starter_pos);
+      (void)scalar_write_code_point_utf8(composed, normalized_out + starter_pos);
       normalized_length += composed_size - starter_size;
       normalized_pos += composed_size - starter_size;
     }

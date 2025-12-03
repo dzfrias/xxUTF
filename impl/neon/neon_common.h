@@ -24,17 +24,16 @@ uint32x4_t neon_mul_shift_hash(uint32x4_t x);
 uint32x4_t neon_xorshift_hash(uint32x4_t x);
 uint32x4_t neon_xorshift_mul_hash(uint32x4_t x);
 uint32x4_t neon_hangul_mask(uint32x4_t input);
-void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
-                           uint8_t **out, const uint8_t *input,
+void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
+                                uint8_t **out, const uint8_t *input,
+                                bool *end_is_cc);
+void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
+                                    bool *end_is_cc);
+void neon_skip_decomp_utf8(uint8x16_t in, size_t nchars, uint8_t **out,
                            bool *end_is_cc);
-void neon_decompose_all_hangul(uint16x4_t values, uint8_t **out,
-                               bool *end_is_cc);
-void neon_skip_decomp(uint8x16_t in, size_t nchars, uint8_t **out,
-                      bool *end_is_cc);
 void neon_memcpy_small(uint8_t *dst, const uint8_t *src, size_t len);
 uint32x4x2_t neon_comp_hash(uint32x4_t input);
 uint8_t neon_first_true(uint32x4_t v);
-uint8x16_t neon_get_codepoint_starts(uint8x16_t in);
-uint64_t neon_make_code_point_mask(uint8_t const *input);
+uint64_t neon_make_utf8_code_point_mask(uint8_t const *input);
 
 #endif // UTF8NORM_NEON_COMMON_H

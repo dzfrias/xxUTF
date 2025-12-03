@@ -323,11 +323,11 @@ static void neon_write_3_byte_code_point(uint16_t codepoint, uint8_t *out) {
 // code points are copied as-is from the input buffer.
 //
 // This function assumes that the input code points are Hangul syllables.
-void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
+void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
                            uint8_t **out, const uint8_t *input,
                            bool *end_is_cc) {
   if (*end_is_cc) {
-    scalar_sort_characters(*out - 1);
+    scalar_sort_characters_utf8(*out - 1);
   }
   *end_is_cc = false;
 
@@ -371,10 +371,10 @@ void neon_decompose_hangul(uint32x4_t values, uint32x4_t relevant,
   }
 }
 
-void neon_decompose_all_hangul(uint16x4_t values, uint8_t **out,
+void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
                                bool *end_is_cc) {
   if (*end_is_cc) {
-    scalar_sort_characters(*out - 1);
+    scalar_sort_characters_utf8(*out - 1);
   }
   // Hangul jamo are not combining characters
   *end_is_cc = false;
@@ -422,10 +422,10 @@ void neon_decompose_all_hangul(uint16x4_t values, uint8_t **out,
 }
 
 // Copy a 16-byte input vector into the output buffer.
-void neon_skip_decomp(uint8x16_t in, size_t nchars, uint8_t **out,
+void neon_skip_decomp_utf8(uint8x16_t in, size_t nchars, uint8_t **out,
                       bool *end_is_cc) {
   if (*end_is_cc) {
-    scalar_sort_characters(*out - 1);
+    scalar_sort_characters_utf8(*out - 1);
   }
   *end_is_cc = false;
   vst1q_u8(*out, in);
@@ -484,18 +484,18 @@ uint8_t neon_first_true(uint32x4_t v) {
   return __builtin_ctzll(bitmask4) / 16;
 }
 
-uint8x16_t neon_get_codepoint_starts(uint8x16_t in) {
+static uint8x16_t neon_get_utf8_codepoint_starts(uint8x16_t in) {
   int8x16_t sgn = vreinterpretq_s8_u8(in);
   return vcltq_s8(sgn, vdupq_n_s8(-65 + 1));
 }
 
-uint64_t neon_make_code_point_mask(uint8_t const *input) {
+uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
   uint8x16_t bit_mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
                          0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
-  uint8x16_t c0 = neon_get_codepoint_starts(vld1q_u8(input));
-  uint8x16_t c1 = neon_get_codepoint_starts(vld1q_u8(input + 16));
-  uint8x16_t c2 = neon_get_codepoint_starts(vld1q_u8(input + 32));
-  uint8x16_t c3 = neon_get_codepoint_starts(vld1q_u8(input + 48));
+  uint8x16_t c0 = neon_get_utf8_codepoint_starts(vld1q_u8(input));
+  uint8x16_t c1 = neon_get_utf8_codepoint_starts(vld1q_u8(input + 16));
+  uint8x16_t c2 = neon_get_utf8_codepoint_starts(vld1q_u8(input + 32));
+  uint8x16_t c3 = neon_get_utf8_codepoint_starts(vld1q_u8(input + 48));
   // Compute the 64-bit movemask
   uint8x16_t sum0 = vpaddq_u8(vandq_u8(c0, bit_mask), vandq_u8(c1, bit_mask));
   uint8x16_t sum1 = vpaddq_u8(vandq_u8(c2, bit_mask), vandq_u8(c3, bit_mask));

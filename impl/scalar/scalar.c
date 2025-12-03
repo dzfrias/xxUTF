@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-size_t scalar_copy_code_points(const uint8_t *input, uint8_t *out, size_t amt) {
+size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
+                                    size_t amt) {
   uint8_t *start = out;
   for (size_t i = 0; i < amt; i++) {
     uint8_t size = NORMDATA_UTF8_SIZE[input[0]];
@@ -18,11 +19,11 @@ size_t scalar_copy_code_points(const uint8_t *input, uint8_t *out, size_t amt) {
   return out - start;
 }
 
-void scalar_print_code_points(const uint8_t *input, size_t length) {
+void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
   size_t p = 0;
   while (p < length) {
     uint8_t size;
-    uint32_t c = scalar_parse_code_point(input + p, &size);
+    uint32_t c = scalar_parse_code_point_utf8(input + p, &size);
     printf("%u(p=%zu) ", c, p);
     p += size;
   }

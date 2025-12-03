@@ -56,7 +56,7 @@ static uint32x4_t neon_evaluate_bloom_@DECOMP_SUFFIX@(uint32x4_t input) {
 // indicates which code points should be decomposed (0 meaning irrelevant).
 //
 // This function assumes that the input code points are not Hangul syllables.
-static void neon_decompose_non_hangul_@DECOMP_SUFFIX@(uint32x4_t values, uint32x4_t relevant,
+static void neon_decompose_non_hangul_utf8_@DECOMP_SUFFIX@(uint32x4_t values, uint32x4_t relevant,
                                       uint8_t **out, const uint8_t *input,
                                       bool *end_is_cc) {
   bool last_is_cc = *end_is_cc;
@@ -69,7 +69,7 @@ static void neon_decompose_non_hangul_@DECOMP_SUFFIX@(uint32x4_t values, uint32x
     uint8_t size = NORMDATA_UTF8_SIZE[leading];
     if (size == 1) {
       if (last_is_cc) {
-        scalar_sort_characters(*out - 1);
+        scalar_sort_characters_utf8(*out - 1);
       }
       // ASCII code point, no decomposition needed.
       *(*out)++ = leading;
@@ -83,14 +83,14 @@ static void neon_decompose_non_hangul_@DECOMP_SUFFIX@(uint32x4_t values, uint32x
     size_t nwritten = 0;
     // If the code point is not relevant or, (if it is relevant) but
     // decomposition yields no results, we just copy the input
-    if (!r || (nwritten = scalar_decompose_@DECOMP_SUFFIX@(v, *out, &is_cc)) == 0) {
+    if (!r || (nwritten = scalar_decompose_utf8_@DECOMP_SUFFIX@(v, *out, &is_cc)) == 0) {
       for (size_t j = 0; j < size; j++) {
         (*out)[j] = input[j];
       }
       nwritten = size;
     }
     if (last_is_cc && !is_cc) {
-      scalar_sort_characters(*out - 1);
+      scalar_sort_characters_utf8(*out - 1);
     }
     last_is_cc = is_cc;
     input += size;
@@ -105,7 +105,7 @@ static void neon_decompose_non_hangul_@DECOMP_SUFFIX@(uint32x4_t values, uint32x
 // and the `nchars` parameter indicates how many bytes of the input vector are
 // used for the `chars` parameter. The `input` parameter is the original pointer
 // to UTF-8 bytes.
-static inline void neon_decompose_@DECOMP_SUFFIX@(uint8x16_t in, uint32x4_t chars,
+static inline void neon_decompose_utf8_@DECOMP_SUFFIX@(uint8x16_t in, uint32x4_t chars,
                                   size_t nchars, const uint8_t *input,
                                   uint8_t **out, bool *end_is_cc) {
   uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(chars);
@@ -116,13 +116,13 @@ static inline void neon_decompose_@DECOMP_SUFFIX@(uint8x16_t in, uint32x4_t char
   bool hangul_result = vmaxvq_u32(hangul_mask) > 0;
   if (!bloom_result && !hangul_result) {
     // Case where we have no precomposed characters and no Hangul syllables
-    neon_skip_decomp(in, nchars, out, end_is_cc);
+    neon_skip_decomp_utf8(in, nchars, out, end_is_cc);
   } else if (hangul_result && !bloom_result) {
     // Case where we have Hangul syllables, but no precomposed characters
-    neon_decompose_hangul(chars, hangul_mask, out, input, end_is_cc);
+    neon_decompose_hangul_utf8(chars, hangul_mask, out, input, end_is_cc);
   } else if (bloom_result && !hangul_result) {
     // Case where we have precomposed characters, but no Hangul
-    neon_decompose_non_hangul_@DECOMP_SUFFIX@(chars, bloom, out, input, end_is_cc);
+    neon_decompose_non_hangul_utf8_@DECOMP_SUFFIX@(chars, bloom, out, input, end_is_cc);
   } else {
     // Case where we have both precomposed characters and Hangul syllables.
     // Very rare in practice, so we just fall back to the scalar implementation.
@@ -145,7 +145,7 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
   // diacritics, such as Spanish or French.
   if (t1 > 2) {
     if (*end_is_cc) {
-      scalar_sort_characters(*out - 1);
+      scalar_sort_characters_utf8(*out - 1);
     }
     size_t min = t1 > 52 ? 52 : t1;
     neon_memcpy_small(*out, input, min);
@@ -168,7 +168,7 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
     // language-specific optimization like this (excluding ASCII), but the
     // speedups are so large for such a low cost that it seems worth it.
     if (min >= 0x30FF && max <= 0x9FFF) {
-      neon_skip_decomp(in, 12, out, end_is_cc);
+      neon_skip_decomp_utf8(in, 12, out, end_is_cc);
       return 12;
     }
 
@@ -179,13 +179,13 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
     // Algorithm described here:
     // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
     if (min >= NORMDATA_S_BASE && max < NORMDATA_S_BASE + NORMDATA_S_COUNT) {
-      neon_decompose_all_hangul(chars, out, end_is_cc);
+      neon_decompose_all_hangul_utf8(chars, out, end_is_cc);
       return 12;
     }
 
     // Fallback path for 4 3-byte characters
     uint32x4_t wide = vmovl_u16(chars);
-    neon_decompose_@DECOMP_SUFFIX@(in, wide, 12, input, out, end_is_cc);
+    neon_decompose_utf8_@DECOMP_SUFFIX@(in, wide, 12, input, out, end_is_cc);
     return 12;
   }
 
@@ -196,9 +196,9 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
     uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(wide);
     // Hangul syllables are not possible here.
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip_decomp(in, 8, out, end_is_cc);
+      neon_skip_decomp_utf8(in, 8, out, end_is_cc);
     } else {
-      neon_decompose_non_hangul_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
+      neon_decompose_non_hangul_utf8_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
     }
     return 8;
   }
@@ -214,15 +214,15 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
     uint32x4_t bloom = neon_evaluate_bloom_@DECOMP_SUFFIX@(wide);
     // Hangul isn't possible here, so we don't need to check for it.
     if (vaddvq_u32(bloom) == 0) {
-      neon_skip_decomp(in, nchars, out, end_is_cc);
+      neon_skip_decomp_utf8(in, nchars, out, end_is_cc);
     } else {
-      neon_decompose_non_hangul_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
+      neon_decompose_non_hangul_utf8_@DECOMP_SUFFIX@(wide, bloom, out, input, end_is_cc);
     }
   } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
     // Four code points
     uint16x4_t chars = neon_parse_4_123_utf8(in, idx);
     uint32x4_t wide = vmovl_u16(chars);
-    neon_decompose_@DECOMP_SUFFIX@(in, wide, nchars, input, out, end_is_cc);
+    neon_decompose_utf8_@DECOMP_SUFFIX@(in, wide, nchars, input, out, end_is_cc);
   } else if (idx < NORMDATA_SHUFUTF8_INDEX_1234) {
     // TODO: right now, anytime we have 3 1..4-byte code points, we just fall
     //       back to scalar. This is because our functions are designed for
@@ -276,17 +276,17 @@ static uint32x4_t neon_evaluate_bloom_@COMP_SUFFIX@(uint32x4_t input) {
 // Fallback to scalar implementation when encountering an NFC relevant
 // character. Returns the number of characters of the input consumed,
 // and updates the output pointer to be in the correct place.
-static size_t neon_fallback_@COMP_SUFFIX@(const uint8_t *input, const uint8_t *input_base,
+static size_t neon_fallback_utf8_@COMP_SUFFIX@(const uint8_t *input, const uint8_t *input_base,
                                             size_t input_length, uint8_t **out,
                                             size_t length) {
   size_t offset = input - input_base;
   size_t first_size = NORMDATA_UTF8_SIZE[input[0]];
   // Get the region that we will NFC normalize
-  size_t prev_starter = scalar_rfind_starter(input_base, offset + first_size);
+  size_t prev_starter = scalar_rfind_starter_utf8(input_base, offset + first_size);
   if (prev_starter == (size_t)-1) {
     prev_starter = 0;
   }
-  size_t next_starter = scalar_find_@COMP_SUFFIX@_irrelevant_starter(
+  size_t next_starter = scalar_find_@COMP_SUFFIX@_irrelevant_starter_utf8(
       input_base + offset + length, input_length - offset - length);
   if (next_starter == (size_t)-1) {
     next_starter = input_length;
@@ -369,9 +369,9 @@ static size_t neon_normalize_masked_utf8_@COMP_SUFFIX@(const uint8_t *input,
     return n_bytes;
   }
   uint8_t first_relevant = neon_first_true(bloom);
-  size_t copied = scalar_copy_code_points(input, *out, first_relevant);
+  size_t copied = scalar_copy_code_points_utf8(input, *out, first_relevant);
   *out += copied;
-  return copied + neon_fallback_@COMP_SUFFIX@(input + copied, input_base, length, out,
+  return copied + neon_fallback_utf8_@COMP_SUFFIX@(input + copied, input_base, length, out,
                                                 n_bytes - copied);
 }
 
@@ -387,7 +387,7 @@ size_t neon_normalize_utf8_@DECOMP_SUFFIX@(uint8_t const *input, size_t length,
   bool end_is_cc = false;
   size_t p = 0;
   while (p + 64 + SAFETY_MARGIN <= length) {
-    uint64_t mask = neon_make_code_point_mask(input + p);
+    uint64_t mask = neon_make_utf8_code_point_mask(input + p);
     size_t pmax = (p + 64) - 12;
     while (p < pmax) {
       size_t consumed =
@@ -399,7 +399,7 @@ size_t neon_normalize_utf8_@DECOMP_SUFFIX@(uint8_t const *input, size_t length,
 
   if (p < length) {
     if (end_is_cc) {
-      scalar_sort_characters(*out_ptr - 1);
+      scalar_sort_characters_utf8(*out_ptr - 1);
     }
 
     // Write the rest using scalar code
@@ -417,7 +417,7 @@ size_t neon_normalize_utf8_@COMP_SUFFIX@(uint8_t const *input, size_t length,
   const size_t SAFETY_MARGIN = 16;
   size_t p = 0;
   while (p + 64 + SAFETY_MARGIN <= length) {
-    uint64_t mask = neon_make_code_point_mask(input + p);
+    uint64_t mask = neon_make_utf8_code_point_mask(input + p);
     size_t pmax = (p + 64) - 12;
     while (p < pmax) {
       size_t consumed = neon_normalize_masked_utf8_@COMP_SUFFIX@(input + p, input, length,
@@ -428,7 +428,7 @@ size_t neon_normalize_utf8_@COMP_SUFFIX@(uint8_t const *input, size_t length,
   }
 
   if (p < length) {
-    (void)neon_fallback_@COMP_SUFFIX@(input + p, input, length, out_ptr, length - p);
+    (void)neon_fallback_utf8_@COMP_SUFFIX@(input + p, input, length, out_ptr, length - p);
   }
 
   return *out_ptr - start;
