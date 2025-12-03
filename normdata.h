@@ -5,9 +5,6 @@
 
 #include <stdint.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-variable"
-
 typedef struct NormdataTableEntry {
   uint8_t len;
   uint8_t ccc;
@@ -68,7 +65,5 @@ static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
     4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0};
-
-#pragma GCC diagnostic pop
 
 #endif // UTF8NORM_NORMDATA_H
