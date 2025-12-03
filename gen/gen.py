@@ -94,9 +94,9 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
 
 @dataclass
 class TableInfo:
-    nfd_bytes_len: int
+    nfd_chars_len: int
     nfd_len: int
-    nfkd_bytes_len: int
+    nfkd_chars_len: int
     nfkd_len: int
     comp_len: int
 
@@ -107,23 +107,19 @@ def generate_decomp_hash_table(
     offsets = {}
     lengths = {}
     offset = 0
-    all_decomp_bytes = []
+    all_decomps = []
     for k, decomp in decomp_map.items():
         offsets[k] = offset
-        decomp_bytes: list[int] = []
-        for c in decomp.decomps:
-            utf8 = bytes(chr(c), encoding="UTF-8")
-            decomp_bytes.extend(list(utf8))
-        all_decomp_bytes.extend(decomp_bytes)
-        lengths[k] = len(decomp_bytes)
-        offset += len(decomp_bytes)
+        all_decomps.extend(decomp.decomps)
+        lengths[k] = len(decomp.decomps)
+        offset += len(decomp.decomps)
     assert offset <= 2**16 - 1
 
-    writer.write(f"const uint8_t NORMDATA_{name}_CHARS[{len(all_decomp_bytes)}] = {{\n")
-    for row in batched(all_decomp_bytes, 13):
+    writer.write(f"const uint32_t NORMDATA_{name}_CHARS[{len(all_decomps)}] = {{\n")
+    for row in batched(all_decomps, 13):
         writer.write(" ")
         for b in row:
-            writer.write(f" 0x{b:02X},")
+            writer.write(f" 0x{b:08X},")
         writer.write("\n")
     writer.write("};\n")
 
@@ -147,7 +143,7 @@ def generate_decomp_hash_table(
         writer.write("\n")
     writer.write("};\n")
 
-    return len(all_decomp_bytes), len(decomp_keys)
+    return len(all_decomps), len(decomp_keys)
 
 
 def generate_hash_tables(
@@ -188,9 +184,9 @@ def generate_hash_tables(
     writer.write("  return 0;\n}\n")
 
     return TableInfo(
-        nfd_bytes_len=nfd_bytes_len,
+        nfd_chars_len=nfd_bytes_len,
         nfd_len=nfd_len,
-        nfkd_bytes_len=nfkd_bytes_len,
+        nfkd_chars_len=nfkd_bytes_len,
         nfkd_len=nfkd_len,
         comp_len=len(comp_keys),
     )
@@ -420,14 +416,14 @@ def generate_header(
     non_starters_bloom: BloomFilter,
 ):
     writer.write(
-        f"extern const uint8_t NORMDATA_NFD_CHARS[{table_info.nfd_bytes_len}];\n"
+        f"extern const uint32_t NORMDATA_NFD_CHARS[{table_info.nfd_chars_len}];\n"
     )
     writer.write(f"extern const uint16_t NORMDATA_NFD_SALT[{table_info.nfd_len}];\n")
     writer.write(
         f"extern const NormdataTableEntry NORMDATA_NFD_KV[{table_info.nfd_len}];\n"
     )
     writer.write(
-        f"extern const uint8_t NORMDATA_NFKD_CHARS[{table_info.nfkd_bytes_len}];\n"
+        f"extern const uint32_t NORMDATA_NFKD_CHARS[{table_info.nfkd_chars_len}];\n"
     )
     writer.write(f"extern const uint16_t NORMDATA_NFKD_SALT[{table_info.nfkd_len}];\n")
     writer.write(
@@ -793,7 +789,7 @@ def main() -> None:
 
     KILOBYTE = 1024
     lines = []
-    lines.append(f"Decomposed chars: {hash_info.nfd_bytes_len / KILOBYTE:.1f}KiB")
+    lines.append(f"Decomposed chars: {hash_info.nfd_chars_len / KILOBYTE:.1f}KiB")
     lines.append(f"Decomposed salt: {(hash_info.nfd_len * 2) / KILOBYTE:.1f}KiB")
     lines.append(f"Decomposed KV: {(hash_info.nfd_len * 8) / KILOBYTE:.1f}KiB")
     lines.append(f"Composition salt: {(hash_info.comp_len * 2) / KILOBYTE:.1f}KiB")

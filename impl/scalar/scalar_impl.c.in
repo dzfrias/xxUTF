@@ -27,10 +27,10 @@ size_t scalar_decompose_@DECOMP_SUFFIX@(uint32_t code_point, uint8_t *out, bool 
       code_point, salt, NORMDATA_@DECOMP_TABLE_NAME@_TABLE_SIZE);
   NormdataTableEntry kv = NORMDATA_@DECOMP_TABLE_NAME@_KV[key_hash];
   if (kv.k == code_point) {
-    uint8_t const *bytes =
+    uint32_t const *chars =
         &NORMDATA_@DECOMP_TABLE_NAME@_CHARS[kv.offset];
-    for (uint8_t k = 0; k < kv.len; k++) {
-      *out++ = bytes[k];
+    for (size_t k = 0; k < kv.len; k++) {
+      out += scalar_write_code_point(chars[k], out);
     }
     *is_cc = kv.ccc > 0;
   } else {
