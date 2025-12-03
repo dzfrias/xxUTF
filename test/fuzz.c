@@ -130,7 +130,7 @@ static char *utf8proc_normalize_utf8_nfkc(const char *input, int32_t len) {
 __AFL_FUZZ_INIT();
 #endif
 
-static void print_codepoints(char const *s, ssize_t len) {
+static void print_code_points(char const *s, ssize_t len) {
   if (!s)
     return;
 
@@ -143,26 +143,26 @@ static void print_codepoints(char const *s, ssize_t len) {
 
   ssize_t i = 0;
   while (i < len) {
-    uint32_t codepoint;
+    uint32_t code_point;
     unsigned char byte = (unsigned char)s[i];
 
     if ((byte & 0x80) == 0) {
-      codepoint = byte;
+      code_point = byte;
       i += 1;
     } else if ((byte & 0xE0) == 0xC0) {
-      codepoint = ((byte & 0x1F) << 6) | (s[i + 1] & 0x3F);
+      code_point = ((byte & 0x1F) << 6) | (s[i + 1] & 0x3F);
       i += 2;
     } else if ((byte & 0xF0) == 0xE0) {
-      codepoint =
+      code_point =
           ((byte & 0x0F) << 12) | ((s[i + 1] & 0x3F) << 6) | (s[i + 2] & 0x3F);
       i += 3;
     } else {
-      codepoint = ((byte & 0x07) << 18) | ((s[i + 1] & 0x3F) << 12) |
-                  ((s[i + 2] & 0x3F) << 6) | (s[i + 3] & 0x3F);
+      code_point = ((byte & 0x07) << 18) | ((s[i + 1] & 0x3F) << 12) |
+                   ((s[i + 2] & 0x3F) << 6) | (s[i + 3] & 0x3F);
       i += 4;
     }
 
-    printf("%04X ", codepoint);
+    printf("%04X ", code_point);
   }
 }
 
@@ -282,13 +282,13 @@ int main() {
     } else {
       printf("Buffers (NFD) not equal\n");
       printf("   input: ");
-      print_codepoints(buf, nread);
+      print_code_points(buf, nread);
       printf("\n");
       printf("utf8norm: ");
-      print_codepoints(utf8norm_out_nfd, -1);
+      print_code_points(utf8norm_out_nfd, -1);
       printf("\n");
       printf("utf8proc: ");
-      print_codepoints(utf8proc_out_nfd, -1);
+      print_code_points(utf8proc_out_nfd, -1);
       printf("\n");
     }
     if (equal(utf8norm_out_nfc, utf8proc_out_nfc)) {
@@ -296,13 +296,13 @@ int main() {
     } else {
       printf("Buffers (NFC) not equal\n");
       printf("   input: ");
-      print_codepoints(buf, nread);
+      print_code_points(buf, nread);
       printf("\n");
       printf("utf8norm: ");
-      print_codepoints(utf8norm_out_nfc, -1);
+      print_code_points(utf8norm_out_nfc, -1);
       printf("\n");
       printf("utf8proc: ");
-      print_codepoints(utf8proc_out_nfc, -1);
+      print_code_points(utf8proc_out_nfc, -1);
       printf("\n");
     }
     if (equal(utf8norm_out_nfkd, utf8proc_out_nfkd)) {
@@ -310,13 +310,13 @@ int main() {
     } else {
       printf("Buffers (NFKD) not equal\n");
       printf("   input: ");
-      print_codepoints(buf, nread);
+      print_code_points(buf, nread);
       printf("\n");
       printf("utf8norm: ");
-      print_codepoints(utf8norm_out_nfkd, -1);
+      print_code_points(utf8norm_out_nfkd, -1);
       printf("\n");
       printf("utf8proc: ");
-      print_codepoints(utf8proc_out_nfkd, -1);
+      print_code_points(utf8proc_out_nfkd, -1);
       printf("\n");
     }
     if (equal(utf8norm_out_nfkc, utf8proc_out_nfkc)) {
@@ -324,13 +324,13 @@ int main() {
     } else {
       printf("Buffers (NFKC) not equal\n");
       printf("   input: ");
-      print_codepoints(buf, nread);
+      print_code_points(buf, nread);
       printf("\n");
       printf("utf8norm: ");
-      print_codepoints(utf8norm_out_nfkc, -1);
+      print_code_points(utf8norm_out_nfkc, -1);
       printf("\n");
       printf("utf8proc: ");
-      print_codepoints(utf8proc_out_nfkc, -1);
+      print_code_points(utf8proc_out_nfkc, -1);
       printf("\n");
     }
     free(utf8proc_out_nfd);

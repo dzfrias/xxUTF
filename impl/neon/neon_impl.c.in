@@ -203,8 +203,8 @@ static size_t neon_normalize_masked_utf8_@DECOMP_SUFFIX@(const uint8_t *input,
     return 8;
   }
 
-  uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
-  uint8_t nchars = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
+  uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];
+  uint8_t nchars = NORMDATA_CODE_POINT_INDEX[sml_mask][1];
 
   if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
     // Four one to two byte code points
@@ -341,8 +341,8 @@ static size_t neon_normalize_masked_utf8_@COMP_SUFFIX@(const uint8_t *input,
     code_points = vmovl_u16(chars);
     n_bytes = 8;
   } else {
-    uint8_t idx = NORMDATA_CODEPOINT_INDEX[sml_mask][0];
-    n_bytes = NORMDATA_CODEPOINT_INDEX[sml_mask][1];
+    uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];
+    n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];
     if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
       uint16x4_t chars = neon_parse_4_12_utf8(in, idx);
       code_points = vmovl_u16(chars);

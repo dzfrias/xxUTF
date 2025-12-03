@@ -7,8 +7,8 @@
 
 void scalar_sort_characters_utf8(uint8_t *out);
 uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size);
-size_t scalar_write_code_point_utf8(uint32_t codepoint, uint8_t *utf8_bytes);
-size_t scalar_code_point_size_utf8(uint32_t codepoint);
+size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes);
+size_t scalar_code_point_size_utf8(uint32_t code_point);
 bool scalar_is_hangul(uint32_t code_point);
 size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out);
 uint8_t scalar_lookup_ccc(uint32_t code_point);

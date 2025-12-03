@@ -256,7 +256,7 @@ def build_shuf(sizes: tuple[int, ...]) -> list[int]:
 @dataclass
 class ShuffleInfo:
     shufutf8_len: int
-    codepoint_index_len: int
+    code_point_index_len: int
 
 
 def generate_shuffle_tables(writer) -> ShuffleInfo:
@@ -298,7 +298,7 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
         else:
             arrg.append((len(all_shuf), 12))
 
-    writer.write(f"\nconst uint8_t NORMDATA_CODEPOINT_INDEX[{len(arrg)}][2] = {{\n")
+    writer.write(f"\nconst uint8_t NORMDATA_CODE_POINT_INDEX[{len(arrg)}][2] = {{\n")
     for row in batched(arrg, 8):
         writer.write(" ")
         for a in row:
@@ -329,7 +329,7 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
         writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
     writer.write("};\n")
 
-    return ShuffleInfo(shufutf8_len=len(cases), codepoint_index_len=len(arrg))
+    return ShuffleInfo(shufutf8_len=len(cases), code_point_index_len=len(arrg))
 
 
 @dataclass
@@ -435,7 +435,7 @@ def generate_header(
         f"extern const uint8_t NORMDATA_SHUFUTF8[{shuf_info.shufutf8_len}][16];\n"
     )
     writer.write(
-        f"extern const uint8_t NORMDATA_CODEPOINT_INDEX[{shuf_info.codepoint_index_len}][2];\n"
+        f"extern const uint8_t NORMDATA_CODE_POINT_INDEX[{shuf_info.code_point_index_len}][2];\n"
     )
     writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;\n")
     writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;\n")
@@ -782,7 +782,7 @@ def main() -> None:
     lines.append(f"Composition KV: {(hash_info.comp_len * 8) / KILOBYTE:.1f}KiB")
     lines.append(f"UTF-8 shuffle: {(shuf_info.shufutf8_len * 16) / KILOBYTE:.1f}KiB")
     lines.append(
-        f"Code point index: {(shuf_info.codepoint_index_len * 2) / KILOBYTE:.1f}KiB"
+        f"Code point index: {(shuf_info.code_point_index_len * 2) / KILOBYTE:.1f}KiB"
     )
 
     lines.append(f"NFD bloom filter: {(nfd_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")

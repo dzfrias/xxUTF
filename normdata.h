@@ -38,7 +38,7 @@ extern const NormdataTableEntry NORMDATA_NFKD_KV[6843];
 extern const uint16_t NORMDATA_NFC_SALT[928];
 extern const uint32_t NORMDATA_NFC_KV[928][2];
 extern const uint8_t NORMDATA_SHUFUTF8[145][16];
-extern const uint8_t NORMDATA_CODEPOINT_INDEX[4096][2];
+extern const uint8_t NORMDATA_CODE_POINT_INDEX[4096][2];
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;

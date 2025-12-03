@@ -17,24 +17,24 @@ uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
 
 // Write a code point into the output buffer as UTF-8 bytes. Returns the number
 // of bytes written.
-size_t scalar_write_code_point_utf8(uint32_t codepoint, uint8_t *utf8_bytes) {
-  if (codepoint <= 0x7F) {
-    utf8_bytes[0] = (uint8_t)(codepoint & 0xFF);
+size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes) {
+  if (code_point <= 0x7F) {
+    utf8_bytes[0] = (uint8_t)(code_point & 0xFF);
     return 1;
-  } else if (codepoint <= 0x7FF) {
-    utf8_bytes[0] = 0xC0 | (codepoint >> 6);
-    utf8_bytes[1] = 0x80 | (codepoint & 0x3F);
+  } else if (code_point <= 0x7FF) {
+    utf8_bytes[0] = 0xC0 | (code_point >> 6);
+    utf8_bytes[1] = 0x80 | (code_point & 0x3F);
     return 2;
-  } else if (codepoint <= 0xFFFF) {
-    utf8_bytes[0] = 0xE0 | (codepoint >> 12);
-    utf8_bytes[1] = 0x80 | ((codepoint >> 6) & 0x3F);
-    utf8_bytes[2] = 0x80 | (codepoint & 0x3F);
+  } else if (code_point <= 0xFFFF) {
+    utf8_bytes[0] = 0xE0 | (code_point >> 12);
+    utf8_bytes[1] = 0x80 | ((code_point >> 6) & 0x3F);
+    utf8_bytes[2] = 0x80 | (code_point & 0x3F);
     return 3;
-  } else if (codepoint <= 0x10FFFF) {
-    utf8_bytes[0] = 0xF0 | (codepoint >> 18);
-    utf8_bytes[1] = 0x80 | ((codepoint >> 12) & 0x3F);
-    utf8_bytes[2] = 0x80 | ((codepoint >> 6) & 0x3F);
-    utf8_bytes[3] = 0x80 | (codepoint & 0x3F);
+  } else if (code_point <= 0x10FFFF) {
+    utf8_bytes[0] = 0xF0 | (code_point >> 18);
+    utf8_bytes[1] = 0x80 | ((code_point >> 12) & 0x3F);
+    utf8_bytes[2] = 0x80 | ((code_point >> 6) & 0x3F);
+    utf8_bytes[3] = 0x80 | (code_point & 0x3F);
     return 4;
   } else {
     // Code point is too large, but we don't handle errors
@@ -42,14 +42,14 @@ size_t scalar_write_code_point_utf8(uint32_t codepoint, uint8_t *utf8_bytes) {
   }
 }
 
-size_t scalar_code_point_size_utf8(uint32_t codepoint) {
-  if (codepoint <= 0x7F) {
+size_t scalar_code_point_size_utf8(uint32_t code_point) {
+  if (code_point <= 0x7F) {
     return 1;
-  } else if (codepoint <= 0x7FF) {
+  } else if (code_point <= 0x7FF) {
     return 2;
-  } else if (codepoint <= 0xFFFF) {
+  } else if (code_point <= 0xFFFF) {
     return 3;
-  } else if (codepoint <= 0x10FFFF) {
+  } else if (code_point <= 0x10FFFF) {
     return 4;
   } else {
     // Code point is too large, but we don't handle errors
