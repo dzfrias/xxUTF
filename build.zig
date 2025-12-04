@@ -11,12 +11,11 @@ pub fn build(b: *std.Build) !void {
     try sources.appendSlice(b.allocator, &.{
         "utf8norm.c",
         "normdata.c",
-        "impl/scalar/scalar_common.c",
         "impl/scalar/scalar.c",
     });
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
     if (add_neon) {
-        try sources.append(b.allocator, "impl/neon/neon_common.c");
+        try sources.append(b.allocator, "impl/neon/neon.c");
     }
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
@@ -44,60 +43,10 @@ pub fn build(b: *std.Build) !void {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
 
-    var generated_sources: std.ArrayListUnmanaged(std.Build.LazyPath) = .empty;
-    defer generated_sources.deinit(b.allocator);
-    const sub_values: []const SubstituteValue = &.{
-        .{ .name = "DECOMP_SUFFIX", .value = "nfd" },
-        .{ .name = "DECOMP_TABLE_NAME", .value = "NFD" },
-        .{ .name = "COMP_SUFFIX", .value = "nfc" },
-        .{ .name = "COMP_TABLE_NAME", .value = "NFC" },
-    };
-    const sub_values_compat: []const SubstituteValue = &.{
-        .{ .name = "DECOMP_SUFFIX", .value = "nfkd" },
-        .{ .name = "DECOMP_TABLE_NAME", .value = "NFKD" },
-        .{ .name = "COMP_SUFFIX", .value = "nfkc" },
-        .{ .name = "COMP_TABLE_NAME", .value = "NFKC" },
-    };
-
-    // Handle generated files with CMake-style substitutions
-    const scalar_impl = substitute(
-        b,
-        b.path("impl/scalar/scalar_impl.c.in"),
-        "scalar_impl.c",
-        sub_values,
-    );
-    const scalar_impl_compat = substitute(
-        b,
-        b.path("impl/scalar/scalar_impl.c.in"),
-        "scalar_impl_compat.c",
-        sub_values_compat,
-    );
-    try generated_sources.append(b.allocator, scalar_impl);
-    try generated_sources.append(b.allocator, scalar_impl_compat);
-    if (add_neon) {
-        const neon_impl = substitute(
-            b,
-            b.path("impl/neon/neon_impl.c.in"),
-            "neon_impl.c",
-            sub_values,
-        );
-        const neon_impl_compat = substitute(
-            b,
-            b.path("impl/neon/neon_impl.c.in"),
-            "neon_impl_compat.c",
-            sub_values_compat,
-        );
-        try generated_sources.append(b.allocator, neon_impl);
-        try generated_sources.append(b.allocator, neon_impl_compat);
-    }
-
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
     run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
     for (all_sources) |source| {
         run_amalgamate.addFileArg(b.path(source));
-    }
-    for (generated_sources.items) |source| {
-        run_amalgamate.addFileArg(source);
     }
     for (all_files) |file| {
         run_amalgamate.addFileInput(b.path(file));
@@ -113,7 +62,6 @@ pub fn build(b: *std.Build) !void {
         target,
         optimize,
         sources.items,
-        generated_sources.items,
         flags.items,
         amalgamation,
     );
@@ -166,7 +114,6 @@ pub fn build(b: *std.Build) !void {
         else
             optimize,
         sources.items,
-        generated_sources.items,
         flags.items,
         amalgamation,
     );
@@ -188,7 +135,6 @@ fn createLibrary(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     sources: []const []const u8,
-    generated_sources: []const std.Build.LazyPath,
     flags: []const []const u8,
     amalgamation_path: std.Build.LazyPath,
 ) *std.Build.Step.Compile {
@@ -208,9 +154,6 @@ fn createLibrary(
             .files = sources,
             .flags = flags,
         });
-        for (generated_sources) |source| {
-            lib.addCSourceFile(.{ .file = source, .flags = flags });
-        }
     } else {
         // Use single header for release builds. This gives worse compiler errors, but
         // better performance.
@@ -221,41 +164,11 @@ fn createLibrary(
     return lib;
 }
 
-const SubstituteValue = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-fn substitute(
-    b: *std.Build,
-    input: std.Build.LazyPath,
-    out_base_name: []const u8,
-    values: []const SubstituteValue,
-) std.Build.LazyPath {
-    const run_substitute = std.Build.Step.Run.create(b, "Run substitute");
-    run_substitute.addFileArg(b.path("gen/substitute.py"));
-    run_substitute.addFileArg(input);
-    run_substitute.addArg("-o");
-    const output = run_substitute.addOutputFileArg(out_base_name);
-    run_substitute.addArg("--values");
-    for (values) |sub_val| {
-        const arg = std.fmt.allocPrint(
-            b.allocator,
-            "{s}:{s}",
-            .{ sub_val.name, sub_val.value },
-        ) catch @panic("OOM");
-        defer b.allocator.free(arg);
-        run_substitute.addArg(arg);
-    }
-    return output;
-}
-
 const all_sources: []const []const u8 = &.{
     "utf8norm.c",
     "normdata.c",
-    "impl/scalar/scalar_common.c",
     "impl/scalar/scalar.c",
-    "impl/neon/neon_common.c",
+    "impl/neon/neon.c",
 };
 
 const all_files: []const []const u8 = &.{
@@ -265,11 +178,6 @@ const all_files: []const []const u8 = &.{
     "normdata.c",
     "impl/scalar.h",
     "impl/scalar/scalar.c",
-    "impl/scalar/scalar_common.h",
-    "impl/scalar/scalar_common.c",
-    "impl/scalar/scalar_impl.c.in",
     "impl/neon.h",
-    "impl/neon/neon_common.h",
-    "impl/neon/neon_common.c",
-    "impl/neon/neon_impl.c.in",
+    "impl/neon/neon.c",
 };
