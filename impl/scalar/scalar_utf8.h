@@ -1,11 +1,10 @@
-#ifndef UTF8NORM_SCALAR_H
-#define UTF8NORM_SCALAR_H
+#ifndef UTF8NORM_SCALAR_UTF8_H
+#define UTF8NORM_SCALAR_UTF8_H
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-// UTF-8
 size_t scalar_normalize_utf8_nfd(uint8_t const *input, size_t length,
                                  uint8_t *out);
 size_t scalar_normalize_utf8_nfd_with_context(uint8_t const *input,
@@ -21,29 +20,7 @@ size_t scalar_normalize_utf8_nfc(uint8_t const *input, size_t length,
 size_t scalar_normalize_utf8_nfkc(uint8_t const *input, size_t length,
                                   uint8_t *out);
 
-// UTF-16
-size_t scalar_normalize_utf16le_nfd(uint8_t const *input, size_t length,
-                                    uint8_t *out);
-size_t scalar_normalize_utf16le_nfd_with_context(uint8_t const *input,
-                                                 size_t length, uint8_t *out,
-                                                 bool *end_is_cc);
-size_t scalar_normalize_utf16le_nfkd(uint8_t const *input, size_t length,
-                                     uint8_t *out);
-size_t scalar_normalize_utf16le_nfkd_with_context(uint8_t const *input,
-                                                  size_t length, uint8_t *out,
-                                                  bool *end_is_cc);
-size_t scalar_normalize_utf16be_nfd(uint8_t const *input, size_t length,
-                                    uint8_t *out);
-size_t scalar_normalize_utf16be_nfd_with_context(uint8_t const *input,
-                                                 size_t length, uint8_t *out,
-                                                 bool *end_is_cc);
-size_t scalar_normalize_utf16be_nfkd(uint8_t const *input, size_t length,
-                                     uint8_t *out);
-size_t scalar_normalize_utf16be_nfkd_with_context(uint8_t const *input,
-                                                  size_t length, uint8_t *out,
-                                                  bool *end_is_cc);
-
-// Helper functions
+// Helpers
 void scalar_sort_characters_utf8(uint8_t *out);
 size_t scalar_decompose_utf8_nfd(uint32_t code_point, uint8_t *out,
                                  bool *is_cc);
@@ -58,4 +35,4 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
 size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
                                     size_t amt);
 
-#endif // UTF8NORM_SCALAR_H
+#endif
