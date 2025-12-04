@@ -30,6 +30,8 @@ NEON_PRINT_FUNC(uint16x4_t, uint16_t, vst1_u16);
 NEON_PRINT_FUNC(uint32x4_t, uint32_t, vst1q_u32);
 NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
 
+#undef NEON_PRINT_FUNC
+
 // Create an 8-bit movemask from a 16x4 vector.
 static uint8_t neon_movemask_u16(uint16x4_t v) {
   const uint16x4_t mask = {0x1, 0x2, 0x4, 0x8};
@@ -511,8 +513,8 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
   return mask;
 }
 
-#define DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,                \
-                                   comp_suffix, comp_table_name)                    \
+#define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,           \
+                                        comp_suffix, comp_table_name)               \
   /* Pass a code point vector through the decomp+cc bloom filter, which will        \
    * return a vector of 0s and 0xFFFFFFFFs probabilistically indicating             \
    * whether the corresponding code point has a decomposition or is a               \
@@ -959,7 +961,9 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
     return *out_ptr - start;                                                        \
   }
 
-DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
-DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
+NEON_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
+NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
+
+#undef NEON_DEFINE_NORMALIZE_FUNCTIONS
 
 // amalgamate add: #endif // UTF8NORM_IMPLEMENTATION_NEON

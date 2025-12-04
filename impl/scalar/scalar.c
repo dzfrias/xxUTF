@@ -375,8 +375,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
   printf("\n");
 }
 
-#define DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,                \
-                                   comp_suffix, comp_table_name)                    \
+#define SCALAR_DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,         \
+                                          comp_suffix, comp_table_name)             \
   /* Decompose a code point and write it into the output buffer. Returns the        \
    * number of bytes written, or zero if the provided code point doesn't have       \
    * a decomposition.                                                               \
@@ -650,7 +650,7 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
     return out - start;                                                             \
   }
 
-DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
-DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
+SCALAR_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
+SCALAR_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
 
-#undef DEFINE_NORMALIZE_FUNCTIONS
+#undef SCALAR_DEFINE_NORMALIZE_FUNCTIONS
