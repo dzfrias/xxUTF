@@ -3,11 +3,13 @@ FROM ubuntu:22.04
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    pkg-config \
     git \
     wget \
     lsb-release \
     software-properties-common \
-    gnupg \
+    gnupg \ 
+    libicu-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"

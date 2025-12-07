@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) !void {
         "utf8norm.c",
         "normdata.c",
         "impl/scalar/scalar_utf8.c",
+        "impl/scalar/scalar_utf16.c",
         "impl/scalar/scalar_common.c",
     });
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
@@ -91,6 +92,7 @@ pub fn build(b: *std.Build) !void {
     });
     compare_exe.addIncludePath(b.path(""));
     compare_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
+    compare_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
     compare_exe.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
     compare_exe.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
     b.installArtifact(compare_exe);
@@ -169,6 +171,7 @@ const all_sources: []const []const u8 = &.{
     "utf8norm.c",
     "normdata.c",
     "impl/scalar/scalar_utf8.c",
+    "impl/scalar/scalar_utf16.c",
     "impl/scalar/scalar_common.c",
     "impl/neon/neon.c",
 };
@@ -181,6 +184,8 @@ const all_files: []const []const u8 = &.{
     "impl/scalar.h",
     "impl/scalar/scalar_utf8.c",
     "impl/scalar/scalar_utf8.h",
+    "impl/scalar/scalar_utf16.c",
+    "impl/scalar/scalar_utf16.h",
     "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_common.h",
     "impl/neon.h",

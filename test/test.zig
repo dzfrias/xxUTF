@@ -5,10 +5,61 @@ const c = @cImport({
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
-const TestInfo = struct {
-    cols: [5][]const u8,
-    comment: ?[]const u8,
+const ColumnType = enum {
+    utf8,
+    utf16le,
+    utf16be,
+
+    fn intType(self: ColumnType) type {
+        return switch (self) {
+            .utf8 => u8,
+            .utf16le, .utf16be => u16,
+        };
+    }
 };
+
+fn TestInfo(comptime col: ColumnType) type {
+    return struct {
+        cols: [5][]const col.intType(),
+        comment: ?[]const u8,
+    };
+}
+
+fn Failure(comptime col: ColumnType) type {
+    return struct {
+        expected: []const col.intType(),
+        input: []const col.intType(),
+        got: []const col.intType(),
+    };
+}
+
+fn convertTest(comptime col: ColumnType, utf8_test: TestInfo(.utf8), allocator: Allocator) !TestInfo(col) {
+    var new_test: TestInfo(col) = .{
+        .cols = undefined,
+        .comment = utf8_test.comment,
+    };
+    switch (col) {
+        .utf8 => return utf8_test,
+        .utf16le => {
+            inline for (0..utf8_test.cols.len) |i| {
+                const utf16_col = try std.unicode.utf8ToUtf16LeAlloc(allocator, utf8_test.cols[i]);
+                new_test.cols[i] = utf16_col;
+            }
+            return new_test;
+        },
+        .utf16be => {
+            inline for (0..utf8_test.cols.len) |i| {
+                const utf16_col = try std.unicode.utf8ToUtf16LeAlloc(allocator, utf8_test.cols[i]);
+                // Swap endianness
+                for (utf16_col, 0..) |x, j| {
+                    utf16_col[j] = @byteSwap(x);
+                }
+                new_test.cols[i] = utf16_col;
+            }
+            return new_test;
+        },
+    }
+}
 
 fn extractComment(input: []const u8) ?struct { []const u8, []const u8 } {
     const comment_start = std.mem.indexOfScalar(u8, input, '#') orelse return null;
@@ -17,7 +68,7 @@ fn extractComment(input: []const u8) ?struct { []const u8, []const u8 } {
     return .{ part1, comment };
 }
 
-fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo {
+fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo(.utf8) {
     const comment_extract = extractComment(input);
     const data = if (comment_extract) |e| e[0] else input;
     const comment = if (comment_extract) |e| e[1] else null;
@@ -30,7 +81,7 @@ fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo {
         while (cols_it.next()) |col| : (i += 1) raw_cols[i] = col;
     }
 
-    var test_info: TestInfo = undefined;
+    var test_info: TestInfo(.utf8) = undefined;
     test_info.comment = comment;
     for (raw_cols[0..5], 0..) |col, i| {
         var s: std.ArrayListUnmanaged(u8) = .empty;
@@ -49,128 +100,199 @@ fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo {
     return test_info;
 }
 
-const Failure = struct {
-    expected: []const u8,
-    input: []const u8,
-    got: []const u8,
-};
-
 /// Global output buffer for normalized strings.
 /// Testing is not thread safe.
-var out: [64]u8 = undefined;
+var out: [64]u8 align(2) = undefined;
 
 // Test if two normalization forms are equal.
 fn testEqualNormalized(
     comptime impl: fn ([*c]const u8, usize, [*c]u8) callconv(.c) usize,
-    expected: []const u8,
-    input: []const u8,
-) ?Failure {
-    const nwritten = impl(input.ptr, input.len, &out);
+    comptime col: ColumnType,
+    expected: []const col.intType(),
+    input: []const col.intType(),
+) ?Failure(col) {
+    const input_bytes = std.mem.sliceAsBytes(input);
+    const expected_bytes = std.mem.sliceAsBytes(expected);
+
+    const nwritten = impl(input_bytes.ptr, input_bytes.len, &out);
     const normalized = out[0..nwritten];
-    return if (!std.mem.eql(u8, expected, normalized))
-        .{ .expected = expected, .input = input, .got = normalized }
-    else
-        return null;
-}
-
-fn testNFD(test_info: TestInfo) ?Failure {
-    const expected = test_info.cols[2];
-
-    // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[0])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[1])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, expected, test_info.cols[2])) |failure|
-        return failure;
-
-    // c5 ==  toNFD(c4) ==  toNFD(c5)
-    const alt_expected = test_info.cols[4];
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, alt_expected, test_info.cols[3])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfd, alt_expected, test_info.cols[4])) |failure|
-        return failure;
-
+    if (!std.mem.eql(u8, expected_bytes, normalized)) {
+        const normalized_cast: []const col.intType() = @ptrCast(@alignCast(normalized));
+        return .{ .expected = expected, .input = input, .got = normalized_cast };
+    }
     return null;
 }
 
-fn testNFKD(test_info: TestInfo) ?Failure {
-    const expected = test_info.cols[4];
-    // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[0])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[1])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[2])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[3])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkd, expected, test_info.cols[4])) |failure|
-        return failure;
+const NormalizationForm = enum {
+    nfd,
+    nfkd,
+    nfc,
+    nfkc,
+};
 
-    return null;
+fn runTest(
+    comptime form: NormalizationForm,
+    comptime col: ColumnType,
+    test_info: TestInfo(col),
+) ?Failure(col) {
+    switch (form) {
+        .nfd => {
+            const impl = switch (col) {
+                .utf8 => c.utf8norm_normalize_utf8_nfd,
+                .utf16le => c.utf8norm_normalize_utf16le_nfd,
+                .utf16be => c.utf8norm_normalize_utf16be_nfd,
+            };
+
+            // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
+            const expected = test_info.cols[2];
+            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+                return failure;
+
+            // c5 ==  toNFD(c4) ==  toNFD(c5)
+            const alt_expected = test_info.cols[4];
+            if (testEqualNormalized(impl, col, alt_expected, test_info.cols[3])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, alt_expected, test_info.cols[4])) |failure|
+                return failure;
+
+            return null;
+        },
+        .nfc => {
+            const impl = switch (col) {
+                .utf8 => c.utf8norm_normalize_utf8_nfc,
+                .utf16le, .utf16be => @compileError("not implemented yet"),
+            };
+
+            // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
+            const expected = test_info.cols[1];
+            if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[0]))) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[1]))) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[2]))) |failure|
+                return failure;
+
+            // c4 ==  toNFC(c4) ==  toNFC(c5)
+            const alt_expected = test_info.cols[3];
+            if (testEqualNormalized(impl, col, alt_expected, std.mem.sliceAsBytes(test_info.cols[3]))) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, alt_expected, std.mem.sliceAsBytes(test_info.cols[4]))) |failure|
+                return failure;
+
+            return null;
+        },
+        .nfkd => {
+            const impl = switch (col) {
+                .utf8 => c.utf8norm_normalize_utf8_nfkd,
+                .utf16le => c.utf8norm_normalize_utf16le_nfkd,
+                .utf16be => c.utf8norm_normalize_utf16be_nfkd,
+            };
+
+            // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
+            const expected = test_info.cols[4];
+            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[3])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[4])) |failure|
+                return failure;
+
+            return null;
+        },
+        .nfkc => {
+            const impl = switch (col) {
+                .utf8 => c.utf8norm_normalize_utf8_nfkc,
+                .utf16le, .utf16be => @compileError("not implemented yet"),
+            };
+
+            const expected = test_info.cols[3];
+            // c4 == toNFKC(c1) == toNFKC(c2) == toNFKC(c3) == toNFKC(c4) == toNFKC(c5)
+            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[3])) |failure|
+                return failure
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[4])) |failure|
+                return failure;
+
+            return null;
+        },
+    }
 }
 
-fn testNFC(test_info: TestInfo) ?Failure {
-    const expected = test_info.cols[1];
-
-    // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[0])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[1])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, expected, test_info.cols[2])) |failure|
-        return failure;
-
-    // c4 ==  toNFC(c4) ==  toNFC(c5)
-    const alt_expected = test_info.cols[3];
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, alt_expected, test_info.cols[3])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfc, alt_expected, test_info.cols[4])) |failure|
-        return failure;
-
-    return null;
-}
-
-fn testNFKC(test_info: TestInfo) ?Failure {
-    const expected = test_info.cols[3];
-    // c4 == toNFKC(c1) == toNFKC(c2) == toNFKC(c3) == toNFKC(c4) == toNFKC(c5)
-    if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[0])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[1])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[2])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[3])) |failure|
-        return failure
-    else if (testEqualNormalized(c.utf8norm_normalize_utf8_nfkc, expected, test_info.cols[4])) |failure|
-        return failure;
-
-    return null;
-}
-
-fn writeHex(writer: anytype, s: []const u8) !void {
-    const utf8_view = std.unicode.Utf8View.init(s) catch {
-        for (s) |b| {
-            try writer.print("{X:0>2} ", .{b});
-        }
-        try writer.writeAll("(invalid UTF-8)\n");
-        return;
-    };
-    var code_points = utf8_view.iterator();
-    while (code_points.nextCodepoint()) |cp| {
-        try writer.print("{X:0>6} ", .{cp});
+fn writeHex(comptime col: ColumnType, writer: anytype, s: []const col.intType()) !void {
+    switch (col) {
+        .utf8 => {
+            const utf8_view = std.unicode.Utf8View.init(s) catch {
+                for (s) |b| {
+                    try writer.print("{X:0>2} ", .{b});
+                }
+                try writer.writeAll("(invalid UTF-8)\n");
+                return;
+            };
+            var code_points = utf8_view.iterator();
+            while (code_points.nextCodepoint()) |cp| {
+                try writer.print("{X:0>6} ", .{cp});
+            }
+        },
+        .utf16le => {
+            var code_points = std.unicode.Utf16LeIterator.init(s);
+            // Iterate through once to see if there are any errors. This API is relatively clunky.
+            while (code_points.nextCodepoint() catch {
+                for (s) |b| {
+                    try writer.print("{X:0>4} ", .{b});
+                }
+                try writer.writeAll("(invalid UTF-16LE)\n");
+                return;
+            }) |cp| {
+                _ = cp;
+            }
+            code_points = std.unicode.Utf16LeIterator.init(s);
+            while (try code_points.nextCodepoint()) |cp| {
+                try writer.print("{X:0>6} ", .{cp});
+            }
+        },
+        .utf16be => {
+            // TODO: we need to do one of two things: swap the endianness of `s`, or implement
+            //       a Utf16BeIterator.
+            var code_points = std.unicode.Utf16LeIterator.init(s);
+            // Iterate through once to see if there are any errors. This API is relatively clunky.
+            while (code_points.nextCodepoint() catch {
+                for (s) |b| {
+                    try writer.print("{X:0>4} ", .{b});
+                }
+                try writer.writeAll("(invalid UTF-16BE)\n");
+                return;
+            }) |cp| {
+                _ = cp;
+            }
+            code_points = std.unicode.Utf16LeIterator.init(s);
+            while (try code_points.nextCodepoint()) |cp| {
+                try writer.print("{X:0>6} ", .{cp});
+            }
+        },
     }
     try writer.writeByte('\n');
 }
 
-fn printFailure(writer: anytype, failure: Failure) !void {
+fn printFailure(comptime col: ColumnType, writer: anytype, failure: Failure(col)) !void {
     try writer.writeAll("input:    ");
-    try writeHex(writer, failure.input);
+    try writeHex(col, writer, failure.input);
     try writer.writeAll("expected: ");
-    try writeHex(writer, failure.expected);
+    try writeHex(col, writer, failure.expected);
     try writer.writeAll("got:      ");
-    try writeHex(writer, failure.got);
+    try writeHex(col, writer, failure.got);
 }
 
 pub fn main() !void {
@@ -208,37 +330,34 @@ pub fn main() !void {
         var test_node = current_part.?.start(try std.fmt.allocPrint(allocator, "test (line {})", .{i + 1}), 1);
         defer test_node.end();
         const test_info = try parseTestInfo(allocator, line);
-        if (testNFD(test_info)) |failure| {
-            try stderr.writer().print(
-                "NFD test at line {} failed: {?s}\n",
-                .{ i + 1, test_info.comment },
-            );
-            try printFailure(stderr.writer(), failure);
-            return error.Failed;
-        }
-        if (testNFKD(test_info)) |failure| {
-            try stderr.writer().print(
-                "NFKD test at line {} failed: {?s}\n",
-                .{ i + 1, test_info.comment },
-            );
-            try printFailure(stderr.writer(), failure);
-            return error.Failed;
-        }
-        if (testNFC(test_info)) |failure| {
-            try stderr.writer().print(
-                "NFC test at line {} failed: {?s}\n",
-                .{ i + 1, test_info.comment },
-            );
-            try printFailure(stderr.writer(), failure);
-            return error.Failed;
-        }
-        if (testNFKC(test_info)) |failure| {
-            try stderr.writer().print(
-                "NFKC test at line {} failed: {?s}\n",
-                .{ i + 1, test_info.comment },
-            );
-            try printFailure(stderr.writer(), failure);
-            return error.Failed;
+
+        inline for (comptime std.meta.tags(ColumnType)) |col| {
+            const converted = try convertTest(col, test_info, allocator);
+            inline for (comptime std.meta.tags(NormalizationForm)) |form| {
+                // NOTE: this will go away once we implement the rest of UTF-16LE
+                if ((col == .utf16le or col == .utf16be) and form != .nfd and form != .nfkd) {
+                    continue;
+                }
+                if (runTest(form, col, converted)) |failure| {
+                    const form_name = switch (form) {
+                        .nfd => "NFD",
+                        .nfc => "NFC",
+                        .nfkd => "NFKD",
+                        .nfkc => "NFKC",
+                    };
+                    const col_name = switch (col) {
+                        .utf8 => "UTF-8",
+                        .utf16le => "UTF-16LE",
+                        .utf16be => "UTF-16BE",
+                    };
+                    try stderr.writer().print(
+                        col_name ++ " " ++ form_name ++ " " ++ "test at line {} failed: {?s}\n",
+                        .{ i + 1, test_info.comment },
+                    );
+                    try printFailure(col, stderr.writer(), failure);
+                    return error.Failed;
+                }
+            }
         }
     }
     root_node.end();

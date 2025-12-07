@@ -14,6 +14,15 @@ size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length, char *out);
 size_t utf8norm_normalize_utf8_nfkc(char const *input, size_t length,
                                     char *out);
 
+size_t utf8norm_normalize_utf16le_nfd(char const *input, size_t length,
+                                      char *out);
+size_t utf8norm_normalize_utf16be_nfd(char const *input, size_t length,
+                                      char *out);
+size_t utf8norm_normalize_utf16le_nfkd(char const *input, size_t length,
+                                       char *out);
+size_t utf8norm_normalize_utf16be_nfkd(char const *input, size_t length,
+                                       char *out);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

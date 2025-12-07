@@ -9,8 +9,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unicode/ucnv.h>
+#include <unicode/unorm.h>
+#include <unicode/ustring.h>
+#include <unicode/utypes.h>
 #include <unistd.h>
-#include <utf8proc.h>
 
 #if defined(__clang__)
 #pragma clang optimize off
@@ -67,6 +70,57 @@ static bool is_valid_utf8(const uint8_t *data, size_t len, size_t *pos) {
   return true;
 }
 
+static bool is_valid_utf16le(const uint8_t *buffer, size_t len, size_t *pos) {
+  if (len % 2 != 0) {
+    *pos = 0;
+    return false;
+  }
+  for (size_t i = 0; i < len; i += 2) {
+    uint16_t c = (uint8_t)buffer[i] | ((uint8_t)buffer[i + 1] << 8);
+    *pos = i;
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      if (i + 2 >= len) {
+        return false;
+      }
+      uint16_t next = (uint8_t)buffer[i + 2] | ((uint8_t)buffer[i + 3] << 8);
+      if (next < 0xDC00 || next > 0xDFFF) {
+        return false;
+      }
+      i += 2;
+    } else if (c >= 0xDC00 && c <= 0xDFFF) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool is_valid_utf16be(const uint8_t *buffer, size_t len, size_t *pos) {
+  if (len % 2 != 0) {
+    *pos = 0;
+    return false;
+  }
+
+  for (size_t i = 0; i < len; i += 2) {
+    uint16_t c = (uint8_t)buffer[i + 1] | ((uint8_t)buffer[i] << 8);
+    *pos = i;
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      if (i + 2 >= len) {
+        return false;
+      }
+      uint16_t next = (uint8_t)buffer[i + 3] | ((uint8_t)buffer[i + 2] << 8);
+
+      if (next < 0xDC00 || next > 0xDFFF) {
+        return false;
+      }
+      i += 2;
+    } else if (c >= 0xDC00 && c <= 0xDFFF) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 static bool equal(char const *a, char const *b) {
   for (size_t i = 0;; i++) {
     if (a[i] == '\0') {
@@ -78,52 +132,6 @@ static bool equal(char const *a, char const *b) {
   }
 
   return true;
-}
-
-// Normalize a UTF-8 string using utf8proc (NFD form)
-static char *utf8proc_normalize_utf8_nfd(const char *input, int32_t len) {
-  utf8proc_uint8_t *normalized = NULL;
-  utf8proc_ssize_t result =
-      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
-                   UTF8PROC_DECOMPOSE | UTF8PROC_STABLE);
-  if (result < 0) {
-    return NULL;
-  }
-  return (char *)normalized;
-}
-
-static char *utf8proc_normalize_utf8_nfc(const char *input, int32_t len) {
-  utf8proc_uint8_t *normalized = NULL;
-  utf8proc_ssize_t result =
-      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
-                   UTF8PROC_COMPOSE | UTF8PROC_STABLE);
-  if (result < 0) {
-    return NULL;
-  }
-  return (char *)normalized;
-}
-
-static char *utf8proc_normalize_utf8_nfkd(const char *input, int32_t len) {
-  utf8proc_uint8_t *normalized = NULL;
-  utf8proc_ssize_t result =
-      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
-                   UTF8PROC_DECOMPOSE | UTF8PROC_STABLE | UTF8PROC_COMPAT);
-
-  if (result < 0) {
-    return NULL;
-  }
-  return (char *)normalized;
-}
-
-static char *utf8proc_normalize_utf8_nfkc(const char *input, int32_t len) {
-  utf8proc_uint8_t *normalized = NULL;
-  utf8proc_ssize_t result =
-      utf8proc_map((const utf8proc_uint8_t *)input, len, &normalized,
-                   UTF8PROC_COMPOSE | UTF8PROC_STABLE | UTF8PROC_COMPAT);
-  if (result < 0) {
-    return NULL;
-  }
-  return (char *)normalized;
 }
 
 #ifdef __AFL_FUZZ_TESTCASE_LEN
@@ -166,13 +174,248 @@ static void print_code_points(char const *s, ssize_t len) {
   }
 }
 
+#define COMPARE_NORMALIZE_FUNCTION_UTF8(form, form_upper)                      \
+  static bool compare_normalization_utf8_##form(char const *input,             \
+                                                size_t length, bool verbose) { \
+    UErrorCode status = U_ZERO_ERROR;                                          \
+    UChar source[8192];                                                        \
+    int32_t source_length;                                                     \
+    u_strFromUTF8(source, 8192, &source_length, input, length, &status);       \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    const UNormalizer2 *normalizer =                                           \
+        unorm2_get##form_upper##Instance(&status);                             \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error getting normalizer: %s\n", u_errorName(status));           \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    UChar result[8192];                                                        \
+    int32_t result_length = unorm2_normalize(                                  \
+        normalizer, source, source_length, result, 8192, &status);             \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error normalizing: %s\n", u_errorName(status));                  \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char icu_out[8192];                                                        \
+    int32_t icu_out_length;                                                    \
+    u_strToUTF8(icu_out, 8192, &icu_out_length, result, result_length,         \
+                &status);                                                      \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-8: %s\n", u_errorName(status));          \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char utf8norm_out[8192];                                                   \
+    size_t utf8norm_out_length =                                               \
+        utf8norm_normalize_utf8_##form(input, length, utf8norm_out);           \
+    size_t pos;                                                                \
+    if (!is_valid_utf8((uint8_t const *)utf8norm_out, utf8norm_out_length,     \
+                       &pos)) {                                                \
+      if (verbose) {                                                           \
+        printf("normalized (%s) output is invaild UTF-8, position %zu\n",      \
+               #form_upper, pos);                                              \
+      }                                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    icu_out[icu_out_length] = '\0';                                            \
+    utf8norm_out[utf8norm_out_length] = '\0';                                  \
+                                                                               \
+    if (!equal(utf8norm_out, icu_out)) {                                       \
+      if (verbose) {                                                           \
+        printf("Buffers (UTF-8, %s) not equal\n", #form_upper);                \
+        printf("   input: ");                                                  \
+        print_code_points(input, length);                                      \
+        printf("\n");                                                          \
+        printf("utf8norm: ");                                                  \
+        print_code_points(utf8norm_out, -1);                                   \
+        printf("\n");                                                          \
+        printf("   icu4c: ");                                                  \
+        print_code_points(icu_out, -1);                                        \
+        printf("\n");                                                          \
+      }                                                                        \
+      return false;                                                            \
+    }                                                                          \
+    if (verbose) {                                                             \
+      printf("Both buffers (UTF-8, %s) equal!\n", #form_upper);                \
+    }                                                                          \
+    return true;                                                               \
+  }
+
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfd, NFD);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfc, NFC);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfkd, NFKD);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
+
+#undef COMPARE_NORMALIZE_FUNCTION_UTF8
+
+#define COMPARE_NORMALIZE_FUNCTION_UTF16(form, form_upper, endianness,         \
+                                         endianness_upper)                     \
+  static bool compare_normalization_utf16##endianness##_##form(                \
+      char const *input, size_t length, bool verbose) {                        \
+    UErrorCode status = U_ZERO_ERROR;                                          \
+    UChar source[8192];                                                        \
+    int32_t source_length;                                                     \
+    u_strFromUTF8(source, 8192, &source_length, input, length, &status);       \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    const UNormalizer2 *normalizer =                                           \
+        unorm2_get##form_upper##Instance(&status);                             \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error getting normalizer: %s\n", u_errorName(status));           \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    UChar result[8192];                                                        \
+    int32_t result_length = unorm2_normalize(                                  \
+        normalizer, source, source_length, result, 8192, &status);             \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error normalizing: %s\n", u_errorName(status));                  \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    UConverter *conv = ucnv_open("UTF-16" #endianness_upper, &status);         \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error opening UTF-16 converter: %s\n", u_errorName(status));     \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    int32_t icu_out_length =                                                   \
+        ucnv_fromUChars(conv, NULL, 0, result, result_length, &status);        \
+    if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status)) {              \
+      printf("error calculating size: %s\n", u_errorName(status));             \
+      ucnv_close(conv);                                                        \
+      return 1;                                                                \
+    }                                                                          \
+    status = U_ZERO_ERROR;                                                     \
+                                                                               \
+    char icu_out[8192];                                                        \
+    ucnv_fromUChars(conv, icu_out, 8192, result, result_length, &status);      \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char utf16_bytes[8192];                                                    \
+    int32_t utf16_length = ucnv_fromUChars(conv, utf16_bytes, 8192, source,    \
+                                           source_length, &status);            \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char utf8norm_out[8192];                                                   \
+    size_t utf8norm_out_length =                                               \
+        utf8norm_normalize_utf16##endianness##_##form(                         \
+            utf16_bytes, utf16_length, utf8norm_out);                          \
+    size_t pos;                                                                \
+    if (!is_valid_utf16##endianness((uint8_t const *)utf8norm_out,             \
+                                    utf8norm_out_length, &pos)) {              \
+      if (verbose) {                                                           \
+        printf("normalized (%s, %s) output is invaild UTF-16, position %zu\n", \
+               "UTF-16" #endianness_upper, #form_upper, pos);                  \
+      }                                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    icu_out[icu_out_length] = '\0';                                            \
+    utf8norm_out[utf8norm_out_length] = '\0';                                  \
+                                                                               \
+    if (!equal(utf8norm_out, icu_out)) {                                       \
+      if (verbose) {                                                           \
+        printf("Buffers (%s, %s) not equal\n", "UTF-16" #endianness_upper,     \
+               #form_upper);                                                   \
+        printf("   input: ");                                                  \
+        print_code_points(input, length);                                      \
+        printf("\n");                                                          \
+        printf("utf8norm: ");                                                  \
+        print_code_points(utf8norm_out, -1);                                   \
+        printf("\n");                                                          \
+        printf("   icu4c: ");                                                  \
+        print_code_points(icu_out, -1);                                        \
+        printf("\n");                                                          \
+      }                                                                        \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+    if (verbose) {                                                             \
+      printf("Both buffers (%s, %s) equal!\n", "UTF-16" #endianness_upper,     \
+             #form_upper);                                                     \
+    }                                                                          \
+    ucnv_close(conv);                                                          \
+    return true;                                                               \
+  }
+
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, le, LE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, be, BE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, le, LE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, be, BE);
+
+#undef COMPARE_NORMALIZE_FUNCTION_UTF16
+
 int main() {
 #ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
   const char *normalization_form = getenv("UTF8NORM_FUZZ_NORMALIZATION_FORM");
+  const char *encoding = getenv("UTF8NORM_FUZZ_ENCODING");
   if (normalization_form == NULL) {
     normalization_form = "NFD";
+  }
+  if (encoding == NULL) {
+    encoding = "UTF-8";
+  }
+
+  bool (*validation_func)(uint8_t const *, size_t, size_t *);
+  bool (*compare_func)(char const *, size_t, bool);
+
+  if (strcmp(encoding, "UTF-8") == 0) {
+    validation_func = is_valid_utf8;
+    if (strcmp(normalization_form, "NFD") == 0) {
+      compare_func = compare_normalization_utf8_nfd;
+    } else if (strcmp(normalization_form, "NFC") == 0) {
+      compare_func = compare_normalization_utf8_nfc;
+    } else if (strcmp(normalization_form, "NFKD") == 0) {
+      compare_func = compare_normalization_utf8_nfkd;
+    } else if (strcmp(normalization_form, "NFKC") == 0) {
+      compare_func = compare_normalization_utf8_nfkc;
+    } else {
+      printf("Invalid normalization form: %s\n", normalization_form);
+      abort();
+    }
+  } else if (strcmp(encoding, "UTF-16LE") == 0) {
+    validation_func = is_valid_utf16le;
+    if (strcmp(normalization_form, "NFD")) {
+      compare_func = compare_normalization_utf16le_nfd;
+    } else if (strcmp(normalization_form, "NFKD")) {
+      compare_func = compare_normalization_utf16le_nfkd;
+    } else {
+      printf("Invalid normalization form: %s\n", normalization_form);
+      abort();
+    }
+  } else if (strcmp(encoding, "UTF-16BE") == 0) {
+    validation_func = is_valid_utf16be;
+    if (strcmp(normalization_form, "NFD")) {
+      compare_func = compare_normalization_utf16be_nfd;
+    } else if (strcmp(normalization_form, "NFKD")) {
+      compare_func = compare_normalization_utf16be_nfkd;
+    } else {
+      printf("Invalid normalization form: %s\n", normalization_form);
+      abort();
+    }
+  } else {
+    printf("Invalid encoding form: %s\n", encoding);
+    abort();
   }
 
   while (__AFL_LOOP(1000)) {
@@ -180,49 +423,11 @@ int main() {
 
     // Ensure valid input
     size_t pos;
-    if (!is_valid_utf8(buf, len, &pos) || len > 2048) {
+    if (!validation_func(buf, len, &pos) || len > 2048) {
       continue;
     }
 
-    char utf8norm_out[16384];
-    size_t nwritten;
-    if (strcmp(normalization_form, "NFD") == 0) {
-      nwritten =
-          utf8norm_normalize_utf8_nfd((char const *)buf, len, utf8norm_out);
-    } else if (strcmp(normalization_form, "NFC") == 0) {
-      nwritten =
-          utf8norm_normalize_utf8_nfc((char const *)buf, len, utf8norm_out);
-    } else if (strcmp(normalization_form, "NFKD") == 0) {
-      nwritten =
-          utf8norm_normalize_utf8_nfkd((char const *)buf, len, utf8norm_out);
-    } else if (strcmp(normalization_form, "NFKC") == 0) {
-      nwritten =
-          utf8norm_normalize_utf8_nfkc((char const *)buf, len, utf8norm_out);
-    } else {
-      printf("Invalid normalization form: %s\n", normalization_form);
-      abort();
-    }
-
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out, nwritten, &pos)) {
-      abort();
-    }
-    utf8norm_out[nwritten] = '\0';
-
-    char *utf8proc_out;
-    if (strcmp(normalization_form, "NFD") == 0) {
-      utf8proc_out = utf8proc_normalize_utf8_nfd((char const *)buf, len);
-    } else if (strcmp(normalization_form, "NFC") == 0) {
-      utf8proc_out = utf8proc_normalize_utf8_nfc((char const *)buf, len);
-    } else if (strcmp(normalization_form, "NFKD") == 0) {
-      utf8proc_out = utf8proc_normalize_utf8_nfkd((char const *)buf, len);
-    } else if (strcmp(normalization_form, "NFKC") == 0) {
-      utf8proc_out = utf8proc_normalize_utf8_nfkc((char const *)buf, len);
-    }
-
-    bool eql = equal(utf8norm_out, utf8proc_out);
-    free(utf8proc_out);
-
-    if (!eql) {
+    if (!compare_func((char const *)buf, len, false)) {
       abort();
     }
 
@@ -235,108 +440,30 @@ int main() {
   while ((nread = read(0, buf, sizeof(buf) - 1)) > 0) {
     buf[nread] = '\0';
 
-    char utf8norm_out_nfd[16384];
-    size_t nwritten_nfd =
-        utf8norm_normalize_utf8_nfd(buf, nread, utf8norm_out_nfd);
-    char utf8norm_out_nfc[16384];
-    size_t nwritten_nfc =
-        utf8norm_normalize_utf8_nfc(buf, nread, utf8norm_out_nfc);
-    char utf8norm_out_nfkd[16384];
-    size_t nwritten_nfkd =
-        utf8norm_normalize_utf8_nfkd(buf, nread, utf8norm_out_nfkd);
-    char utf8norm_out_nfkc[16384];
-    size_t nwritten_nfkc =
-        utf8norm_normalize_utf8_nfkc(buf, nread, utf8norm_out_nfkc);
-
-    size_t pos;
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfd, nwritten_nfd, &pos)) {
-      printf("normalized (NFD) output is invaild UTF-8, position %zu\n", pos);
+    if (!compare_normalization_utf8_nfd(buf, nread, true)) {
       continue;
     }
-    utf8norm_out_nfd[nwritten_nfd] = '\0';
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfc, nwritten_nfc, &pos)) {
-      printf("normalized (NFC) output is invaild UTF-8, position %zu\n", pos);
+    if (!compare_normalization_utf8_nfc(buf, nread, true)) {
       continue;
     }
-    utf8norm_out_nfc[nwritten_nfc] = '\0';
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfkd, nwritten_nfkd,
-                       &pos)) {
-      printf("normalized (NFKD) output is invaild UTF-8, position %zu\n", pos);
+    if (!compare_normalization_utf8_nfkd(buf, nread, true)) {
       continue;
     }
-    utf8norm_out_nfkd[nwritten_nfkd] = '\0';
-    if (!is_valid_utf8((uint8_t const *)utf8norm_out_nfkc, nwritten_nfkc,
-                       &pos)) {
-      printf("normalized (NFKC) output is invaild UTF-8, position %zu\n", pos);
+    if (!compare_normalization_utf8_nfkc(buf, nread, true)) {
       continue;
     }
-    utf8norm_out_nfkc[nwritten_nfkc] = '\0';
-
-    char *utf8proc_out_nfd = utf8proc_normalize_utf8_nfd(buf, nread);
-    char *utf8proc_out_nfc = utf8proc_normalize_utf8_nfc(buf, nread);
-    char *utf8proc_out_nfkd = utf8proc_normalize_utf8_nfkd(buf, nread);
-    char *utf8proc_out_nfkc = utf8proc_normalize_utf8_nfkc(buf, nread);
-
-    if (equal(utf8norm_out_nfd, utf8proc_out_nfd)) {
-      printf("Both buffers (NFD) equal!\n");
-    } else {
-      printf("Buffers (NFD) not equal\n");
-      printf("   input: ");
-      print_code_points(buf, nread);
-      printf("\n");
-      printf("utf8norm: ");
-      print_code_points(utf8norm_out_nfd, -1);
-      printf("\n");
-      printf("utf8proc: ");
-      print_code_points(utf8proc_out_nfd, -1);
-      printf("\n");
+    if (!compare_normalization_utf16le_nfd(buf, nread, true)) {
+      continue;
     }
-    if (equal(utf8norm_out_nfc, utf8proc_out_nfc)) {
-      printf("Both buffers (NFC) equal!\n");
-    } else {
-      printf("Buffers (NFC) not equal\n");
-      printf("   input: ");
-      print_code_points(buf, nread);
-      printf("\n");
-      printf("utf8norm: ");
-      print_code_points(utf8norm_out_nfc, -1);
-      printf("\n");
-      printf("utf8proc: ");
-      print_code_points(utf8proc_out_nfc, -1);
-      printf("\n");
+    if (!compare_normalization_utf16be_nfd(buf, nread, true)) {
+      continue;
     }
-    if (equal(utf8norm_out_nfkd, utf8proc_out_nfkd)) {
-      printf("Both buffers (NFKD) equal!\n");
-    } else {
-      printf("Buffers (NFKD) not equal\n");
-      printf("   input: ");
-      print_code_points(buf, nread);
-      printf("\n");
-      printf("utf8norm: ");
-      print_code_points(utf8norm_out_nfkd, -1);
-      printf("\n");
-      printf("utf8proc: ");
-      print_code_points(utf8proc_out_nfkd, -1);
-      printf("\n");
+    if (!compare_normalization_utf16le_nfkd(buf, nread, true)) {
+      continue;
     }
-    if (equal(utf8norm_out_nfkc, utf8proc_out_nfkc)) {
-      printf("Both buffers (NFKC) equal!\n");
-    } else {
-      printf("Buffers (NFKC) not equal\n");
-      printf("   input: ");
-      print_code_points(buf, nread);
-      printf("\n");
-      printf("utf8norm: ");
-      print_code_points(utf8norm_out_nfkc, -1);
-      printf("\n");
-      printf("utf8proc: ");
-      print_code_points(utf8proc_out_nfkc, -1);
-      printf("\n");
+    if (!compare_normalization_utf16be_nfkd(buf, nread, true)) {
+      continue;
     }
-    free(utf8proc_out_nfd);
-    free(utf8proc_out_nfc);
-    free(utf8proc_out_nfkd);
-    free(utf8proc_out_nfkc);
   }
 
   return 0;
