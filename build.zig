@@ -91,7 +91,6 @@ pub fn build(b: *std.Build) !void {
         }),
     });
     compare_exe.addIncludePath(b.path(""));
-    compare_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
     compare_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
     compare_exe.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
     compare_exe.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
