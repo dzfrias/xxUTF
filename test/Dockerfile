@@ -9,8 +9,20 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     software-properties-common \
     gnupg \ 
-    libicu-dev \
     && rm -rf /var/lib/apt/lists/*
+
+RUN wget https://github.com/unicode-org/icu/releases/download/release-77-1/icu4c-77_1-src.tgz \
+    && tar -xzf icu4c-77_1-src.tgz \
+    && cd icu/source \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && cd ../.. \
+    && rm -rf icu icu4c-77_1-src.tgz
+
+# Verify installation
+RUN icu-config --version
 
 RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
