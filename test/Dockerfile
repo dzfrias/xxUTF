@@ -32,15 +32,6 @@ RUN git clone https://github.com/AFLplusplus/AFLplusplus.git /opt/aflplusplus &&
     make source-only && \
     make install
 
-RUN wget https://github.com/JuliaStrings/utf8proc/releases/download/v2.10.0/utf8proc-2.10.0.tar.gz && \
-    tar -xzf utf8proc-2.10.0.tar.gz && \
-    rm utf8proc-2.10.0.tar.gz && \
-    mv utf8proc-2.10.0 /opt/utf8proc && \
-    cd /opt/utf8proc && \
-    make && \
-    make install && \
-    ldconfig
-
 # Add AFL++ to PATH
 ENV PATH="/opt/aflplusplus:$PATH"
 
