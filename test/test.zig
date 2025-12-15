@@ -164,23 +164,24 @@ fn runTest(
         .nfc => {
             const impl = switch (col) {
                 .utf8 => c.utf8norm_normalize_utf8_nfc,
-                .utf16le, .utf16be => @compileError("not implemented yet"),
+                .utf16le => c.utf8norm_normalize_utf16le_nfc,
+                .utf16be => c.utf8norm_normalize_utf16be_nfc,
             };
 
             // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
             const expected = test_info.cols[1];
-            if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[0]))) |failure|
+            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[1]))) |failure|
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, std.mem.sliceAsBytes(test_info.cols[2]))) |failure|
+            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
                 return failure;
 
             // c4 ==  toNFC(c4) ==  toNFC(c5)
             const alt_expected = test_info.cols[3];
-            if (testEqualNormalized(impl, col, alt_expected, std.mem.sliceAsBytes(test_info.cols[3]))) |failure|
+            if (testEqualNormalized(impl, col, alt_expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, alt_expected, std.mem.sliceAsBytes(test_info.cols[4]))) |failure|
+            else if (testEqualNormalized(impl, col, alt_expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -210,7 +211,8 @@ fn runTest(
         .nfkc => {
             const impl = switch (col) {
                 .utf8 => c.utf8norm_normalize_utf8_nfkc,
-                .utf16le, .utf16be => @compileError("not implemented yet"),
+                .utf16le => c.utf8norm_normalize_utf16le_nfkc,
+                .utf16be => c.utf8norm_normalize_utf16be_nfkc,
             };
 
             const expected = test_info.cols[3];
@@ -334,10 +336,6 @@ pub fn main() !void {
         inline for (comptime std.meta.tags(ColumnType)) |col| {
             const converted = try convertTest(col, test_info, allocator);
             inline for (comptime std.meta.tags(NormalizationForm)) |form| {
-                // NOTE: this will go away once we implement the rest of UTF-16LE
-                if ((col == .utf16le or col == .utf16be) and form != .nfd and form != .nfkd) {
-                    continue;
-                }
                 if (runTest(form, col, converted)) |failure| {
                     const form_name = switch (form) {
                         .nfd => "NFD",
