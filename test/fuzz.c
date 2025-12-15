@@ -411,6 +411,10 @@ COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, le, LE);
 COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, be, BE);
 COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, le, LE);
 COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, be, BE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, le, LE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, be, BE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, le, LE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, be, BE);
 
 #undef COMPARE_NORMALIZE_FUNCTION_UTF16
 
@@ -451,6 +455,10 @@ int main() {
       compare_func = compare_normalization_utf16le_nfd;
     } else if (strcmp(normalization_form, "NFKD") == 0) {
       compare_func = compare_normalization_utf16le_nfkd;
+    } else if (strcmp(normalization_form, "NFC") == 0) {
+      compare_func = compare_normalization_utf16le_nfc;
+    } else if (strcmp(normalization_form, "NFKC") == 0) {
+      compare_func = compare_normalization_utf16le_nfkc;
     } else {
       printf("Invalid normalization form: %s\n", normalization_form);
       abort();
@@ -460,6 +468,10 @@ int main() {
       compare_func = compare_normalization_utf16be_nfd;
     } else if (strcmp(normalization_form, "NFKD") == 0) {
       compare_func = compare_normalization_utf16be_nfkd;
+    } else if (strcmp(normalization_form, "NFC") == 0) {
+      compare_func = compare_normalization_utf16be_nfc;
+    } else if (strcmp(normalization_form, "NFKC") == 0) {
+      compare_func = compare_normalization_utf16be_nfkc;
     } else {
       printf("Invalid normalization form: %s\n", normalization_form);
       abort();
@@ -519,6 +531,18 @@ int main() {
       continue;
     }
     if (!compare_normalization_utf16be_nfkd(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16le_nfc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16le_nfkc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfkc(buf, nread, true)) {
       continue;
     }
   }

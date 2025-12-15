@@ -42,6 +42,14 @@ size_t scalar_normalize_utf16be_nfkd(uint8_t const *input, size_t length,
 size_t scalar_normalize_utf16be_nfkd_with_context(uint8_t const *input,
                                                   size_t length, uint8_t *out,
                                                   bool *end_is_cc);
+size_t scalar_normalize_utf16le_nfc(uint8_t const *input, size_t length,
+                                    uint8_t *out);
+size_t scalar_normalize_utf16le_nfkc(uint8_t const *input, size_t length,
+                                     uint8_t *out);
+size_t scalar_normalize_utf16be_nfc(uint8_t const *input, size_t length,
+                                    uint8_t *out);
+size_t scalar_normalize_utf16be_nfkc(uint8_t const *input, size_t length,
+                                     uint8_t *out);
 
 // Helper functions
 void scalar_sort_characters_utf8(uint8_t *out);
