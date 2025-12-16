@@ -5,6 +5,11 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const neon = b.option(bool, "neon", "Select usage of ARM NEON (default: detect)");
+    const endianness = b.option(
+        std.builtin.Endian,
+        "endian",
+        "Select native endianness (default: detect)",
+    ) orelse .little;
 
     var sources: std.ArrayListUnmanaged([]const u8) = .empty;
     defer sources.deinit(b.allocator);
@@ -16,6 +21,10 @@ pub fn build(b: *std.Build) !void {
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, default_flags);
+    try flags.append(b.allocator, switch (endianness) {
+        .little => "-DUTF8NORM_BIG_ENDIAN=0",
+        .big => "-DUTF8NORM_BIG_ENDIAN=1",
+    });
     if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
@@ -179,6 +188,8 @@ const all_files: []const []const u8 = &.{
     "impl/neon/neon_common.h",
     "impl/neon/neon_utf8.c",
     "impl/neon/neon_utf8.h",
+    "impl/neon/neon_utf16.c",
+    "impl/neon/neon_utf16.h",
 };
 
 const default_sources: []const []const u8 = &.{
@@ -192,6 +203,7 @@ const default_sources: []const []const u8 = &.{
 const neon_sources: []const []const u8 = &.{
     "impl/neon/neon_common.c",
     "impl/neon/neon_utf8.c",
+    "impl/neon/neon_utf16.c",
 };
 
 const all_sources: []const []const u8 = default_sources ++ neon_sources;

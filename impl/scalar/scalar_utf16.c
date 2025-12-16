@@ -8,12 +8,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static inline void scalar_write_uint16_le(uint16_t x, uint8_t *out) {
+void scalar_write_uint16_le(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x & 0xFF);
   out[1] = (uint8_t)(x >> 8);
 }
 
-static inline void scalar_write_uint16_be(uint16_t x, uint8_t *out) {
+void scalar_write_uint16_be(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x >> 8);
   out[1] = (uint8_t)(x & 0xFF);
 }
@@ -26,8 +26,7 @@ static inline uint16_t scalar_read_uint16be(uint8_t const *input) {
   return ((uint16_t)input[0] << 8) | (uint16_t)input[1];
 }
 
-__attribute__((unused)) static inline size_t
-scalar_code_point_size_utf16(uint32_t code_point) {
+static inline size_t scalar_code_point_size_utf16(uint32_t code_point) {
   return code_point <= 0xFFFF ? 2 : 4;
 }
 
@@ -42,9 +41,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
 #define SCALAR_UTF16_HELPERS(endianness)                                       \
   /* Write a code point into the output buffer as UTF-16 bytes. Returns the    \
    * number of bytes written. */                                               \
-  __attribute__((unused)) static size_t                                        \
-      scalar_write_code_point_utf16##endianness(uint32_t code_point,           \
-                                                uint8_t *utf16_bytes) {        \
+  static size_t scalar_write_code_point_utf16##endianness(                     \
+      uint32_t code_point, uint8_t *utf16_bytes) {                             \
     /* Check if in BMP */                                                      \
     if (code_point <= 0xFFFF) {                                                \
       uint16_t u = (uint16_t)code_point;                                       \
@@ -60,9 +58,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
   }                                                                            \
                                                                                \
   /* Parse a UTF-16 code point from a byte buffer. */                          \
-  __attribute__((unused)) static uint32_t                                      \
-      scalar_parse_code_point_utf16##endianness(uint8_t const *input,          \
-                                                uint8_t *size) {               \
+  static uint32_t scalar_parse_code_point_utf16##endianness(                   \
+      uint8_t const *input, uint8_t *size) {                                   \
     uint16_t w1 = scalar_read_uint16##endianness(input);                       \
     if (scalar_is_utf16_high_surrogate(w1)) {                                  \
       uint16_t w2 = scalar_read_uint16##endianness(input + 2);                 \
@@ -77,9 +74,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
   }                                                                            \
                                                                                \
   /* Decompose a Hangul code point into UTF-16 */                              \
-  __attribute__((unused)) static size_t                                        \
-      scalar_decompose_hangul_utf16##endianness(uint32_t code_point,           \
-                                                uint8_t *out) {                \
+  static size_t scalar_decompose_hangul_utf16##endianness(uint32_t code_point, \
+                                                          uint8_t *out) {      \
     uint32_t s_index = code_point - NORMDATA_S_BASE;                           \
     uint32_t l_index = s_index / NORMDATA_N_COUNT;                             \
     uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;        \
@@ -98,9 +94,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
   }                                                                            \
                                                                                \
   /* Parse a UTF-16 encoded code point in reverse. */                          \
-  __attribute__((unused)) static uint32_t                                      \
-      scalar_parse_code_point_utf16##endianness##_reverse(                     \
-          uint8_t const *input) {                                              \
+  static uint32_t scalar_parse_code_point_utf16##endianness##_reverse(         \
+      uint8_t const *input) {                                                  \
     uint16_t code_unit = scalar_read_uint16##endianness(input);                \
     uint32_t code_point = 0;                                                   \
     if (scalar_is_utf16_low_surrogate(code_unit)) {                            \
@@ -117,9 +112,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
                                                                                \
   /* Find a starter character in a UTF-16 buffer, searching from right to left \
    */                                                                          \
-  __attribute__((unused)) static size_t                                        \
-      scalar_rfind_starter_utf16##endianness(const uint8_t *input,             \
-                                             size_t length) {                  \
+  static size_t scalar_rfind_starter_utf16##endianness(const uint8_t *input,   \
+                                                       size_t length) {        \
     size_t p = 0;                                                              \
     while (p < length) {                                                       \
       uint32_t c = scalar_parse_code_point_utf16##endianness##_reverse(        \
@@ -153,8 +147,7 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
   /* Sort combining characters in-place (implementation of the canonical       \
    * ordering algorithm), starting at the end of the buffer and working        \
    * backwards. */                                                             \
-  __attribute__((unused)) static void                                          \
-      scalar_sort_characters_utf16##endianness(uint8_t *out, size_t length) {  \
+  void scalar_sort_characters_utf16##endianness(uint8_t *out, size_t length) { \
     if (length == 0) {                                                         \
       return;                                                                  \
     }                                                                          \
@@ -227,7 +220,7 @@ SCALAR_UTF16_HELPERS(be);
 
 #define SCALAR_UTF16_IMPLEMENTATION(                                                \
     endianness, decomp_form, decomp_form_upper, comp_form, comp_form_upper)         \
-  static size_t scalar_decompose_utf16##endianness##_##decomp_form(                 \
+  size_t scalar_decompose_utf16##endianness##_##decomp_form(                        \
       uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
     uint8_t *start = out;                                                           \
     uint32_t salt_hash = scalar_phash(                                              \

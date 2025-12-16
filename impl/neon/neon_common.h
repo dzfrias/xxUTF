@@ -17,6 +17,11 @@ void neon_print_uint32x2_t(const char *name, uint32x2_t vec);
 // syllable and 0xFFFFFFFF means it is a Hangul syllable.
 uint32x4_t neon_hangul_mask(uint32x4_t input);
 
+// Compute the L, V, and T indices for Hangul syllable decomposition.
+//
+// https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
+uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars);
+
 // memcpy for inputs less than 64 bytes large.
 void neon_memcpy_small(uint8_t *dst, const uint8_t *src, size_t len);
 

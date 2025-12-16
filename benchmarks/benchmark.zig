@@ -8,15 +8,21 @@ const print_alignment = 30;
 const full_line_length = print_alignment + 16;
 
 const ImplementationFunc = fn ([]const u8) void;
-const implementations: []const struct { []const u8, ImplementationFunc } = &.{
-    .{ "utf8norm_nfd", utf8normNormalizeNFD },
-    .{ "utf8proc_nfd", utf8procNormalizeNFD },
-    .{ "utf8norm_nfkd", utf8normNormalizeNFKD },
-    .{ "utf8proc_nfkd", utf8procNormalizeNFKD },
-    .{ "utf8norm_nfc", utf8normNormalizeNFC },
-    .{ "utf8proc_nfc", utf8procNormalizeNFC },
-    .{ "utf8norm_nfkc", utf8normNormalizeNFKC },
-    .{ "utf8proc_nfkc", utf8procNormalizeNFKC },
+const Encoding = enum { utf8, utf16le, utf16be };
+
+const implementations: []const struct { []const u8, ImplementationFunc, Encoding } = &.{
+    .{ "utf8norm_utf8_nfd", utf8normNormalizeUtf8NFD, .utf8 },
+    .{ "utf8proc_utf8_nfd", utf8procNormalizeNFD, .utf8 },
+    .{ "utf8norm_utf8_nfkd", utf8normNormalizeUtf8NFKD, .utf8 },
+    .{ "utf8proc_utf8_nfkd", utf8procNormalizeNFKD, .utf8 },
+    .{ "utf8norm_utf8_nfc", utf8normNormalizeUtf8NFC, .utf8 },
+    .{ "utf8proc_utf8_nfc", utf8procNormalizeNFC, .utf8 },
+    .{ "utf8norm_utf8_nfkc", utf8normNormalizeUtf8NFKC, .utf8 },
+    .{ "utf8proc_utf8_nfkc", utf8procNormalizeNFKC, .utf8 },
+    .{ "utf8norm_utf16le_nfd", utf8normNormalizeUtf16leNFD, .utf16le },
+    .{ "utf8norm_utf16be_nfd", utf8normNormalizeUtf16beNFD, .utf16be },
+    .{ "utf8norm_utf16le_nfkd", utf8normNormalizeUtf16leNFKD, .utf16le },
+    .{ "utf8norm_utf16be_nfkd", utf8normNormalizeUtf16beNFKD, .utf16be },
 };
 
 pub fn main() !void {
@@ -41,6 +47,7 @@ pub fn main() !void {
                 input_dir,
                 out_dir,
                 arguments.specific_test,
+                impl[2],
                 impl[1],
             );
             try stdout.writer().writeByte('\n');
@@ -86,6 +93,7 @@ fn benchmarkImplementation(
     inputs: std.fs.Dir,
     data_out: ?std.fs.Dir,
     specific_test: ?[]const u8,
+    encoding: Encoding,
     comptime impl: fn ([]const u8) void,
 ) !void {
     try writeHeader(out, name);
@@ -106,7 +114,7 @@ fn benchmarkImplementation(
 
         const file = try inputs.openFile(entry.name, .{});
         defer file.close();
-        const result = try runBenchmark(file, impl);
+        const result = try runBenchmark(file, encoding, impl);
         try out.print(
             std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
             .{ entry.name, result.mean_ms, result.sd_ms },
@@ -122,7 +130,7 @@ fn benchmarkImplementation(
     }
 }
 
-fn utf8normNormalizeNFD(src: []const u8) void {
+fn utf8normNormalizeUtf8NFD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf8_nfd(src.ptr, src.len, &out);
 }
@@ -138,7 +146,7 @@ fn utf8procNormalizeNFD(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeNFKD(src: []const u8) void {
+fn utf8normNormalizeUtf8NFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf8_nfkd(src.ptr, src.len, &out);
 }
@@ -154,7 +162,7 @@ fn utf8procNormalizeNFKD(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeNFC(src: []const u8) void {
+fn utf8normNormalizeUtf8NFC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf8_nfc(src.ptr, src.len, &out);
 }
@@ -170,7 +178,7 @@ fn utf8procNormalizeNFC(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeNFKC(src: []const u8) void {
+fn utf8normNormalizeUtf8NFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf8_nfkc(src.ptr, src.len, &out);
 }
@@ -184,6 +192,26 @@ fn utf8procNormalizeNFKC(src: []const u8) void {
         c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE | c.UTF8PROC_COMPAT,
     );
     c.free(out);
+}
+
+fn utf8normNormalizeUtf16leNFD(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16le_nfd(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16beNFD(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16be_nfd(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16leNFKD(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16le_nfkd(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16beNFKD(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16be_nfkd(src.ptr, src.len, &out);
 }
 
 const BenchResult = struct {
@@ -207,8 +235,13 @@ fn trimPartialUTF8(input: []const u8) []const u8 {
     return input;
 }
 
-fn runBenchmark(file: std.fs.File, comptime impl: fn ([]const u8) void) !BenchResult {
+fn runBenchmark(
+    file: std.fs.File,
+    encoding: Encoding,
+    comptime impl: fn ([]const u8) void,
+) !BenchResult {
     var read_buf: [4096]u8 = undefined;
+    var encoded_buf: [4096]u16 = undefined;
 
     var sum: f64 = 0;
     var results: [n_iters]f64 = undefined;
@@ -216,16 +249,33 @@ fn runBenchmark(file: std.fs.File, comptime impl: fn ([]const u8) void) !BenchRe
     for (0..n_iters) |i| {
         var nread = try file.read(&read_buf);
         var carry: std.BoundedArray(u8, 4) = .{};
+        var elapsed: f64 = 0;
         while (nread > 0) {
             const buf = read_buf[0..(nread + carry.len)];
             const trimmed = trimPartialUTF8(buf);
-            impl(trimmed);
+            const encoded = switch (encoding) {
+                .utf8 => trimmed,
+                .utf16le => buf: {
+                    const utf16_size = try std.unicode.utf8ToUtf16Le(&encoded_buf, trimmed);
+                    break :buf std.mem.sliceAsBytes(encoded_buf[0..utf16_size]);
+                },
+                .utf16be => buf: {
+                    const utf16_size = try std.unicode.utf8ToUtf16Le(&encoded_buf, trimmed);
+                    // Swap endianness
+                    for (encoded_buf, 0..) |x, j| {
+                        encoded_buf[j] = @byteSwap(x);
+                    }
+                    break :buf std.mem.sliceAsBytes(encoded_buf[0..utf16_size]);
+                },
+            };
+            timer.reset();
+            impl(encoded);
+            elapsed += @floatFromInt(timer.read());
             carry.clear();
             carry.appendSlice(buf[trimmed.len..]) catch unreachable;
             @memcpy(read_buf[0..carry.len], carry.slice());
             nread = try file.read(read_buf[carry.len..]);
         }
-        const elapsed: f64 = @floatFromInt(timer.lap());
         const elapsed_ms: f64 = elapsed / std.time.ns_per_ms;
         sum += elapsed_ms;
         results[i] = elapsed_ms;
