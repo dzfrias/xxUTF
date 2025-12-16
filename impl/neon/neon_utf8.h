@@ -1,0 +1,16 @@
+#ifndef NEON_UTF8_H
+#define NEON_UTF8_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+size_t neon_normalize_utf8_nfd(uint8_t const *input, size_t length,
+                               uint8_t *out);
+size_t neon_normalize_utf8_nfc(uint8_t const *input, size_t length,
+                               uint8_t *out);
+size_t neon_normalize_utf8_nfkd(uint8_t const *input, size_t length,
+                                uint8_t *out);
+size_t neon_normalize_utf8_nfkc(uint8_t const *input, size_t length,
+                                uint8_t *out);
+
+#endif // NEON_UTF8_H

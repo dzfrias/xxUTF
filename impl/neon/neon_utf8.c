@@ -1,6 +1,8 @@
 // amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
 
+#include "impl/neon/neon_utf8.h"
 #include "impl/neon.h"
+#include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
 #include "normdata.h"
 #include <arm_neon.h>
@@ -9,28 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-
-// Macro to define a print function for an arbitrarily-shaped NEON vector.
-#define NEON_PRINT_FUNC(type, child_type, store_func)                          \
-  __attribute__((unused)) static void neon_print_##type(const char *name,      \
-                                                        type vec) {            \
-    child_type values[sizeof(type) / sizeof(child_type)];                      \
-    store_func(values, vec);                                                   \
-    printf("%s: ", name);                                                      \
-    for (uint8_t i = 0; i < sizeof(values) / sizeof(child_type); i++) {        \
-      printf("%04x ", values[i]);                                              \
-    }                                                                          \
-    printf("\n");                                                              \
-  }
-
-NEON_PRINT_FUNC(uint8x16_t, uint8_t, vst1q_u8);
-NEON_PRINT_FUNC(uint8x8_t, uint8_t, vst1_u8);
-NEON_PRINT_FUNC(uint16x8_t, uint16_t, vst1q_u16);
-NEON_PRINT_FUNC(uint16x4_t, uint16_t, vst1_u16);
-NEON_PRINT_FUNC(uint32x4_t, uint32_t, vst1q_u32);
-NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
-
-#undef NEON_PRINT_FUNC
 
 // Create an 8-bit movemask from a 16x4 vector.
 static uint8_t neon_movemask_u16(uint16x4_t v) {
@@ -241,41 +221,6 @@ static void neon_write_8_3_byte_utf8(uint16x8_t in, uint8_t *out) {
   vst3_u8(out, bytes);
 }
 
-// Extremely fast, low quality hash function
-static uint32x4_t neon_mul_shift_hash(uint32x4_t x) {
-  uint32x4_t mul = vmulq_n_u32(x, 2654435761);
-  uint32x4_t shift = vshrq_n_u32(mul, 16);
-  uint32x4_t y = vandq_u32(shift, vdupq_n_u32(65535));
-  return y;
-}
-
-// Moderate quality hash function
-static uint32x4_t neon_xorshift_hash(uint32x4_t x) {
-  x = veorq_u32(x, vshrq_n_u32(x, 13));
-  x = veorq_u32(x, vshlq_n_u32(x, 17));
-  x = veorq_u32(x, vshrq_n_u32(x, 5));
-  return x;
-}
-
-// High quality hash function based on the MurmurHash3 finalizer
-static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
-  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
-  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
-  x = veorq_u32(vshrq_n_u32(x, 16), x);
-  return x;
-}
-
-// Check if a code point vector contains Hangul syllables. The result is a
-// vector of 0s and 0xFFFFFFFFs, where 0 means the code point is not a Hangul
-// syllable and 0xFFFFFFFF means it is a Hangul syllable.
-static uint32x4_t neon_hangul_mask(uint32x4_t input) {
-  uint32x4_t ge = vcgeq_u32(input, vdupq_n_u32(NORMDATA_S_BASE));
-  uint32x4_t lt =
-      vcltq_u32(input, vdupq_n_u32(NORMDATA_S_BASE + NORMDATA_S_COUNT));
-  uint32x4_t cmp = vandq_u32(lt, ge);
-  return cmp;
-}
-
 // Compute the L, V, and T indices for Hangul syllable decomposition.
 //
 // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
@@ -314,7 +259,8 @@ static uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
 
 // Write a 3-byte code point into the output buffer. The code point is assumed
 // to be in the range of 0x0800 to 0xFFFF.
-static void neon_write_3_byte_code_point(uint16_t code_point, uint8_t *out) {
+static void neon_write_3_byte_code_point_utf8(uint16_t code_point,
+                                              uint8_t *out) {
   out[0] = 0xE0 | (code_point >> 12);
   out[1] = 0x80 | ((code_point >> 6) & 0x3F);
   out[2] = 0x80 | (code_point & 0x3F);
@@ -359,16 +305,16 @@ static void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
     uint16_t v = lvt.val[1][i];
     uint16_t t = lvt.val[2][i];
 
-    neon_write_3_byte_code_point(l, *out);
+    neon_write_3_byte_code_point_utf8(l, *out);
     *out += 3;
-    neon_write_3_byte_code_point(v, *out);
+    neon_write_3_byte_code_point_utf8(v, *out);
     *out += 3;
     // Naively write the T code point, even if it is zero, and branchlessly
     // increment the output pointer if it is non-zero. Although this appears
     // like extra work, it is actually faster than branching on the T code point
     // being zero or not, because the branch miss penalty is quite high. For the
     // korean.txt benchmark, this gave a ~33% speedup.
-    neon_write_3_byte_code_point(t, *out);
+    neon_write_3_byte_code_point_utf8(t, *out);
     *out += 3 * (t - NORMDATA_T_BASE > 0);
     input += 3;
   }
@@ -435,58 +381,6 @@ static void neon_skip_decomp_utf8(uint8x16_t in, size_t nchars, uint8_t **out,
   *out += nchars;
 }
 
-// memcpy for inputs less than 64 bytes large.
-static void neon_memcpy_small(uint8_t *dst, const uint8_t *src, size_t len) {
-  vst1q_u8(dst, vld1q_u8(src));
-  if (len <= 16) {
-    return;
-  }
-  vst1q_u8(dst + 16, vld1q_u8(src + 16));
-  if (len <= 32) {
-    return;
-  }
-  vst1q_u8(dst + 32, vld1q_u8(src + 32));
-  if (len <= 48) {
-    return;
-  }
-  vst1q_u8(dst + 48, vld1q_u8(src + 48));
-}
-
-static uint32x4x2_t neon_comp_hash(uint32x4_t input) {
-  uint32x4_t h1 = neon_mul_shift_hash(input);
-  uint32x4_t h2 = neon_xorshift_hash(input);
-  uint32x4_t h3 =
-      neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
-  uint32x4_t h4 = neon_xorshift_mul_hash(input);
-
-  const uint32_t BLOOM_SIZE =
-      sizeof(NORMDATA_NFC_BLOOM_FILTER) / sizeof(uint32_t);
-  // h1 % BLOOM_SIZE
-  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));
-  // h2 % 32
-  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
-  // h3 % 32
-  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
-  // h4 % 32
-  uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));
-
-  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
-  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
-  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
-
-  uint32x4x2_t vals;
-  vals.val[0] = block_idx;
-  vals.val[1] = mask;
-  return vals;
-}
-
-static uint8_t neon_first_true(uint32x4_t v) {
-  uint16x8_t v16 = vreinterpretq_u16_u8(v);
-  uint8x8_t res = vshrn_n_u16(v16, 4);
-  uint64_t bitmask4 = vget_lane_u64(vreinterpret_u64_u8(res), 0);
-  return __builtin_ctzll(bitmask4) / 16;
-}
-
 static uint8x16_t neon_get_utf8_code_point_starts(uint8x16_t in) {
   int8x16_t sgn = vreinterpretq_s8_u8(in);
   return vcltq_s8(sgn, vdupq_n_s8(-65 + 1));
@@ -515,49 +409,6 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
 
 #define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,           \
                                         comp_suffix, comp_table_name)               \
-  /* Pass a code point vector through the decomp+cc bloom filter, which will        \
-   * return a vector of 0s and 0xFFFFFFFFs probabilistically indicating             \
-   * whether the corresponding code point has a decomposition or is a               \
-   * combining character.                                                           \
-   */                                                                               \
-  static uint32x4_t neon_evaluate_bloom_##decomp_suffix(uint32x4_t input) {         \
-    uint32x4_t h1 = neon_mul_shift_hash(input);                                     \
-    uint32x4_t h2 = neon_xorshift_hash(input);                                      \
-    uint32x4_t h3 = neon_xorshift_mul_hash(input);                                  \
-                                                                                    \
-    const uint32_t BLOOM_SIZE =                                                     \
-        sizeof(NORMDATA_##decomp_table_name##_BLOOM_FILTER) /                       \
-        sizeof(uint32_t);                                                           \
-    /* h1 % BLOOM_SIZE */                                                           \
-    uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));              \
-    /* h2 % 32 */                                                                   \
-    uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));                             \
-    /* h3 % 32 */                                                                   \
-    uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));                             \
-    /* (h2 + h3) % 32 */                                                            \
-    uint32x4_t shift3 = vandq_u32(vaddq_u32(h2, h3), vdupq_n_u32(31));              \
-                                                                                    \
-    uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);                            \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));                      \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));                      \
-                                                                                    \
-    uint32x4_t block = {                                                            \
-        NORMDATA_##decomp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,       \
-                                                                   0)],             \
-        NORMDATA_##decomp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,       \
-                                                                   1)],             \
-        NORMDATA_##decomp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,       \
-                                                                   2)],             \
-        NORMDATA_##decomp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,       \
-                                                                   3)],             \
-    };                                                                              \
-                                                                                    \
-    uint32x4_t result = vandq_u32(mask, block);                                     \
-    uint32x4_t result_eq = vceqq_u32(result, mask);                                 \
-                                                                                    \
-    return result_eq;                                                               \
-  }                                                                                 \
-                                                                                    \
   /* Decompose a 4x32-bit vector of code points into their UTF-8                    \
    * representations, writing them into the output buffer. The relevant mask        \
    * indicates which code points should be decomposed (0 meaning irrelevant).       \
@@ -754,48 +605,6 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
     }                                                                               \
                                                                                     \
     return nchars;                                                                  \
-  }                                                                                 \
-                                                                                    \
-  static uint32x4_t neon_evaluate_bloom_##comp_suffix##_qc(                         \
-      uint32x4_t block_idx, uint32x4_t mask) {                                      \
-    uint32x4_t block = {                                                            \
-        NORMDATA_##comp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,         \
-                                                                 0)],               \
-        NORMDATA_##comp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,         \
-                                                                 1)],               \
-        NORMDATA_##comp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,         \
-                                                                 2)],               \
-        NORMDATA_##comp_table_name##_BLOOM_FILTER[vgetq_lane_u32(block_idx,         \
-                                                                 3)],               \
-    };                                                                              \
-    uint32x4_t result = vandq_u32(mask, block);                                     \
-    uint32x4_t result_eq = vceqq_u32(result, mask);                                 \
-    return result_eq;                                                               \
-  }                                                                                 \
-                                                                                    \
-  static uint32x4_t neon_evaluate_bloom_non_starters_##comp_suffix(                 \
-      uint32x4_t block_idx, uint32x4_t mask) {                                      \
-    uint32x4_t block = {                                                            \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],           \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],           \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],           \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],           \
-    };                                                                              \
-    uint32x4_t result = vandq_u32(mask, block);                                     \
-    uint32x4_t result_eq = vceqq_u32(result, mask);                                 \
-    return result_eq;                                                               \
-  }                                                                                 \
-                                                                                    \
-  static uint32x4_t neon_evaluate_bloom_##comp_suffix(uint32x4_t input) {           \
-    uint32x4x2_t hash_info = neon_comp_hash(input);                                 \
-    /* NF(K)C QC and the non starters bloom filter use the same hashing scheme      \
-     */                                                                             \
-    uint32x4_t qc = neon_evaluate_bloom_##comp_suffix##_qc(hash_info.val[0],        \
-                                                           hash_info.val[1]);       \
-    uint32x4_t non_starters = neon_evaluate_bloom_non_starters_##comp_suffix(       \
-        hash_info.val[0], hash_info.val[1]);                                        \
-    uint32x4_t combined = vorrq_u32(qc, non_starters);                              \
-    return combined;                                                                \
   }                                                                                 \
                                                                                     \
   /* Fallback to scalar implementation when encountering an NFC relevant            \

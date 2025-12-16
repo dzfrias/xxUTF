@@ -17,7 +17,10 @@ pub fn build(b: *std.Build) !void {
     });
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
     if (add_neon) {
-        try sources.append(b.allocator, "impl/neon/neon.c");
+        try sources.appendSlice(b.allocator, &.{
+            "impl/neon/neon_common.c",
+            "impl/neon/neon_utf8.c",
+        });
     }
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
@@ -172,7 +175,8 @@ const all_sources: []const []const u8 = &.{
     "impl/scalar/scalar_utf8.c",
     "impl/scalar/scalar_utf16.c",
     "impl/scalar/scalar_common.c",
-    "impl/neon/neon.c",
+    "impl/neon/neon_common.c",
+    "impl/neon/neon_utf8.c",
 };
 
 const all_files: []const []const u8 = &.{
@@ -188,5 +192,8 @@ const all_files: []const []const u8 = &.{
     "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_common.h",
     "impl/neon.h",
-    "impl/neon/neon.c",
+    "impl/neon/neon_common.c",
+    "impl/neon/neon_common.h",
+    "impl/neon/neon_utf8.c",
+    "impl/neon/neon_utf8.h",
 };
