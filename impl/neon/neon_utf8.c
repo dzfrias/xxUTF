@@ -291,6 +291,11 @@ static void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
 
 #pragma clang loop unroll(enable)
   for (size_t i = 0; i < 4; i++) {
+    if (input[0] <= 0x7F) {
+      *(*out)++ = input[0];
+      input++;
+      continue;
+    }
     if (relevant[i] == 0) {
       // Not a Hangul syllable, just copy the input.
       size_t size = NORMDATA_UTF8_SIZE[input[0]];
@@ -421,12 +426,8 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
     bool last_is_cc = *end_is_cc;                                                   \
                                                                                     \
     for (size_t i = 0; i < 4; i++) {                                                \
-      uint32_t v = values[i];                                                       \
-      bool r = relevant[i] > 0;                                                     \
-                                                                                    \
       uint8_t leading = input[0];                                                   \
-      uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
-      if (size == 1) {                                                              \
+      if (leading <= 0x7F) {                                                        \
         if (last_is_cc) {                                                           \
           scalar_sort_characters_utf8(*out - 1);                                    \
         }                                                                           \
@@ -437,6 +438,9 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
         continue;                                                                   \
       }                                                                             \
                                                                                     \
+      uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
+      uint32_t v = values[i];                                                       \
+      bool r = relevant[i] > 0;                                                     \
       bool is_cc = false;                                                           \
                                                                                     \
       size_t nwritten = 0;                                                          \
