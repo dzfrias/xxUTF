@@ -8,42 +8,14 @@ pub fn build(b: *std.Build) !void {
 
     var sources: std.ArrayListUnmanaged([]const u8) = .empty;
     defer sources.deinit(b.allocator);
-    try sources.appendSlice(b.allocator, &.{
-        "utf8norm.c",
-        "normdata.c",
-        "impl/scalar/scalar_utf8.c",
-        "impl/scalar/scalar_utf16.c",
-        "impl/scalar/scalar_common.c",
-    });
+    try sources.appendSlice(b.allocator, default_sources);
     const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
     if (add_neon) {
-        try sources.appendSlice(b.allocator, &.{
-            "impl/neon/neon_common.c",
-            "impl/neon/neon_utf8.c",
-        });
+        try sources.appendSlice(b.allocator, neon_sources);
     }
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
-    try flags.appendSlice(b.allocator, &.{
-        "-Wall",
-        "-Wextra",
-        "-Wcast-qual",
-        "-Wcast-align",
-        "-Wstrict-aliasing",
-        "-Wpointer-arith",
-        "-Wshadow",
-        "-Winit-self",
-        "-Wswitch-enum",
-        "-Wstrict-prototypes",
-        "-Wmissing-prototypes",
-        "-Wredundant-decls",
-        "-Wfloat-equal",
-        "-Wundef",
-        "-Wvla",
-        "-Wformat=2",
-        "-Wc++-compat",
-        "-Werror",
-    });
+    try flags.appendSlice(b.allocator, default_flags);
     if (!add_neon) {
         try flags.append(b.allocator, "-DUTF8NORM_IMPLEMENTATION_NEON=0");
     }
@@ -169,14 +141,25 @@ fn createLibrary(
     return lib;
 }
 
-const all_sources: []const []const u8 = &.{
-    "utf8norm.c",
-    "normdata.c",
-    "impl/scalar/scalar_utf8.c",
-    "impl/scalar/scalar_utf16.c",
-    "impl/scalar/scalar_common.c",
-    "impl/neon/neon_common.c",
-    "impl/neon/neon_utf8.c",
+const default_flags: []const []const u8 = &.{
+    "-Wall",
+    "-Wextra",
+    "-Wcast-qual",
+    "-Wcast-align",
+    "-Wstrict-aliasing",
+    "-Wpointer-arith",
+    "-Wshadow",
+    "-Winit-self",
+    "-Wswitch-enum",
+    "-Wstrict-prototypes",
+    "-Wmissing-prototypes",
+    "-Wredundant-decls",
+    "-Wfloat-equal",
+    "-Wundef",
+    "-Wvla",
+    "-Wformat=2",
+    "-Wc++-compat",
+    "-Werror",
 };
 
 const all_files: []const []const u8 = &.{
@@ -197,3 +180,18 @@ const all_files: []const []const u8 = &.{
     "impl/neon/neon_utf8.c",
     "impl/neon/neon_utf8.h",
 };
+
+const default_sources: []const []const u8 = &.{
+    "utf8norm.c",
+    "normdata.c",
+    "impl/scalar/scalar_utf8.c",
+    "impl/scalar/scalar_utf16.c",
+    "impl/scalar/scalar_common.c",
+};
+
+const neon_sources: []const []const u8 = &.{
+    "impl/neon/neon_common.c",
+    "impl/neon/neon_utf8.c",
+};
+
+const all_sources: []const []const u8 = default_sources ++ neon_sources;
