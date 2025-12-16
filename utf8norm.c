@@ -6,6 +6,17 @@
 #endif
 #endif
 
+#ifndef UTF8NORM_BIG_ENDIAN
+#if defined(__BYTE_ORDER__)
+#define UTF8NORM_BIG_ENDIAN (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#elif defined(_MSC_VER) || defined(_WIN32)
+#define UTF8NORM_BIG_ENDIAN 0
+#else
+#error                                                                         \
+    "Cannot detect endianness. Define UTF8NORM_BIG_ENDIAN via compiler flags."
+#endif
+#endif
+
 #include "utf8norm.h"
 
 #include "impl/scalar.h"

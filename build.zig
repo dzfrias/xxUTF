@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) !void {
         std.builtin.Endian,
         "endian",
         "Select native endianness (default: detect)",
-    ) orelse .little;
+    ) orelse target.result.cpu.arch.endian();
 
     var sources: std.ArrayListUnmanaged([]const u8) = .empty;
     defer sources.deinit(b.allocator);
