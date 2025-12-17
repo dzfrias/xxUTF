@@ -50,10 +50,7 @@ fn convertTest(comptime col: ColumnType, utf8_test: TestInfo(.utf8), allocator: 
         .utf16be => {
             inline for (0..utf8_test.cols.len) |i| {
                 const utf16_col = try std.unicode.utf8ToUtf16LeAlloc(allocator, utf8_test.cols[i]);
-                // Swap endianness
-                for (utf16_col, 0..) |x, j| {
-                    utf16_col[j] = @byteSwap(x);
-                }
+                std.mem.byteSwapAllElements(u16, utf16_col);
                 new_test.cols[i] = utf16_col;
             }
             return new_test;

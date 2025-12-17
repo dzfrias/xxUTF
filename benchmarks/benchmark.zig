@@ -269,10 +269,7 @@ fn runBenchmark(
                 },
                 .utf16be => buf: {
                     const utf16_size = try std.unicode.utf8ToUtf16Le(&encoded_buf, trimmed);
-                    // Swap endianness
-                    for (encoded_buf, 0..) |x, j| {
-                        encoded_buf[j] = @byteSwap(x);
-                    }
+                    std.mem.byteSwapAllElements(u16, encoded_buf[0..utf16_size]);
                     break :buf std.mem.sliceAsBytes(encoded_buf[0..utf16_size]);
                 },
             };
