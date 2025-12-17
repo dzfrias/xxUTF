@@ -166,10 +166,10 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
         uint16x4_t in2 = vget_high_u16(in);                                    \
         /* Decompose the low code points and the high code points separately   \
          */                                                                    \
-        neon_decompose_utf16##endianness##_##nfd(                              \
+        neon_decompose_utf16##endianness##_##decomp_form(                      \
             in1, input + p, out_ptr, *out_ptr - start, &end_is_cc);            \
         neon_decompose_utf16##endianness##_##decomp_form(                      \
-            in2, input + p, out_ptr, *out_ptr - start, &end_is_cc);            \
+            in2, input + p + 8, out_ptr, *out_ptr - start, &end_is_cc);        \
       } else {                                                                 \
         /* In the case that we do have surrogate pairs, we fall back to a      \
          * scalar implementation */                                            \
