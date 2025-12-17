@@ -288,7 +288,7 @@ fn writeHex(comptime col: ColumnType, writer: anytype, s: []const col.intType())
     try writer.writeByte('\n');
 }
 
-fn printFailure(comptime col: ColumnType, writer: anytype, failure: Failure(col)) !void {
+fn printFailure(comptime col: ColumnType, writer: *std.Io.Writer, failure: Failure(col)) !void {
     try writer.writeAll("input:    ");
     try writeHex(col, writer, failure.input);
     try writer.writeAll("expected: ");
@@ -306,15 +306,18 @@ pub fn main() !void {
     _ = args.next() orelse @panic("should have initial argument");
     const arg1 = args.next() orelse return error.NeedArgument;
 
-    const file = try std.fs.openFileAbsolute(arg1, .{ .mode = .read_only });
+    const file = try std.fs.openFileAbsolute(arg1, .{});
     defer file.close();
-    const stderr = std.io.getStdErr();
+    var file_buffer: [1024]u8 = undefined;
+    var file_reader = file.reader(&file_buffer);
+    var stderr_buffer: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    const stderr = &stderr_writer.interface;
 
-    var in_buf: [1024]u8 = undefined;
     var i: usize = 0;
     var root_node = std.Progress.start(.{ .root_name = "tests" });
     var current_part: ?std.Progress.Node = null;
-    while (try file.reader().readUntilDelimiterOrEof(&in_buf, '\n')) |line| : (i += 1) {
+    while (try file_reader.interface.takeDelimiter('\n')) |line| : (i += 1) {
         if (std.mem.startsWith(u8, line, "#")) {
             continue;
         }
@@ -348,11 +351,12 @@ pub fn main() !void {
                         .utf16le => "UTF-16LE",
                         .utf16be => "UTF-16BE",
                     };
-                    try stderr.writer().print(
+                    try stderr.print(
                         col_name ++ " " ++ form_name ++ " " ++ "test at line {} failed: {?s}\n",
                         .{ i + 1, test_info.comment },
                     );
-                    try printFailure(col, stderr.writer(), failure);
+                    try printFailure(col, stderr, failure);
+                    try stderr.flush();
                     return error.Failed;
                 }
             }
@@ -360,4 +364,5 @@ pub fn main() !void {
     }
     root_node.end();
     try stderr.writeAll("All tests passed!\n");
+    try stderr.flush();
 }

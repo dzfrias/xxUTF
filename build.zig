@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) !void {
     var sources: std.ArrayListUnmanaged([]const u8) = .empty;
     defer sources.deinit(b.allocator);
     try sources.appendSlice(b.allocator, default_sources);
-    const add_neon = neon orelse (target.result.cpu.arch == .aarch64);
+    const add_neon = neon orelse target.result.cpu.has(.aarch64, .neon);
     if (add_neon) {
         try sources.appendSlice(b.allocator, neon_sources);
     }
@@ -129,7 +129,7 @@ fn createLibrary(
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
-            .sanitize_c = false,
+            .sanitize_c = .off,
         }),
         .linkage = .static,
     });

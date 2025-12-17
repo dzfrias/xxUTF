@@ -37,20 +37,23 @@ pub fn main() !void {
     else
         null;
     defer if (out_dir) |*dir| dir.close();
-    const stdout = std.io.getStdOut();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
 
     inline for (implementations) |impl| {
         if (arguments.pattern == null or std.mem.indexOf(u8, impl[0], arguments.pattern.?) != null) {
             try benchmarkImplementation(
                 impl[0],
-                stdout.writer(),
+                stdout,
                 input_dir,
                 out_dir,
                 arguments.specific_test,
                 impl[2],
                 impl[1],
             );
-            try stdout.writer().writeByte('\n');
+            try stdout.writeByte('\n');
+            try stdout.flush();
         }
     }
 }
@@ -81,15 +84,15 @@ fn parseArgs(args: *std.process.ArgIterator) error{ArgumentError}!Arguments {
     return arguments;
 }
 
-fn writeHeader(out: anytype, title: []const u8) !void {
+fn writeHeader(out: *std.Io.Writer, title: []const u8) !void {
     try out.writeAll(title);
-    try out.writeByteNTimes('-', full_line_length - title.len);
+    try out.splatByteAll('-', full_line_length - title.len);
     try out.writeByte('\n');
 }
 
 fn benchmarkImplementation(
     name: []const u8,
-    out: anytype,
+    out: *std.Io.Writer,
     inputs: std.fs.Dir,
     data_out: ?std.fs.Dir,
     specific_test: ?[]const u8,
@@ -119,12 +122,16 @@ fn benchmarkImplementation(
             std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
             .{ entry.name, result.mean_ms, result.sd_ms },
         );
+        try out.flush();
 
         if (out_dir) |dir| {
             const out_file = try dir.createFile(entry.name, .{});
             defer out_file.close();
+            var out_file_buffer: [64]u8 = undefined;
+            var out_file_writer = out_file.writer(&out_file_buffer);
             for (result.data) |x| {
-                try out_file.writer().print("{d:.3}\n", .{x});
+                try out_file_writer.interface.print("{d:.3}\n", .{x});
+                try out_file_writer.interface.flush();
             }
         }
     }
@@ -248,10 +255,11 @@ fn runBenchmark(
     var timer = try std.time.Timer.start();
     for (0..n_iters) |i| {
         var nread = try file.read(&read_buf);
-        var carry: std.BoundedArray(u8, 4) = .{};
+        var carry_buffer: [4]u8 = undefined;
+        var carry = std.ArrayListUnmanaged(u8).initBuffer(&carry_buffer);
         var elapsed: f64 = 0;
         while (nread > 0) {
-            const buf = read_buf[0..(nread + carry.len)];
+            const buf = read_buf[0..(nread + carry.items.len)];
             const trimmed = trimPartialUTF8(buf);
             const encoded = switch (encoding) {
                 .utf8 => trimmed,
@@ -271,10 +279,10 @@ fn runBenchmark(
             timer.reset();
             impl(encoded);
             elapsed += @floatFromInt(timer.read());
-            carry.clear();
-            carry.appendSlice(buf[trimmed.len..]) catch unreachable;
-            @memcpy(read_buf[0..carry.len], carry.slice());
-            nread = try file.read(read_buf[carry.len..]);
+            carry.clearRetainingCapacity();
+            carry.appendSliceBounded(buf[trimmed.len..]) catch unreachable;
+            @memcpy(read_buf[0..carry.items.len], carry.items);
+            nread = try file.read(read_buf[carry.items.len..]);
         }
         const elapsed_ms: f64 = elapsed / std.time.ns_per_ms;
         sum += elapsed_ms;
