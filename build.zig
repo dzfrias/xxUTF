@@ -133,6 +133,7 @@ fn createLibrary(
         }),
         .linkage = .static,
     });
+    lib.linkLibC();
     lib.addIncludePath(b.path(""));
     if (optimize == .Debug) {
         lib.addCSourceFiles(.{
