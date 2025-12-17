@@ -117,7 +117,7 @@ fn testEqualNormalized(
     const nwritten = impl(input_bytes.ptr, input_bytes.len, &out);
     const normalized = out[0..nwritten];
     if (!std.mem.eql(u8, expected_bytes, normalized)) {
-        const normalized_cast: []const col.intType() = @ptrCast(@alignCast(normalized));
+        const normalized_cast = std.mem.bytesAsSlice(col.intType(), normalized);
         return .{ .expected = expected, .input = input, .got = normalized_cast };
     }
     return null;
@@ -266,9 +266,10 @@ fn writeHex(comptime col: ColumnType, writer: anytype, s: []const col.intType())
             }
         },
         .utf16be => {
-            // TODO: we need to do one of two things: swap the endianness of `s`, or implement
-            //       a Utf16BeIterator.
-            var code_points = std.unicode.Utf16LeIterator.init(s);
+            var utf16le_buffer: [128]u16 = undefined;
+            @memcpy(utf16le_buffer[0..s.len], s);
+            std.mem.byteSwapAllElements(u16, utf16le_buffer[0..s.len]);
+            var code_points = std.unicode.Utf16LeIterator.init(utf16le_buffer[0..s.len]);
             // Iterate through once to see if there are any errors. This API is relatively clunky.
             while (code_points.nextCodepoint() catch {
                 for (s) |b| {
@@ -279,7 +280,7 @@ fn writeHex(comptime col: ColumnType, writer: anytype, s: []const col.intType())
             }) |cp| {
                 _ = cp;
             }
-            code_points = std.unicode.Utf16LeIterator.init(s);
+            code_points = std.unicode.Utf16LeIterator.init(utf16le_buffer[0..s.len]);
             while (try code_points.nextCodepoint()) |cp| {
                 try writer.print("{X:0>6} ", .{cp});
             }
