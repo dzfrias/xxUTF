@@ -281,7 +281,7 @@ static void print_code_points_utf8(const char *s, size_t len) {
         printf("   input: ");                                                  \
         print_code_points_utf8(input, length);                                 \
         printf("\n");                                                          \
-        printf("xxutf: ");                                                     \
+        printf("   xxutf: ");                                                  \
         print_code_points_utf8(xxutf_out, xxutf_out_length);                   \
         printf("\n");                                                          \
         printf("   icu4c: ");                                                  \
@@ -386,7 +386,7 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
         printf("   input: ");                                                  \
         print_code_points_utf8(input, length);                                 \
         printf("\n");                                                          \
-        printf("xxutf: ");                                                     \
+        printf("   xxutf: ");                                                  \
         print_code_points_utf16##endianness(xxutf_out, xxutf_out_length);      \
         printf("\n");                                                          \
         printf("   icu4c: ");                                                  \
