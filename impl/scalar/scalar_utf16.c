@@ -18,11 +18,11 @@ void scalar_write_uint16_be(uint16_t x, uint8_t *out) {
   out[1] = (uint8_t)(x & 0xFF);
 }
 
-static inline uint16_t scalar_read_uint16le(uint8_t const *input) {
+static inline uint16_t scalar_read_uint16le(const uint8_t *input) {
   return (uint16_t)input[0] | (uint16_t)input[1] << 8;
 }
 
-static inline uint16_t scalar_read_uint16be(uint8_t const *input) {
+static inline uint16_t scalar_read_uint16be(const uint8_t *input) {
   return ((uint16_t)input[0] << 8) | (uint16_t)input[1];
 }
 
@@ -59,7 +59,7 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
                                                                                \
   /* Parse a UTF-16 code point from a byte buffer. */                          \
   static uint32_t scalar_parse_code_point_utf16##endianness(                   \
-      uint8_t const *input, uint8_t *size) {                                   \
+      const uint8_t *input, uint8_t *size) {                                   \
     uint16_t w1 = scalar_read_uint16##endianness(input);                       \
     if (scalar_is_utf16_high_surrogate(w1)) {                                  \
       uint16_t w2 = scalar_read_uint16##endianness(input + 2);                 \
@@ -95,7 +95,7 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
                                                                                \
   /* Parse a UTF-16 encoded code point in reverse. */                          \
   static uint32_t scalar_parse_code_point_utf16##endianness##_reverse(         \
-      uint8_t const *input) {                                                  \
+      const uint8_t *input) {                                                  \
     uint16_t code_unit = scalar_read_uint16##endianness(input);                \
     uint32_t code_point = 0;                                                   \
     if (scalar_is_utf16_low_surrogate(code_unit)) {                            \
@@ -243,7 +243,7 @@ SCALAR_UTF16_HELPERS(be);
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(         \
-      uint8_t const *input, size_t length, uint8_t *out, size_t out_offset,         \
+      const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
       bool *end_is_cc) {                                                            \
     uint8_t *start = out;                                                           \
                                                                                     \

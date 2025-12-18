@@ -70,7 +70,7 @@ static size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out) {
 
 // Parse a UTF-8 code point from the input buffer. The size of the code point is
 // written to the `size` pointer.
-static uint32_t scalar_parse_code_point_utf8(uint8_t const *input,
+static uint32_t scalar_parse_code_point_utf8(const uint8_t *input,
                                              uint8_t *size) {
   uint8_t leading = *input;
   if (leading < 0b10000000) {
@@ -248,7 +248,7 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf8_##decomp_suffix##_with_context(                      \
-      uint8_t const *input, size_t length, uint8_t *out, bool *end_is_cc) {         \
+      const uint8_t *input, size_t length, uint8_t *out, bool *end_is_cc) {         \
     uint8_t *start = out;                                                           \
                                                                                     \
     bool last_is_cc = *end_is_cc;                                                   \

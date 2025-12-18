@@ -44,7 +44,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
    * syllables in them, but no table-based decompositions. */                  \
   static void neon_decompose_hangul_utf16##endianness##_##decomp_form(         \
       uint16x4_t in, uint32x4_t relevant, uint8_t **out, size_t out_length,    \
-      uint8_t const *input, bool *end_is_cc) {                                 \
+      const uint8_t *input, bool *end_is_cc) {                                 \
     if (*end_is_cc) {                                                          \
       scalar_sort_characters_utf16##endianness(*out, out_length);              \
     }                                                                          \
@@ -81,7 +81,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
    * combining characters in them, but no precomposed Hangul syllables. */     \
   static void neon_decompose_non_hangul_utf16##endianness##_##decomp_form(     \
       uint16x4_t in, uint32x4_t relevant, uint8_t **out, size_t out_length,    \
-      uint8_t const *input, bool *end_is_cc) {                                 \
+      const uint8_t *input, bool *end_is_cc) {                                 \
     bool last_is_cc = *end_is_cc;                                              \
     for (size_t i = 0; i < 4; i++) {                                           \
       uint16_t v = in[i];                                                      \
@@ -111,7 +111,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
                                                                                \
   /* Decompose four UTF-16 code points in the BMP. */                          \
   static void neon_decompose_utf16##endianness##_##decomp_form(                \
-      uint16x4_t in, uint8_t const *input, uint8_t **out, size_t out_length,   \
+      uint16x4_t in, const uint8_t *input, uint8_t **out, size_t out_length,   \
       bool *end_is_cc) {                                                       \
     uint32x4_t wide = vmovl_u16(in);                                           \
     uint32x4_t bloom = neon_evaluate_bloom_##decomp_form(wide);                \
@@ -142,7 +142,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
   }                                                                            \
                                                                                \
   size_t neon_normalize_utf16##endianness##_##decomp_form(                     \
-      uint8_t const *input, size_t length, uint8_t *out) {                     \
+      const uint8_t *input, size_t length, uint8_t *out) {                     \
     uint8_t **out_ptr = &out;                                                  \
     uint8_t *start = out;                                                      \
                                                                                \
@@ -207,7 +207,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
                                                                                \
   /* TODO: this looks a lot like the UTF-8 version... use macro? */            \
   static size_t neon_fallback_utf16##endianness##_##comp_form(                 \
-      uint8_t const *input, uint8_t const *input_base, size_t input_length,    \
+      const uint8_t *input, const uint8_t *input_base, size_t input_length,    \
       uint8_t **out, size_t length) {                                          \
     size_t offset = input - input_base;                                        \
     /* Get the region that we will NFC normalize */                            \
@@ -235,7 +235,7 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
   }                                                                            \
                                                                                \
   size_t neon_normalize_utf16##endianness##_##comp_form(                       \
-      uint8_t const *input, size_t length, uint8_t *out) {                     \
+      const uint8_t *input, size_t length, uint8_t *out) {                     \
     uint8_t **out_ptr = &out;                                                  \
     uint8_t *start = out;                                                      \
                                                                                \

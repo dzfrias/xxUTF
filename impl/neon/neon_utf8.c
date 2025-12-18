@@ -354,7 +354,7 @@ static uint8x16_t neon_get_utf8_code_point_starts(uint8x16_t in) {
   return vcltq_s8(sgn, vdupq_n_s8(-65 + 1));
 }
 
-static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
+static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   uint8x16_t bit_mask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
                          0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
   uint8x16_t c0 = neon_get_utf8_code_point_starts(vld1q_u8(input));
@@ -676,7 +676,7 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
                                                      n_bytes - copied);             \
   }                                                                                 \
                                                                                     \
-  size_t neon_normalize_utf8_##decomp_suffix(uint8_t const *input,                  \
+  size_t neon_normalize_utf8_##decomp_suffix(const uint8_t *input,                  \
                                              size_t length, uint8_t *out) {         \
     uint8_t **out_ptr = &out;                                                       \
     uint8_t *start = out;                                                           \
@@ -711,7 +711,7 @@ static uint64_t neon_make_utf8_code_point_mask(uint8_t const *input) {
     return *out_ptr - start;                                                        \
   }                                                                                 \
                                                                                     \
-  size_t neon_normalize_utf8_##comp_suffix(uint8_t const *input,                    \
+  size_t neon_normalize_utf8_##comp_suffix(const uint8_t *input,                    \
                                            size_t length, uint8_t *out) {           \
     uint8_t **out_ptr = &out;                                                       \
     uint8_t *start = out;                                                           \

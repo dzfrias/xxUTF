@@ -24,146 +24,146 @@
 #include "impl/neon.h"
 #endif
 
-size_t utf8norm_normalize_utf8_nfd(char const *input, size_t length,
+size_t utf8norm_normalize_utf8_nfd(const char *input, size_t length,
                                    char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf8_nfd((uint8_t const *)input, length,
+  return neon_normalize_utf8_nfd((const uint8_t *)input, length,
                                  (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf8_nfd((uint8_t const *)input, length,
+  return scalar_normalize_utf8_nfd((const uint8_t *)input, length,
                                    (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf8_nfkd(char const *input, size_t length,
+size_t utf8norm_normalize_utf8_nfkd(const char *input, size_t length,
                                     char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf8_nfkd((uint8_t const *)input, length,
+  return neon_normalize_utf8_nfkd((const uint8_t *)input, length,
                                   (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf8_nfkd((uint8_t const *)input, length,
+  return scalar_normalize_utf8_nfkd((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf8_nfc(char const *input, size_t length,
+size_t utf8norm_normalize_utf8_nfc(const char *input, size_t length,
                                    char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf8_nfc((uint8_t const *)input, length,
+  return neon_normalize_utf8_nfc((const uint8_t *)input, length,
                                  (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf8_nfc((uint8_t const *)input, length,
+  return scalar_normalize_utf8_nfc((const uint8_t *)input, length,
                                    (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf8_nfkc(char const *input, size_t length,
+size_t utf8norm_normalize_utf8_nfkc(const char *input, size_t length,
                                     char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf8_nfkc((uint8_t const *)input, length,
+  return neon_normalize_utf8_nfkc((const uint8_t *)input, length,
                                   (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf8_nfkc((uint8_t const *)input, length,
+  return scalar_normalize_utf8_nfkc((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16le_nfd(char const *input, size_t length,
+size_t utf8norm_normalize_utf16le_nfd(const char *input, size_t length,
                                       char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16le_nfd((uint8_t const *)input, length,
+  return neon_normalize_utf16le_nfd((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16le_nfd((uint8_t const *)input, length,
+  return scalar_normalize_utf16le_nfd((const uint8_t *)input, length,
                                       (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16be_nfd(char const *input, size_t length,
+size_t utf8norm_normalize_utf16be_nfd(const char *input, size_t length,
                                       char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16be_nfd((uint8_t const *)input, length,
+  return neon_normalize_utf16be_nfd((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16be_nfd((uint8_t const *)input, length,
+  return scalar_normalize_utf16be_nfd((const uint8_t *)input, length,
                                       (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16le_nfkd(char const *input, size_t length,
+size_t utf8norm_normalize_utf16le_nfkd(const char *input, size_t length,
                                        char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16le_nfkd((uint8_t const *)input, length,
+  return neon_normalize_utf16le_nfkd((const uint8_t *)input, length,
                                      (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16le_nfkd((uint8_t const *)input, length,
+  return scalar_normalize_utf16le_nfkd((const uint8_t *)input, length,
                                        (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16be_nfkd(char const *input, size_t length,
+size_t utf8norm_normalize_utf16be_nfkd(const char *input, size_t length,
                                        char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16be_nfkd((uint8_t const *)input, length,
+  return neon_normalize_utf16be_nfkd((const uint8_t *)input, length,
                                      (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16be_nfkd((uint8_t const *)input, length,
+  return scalar_normalize_utf16be_nfkd((const uint8_t *)input, length,
                                        (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16le_nfc(char const *input, size_t length,
+size_t utf8norm_normalize_utf16le_nfc(const char *input, size_t length,
                                       char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16le_nfc((uint8_t const *)input, length,
+  return neon_normalize_utf16le_nfc((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16le_nfc((uint8_t const *)input, length,
+  return scalar_normalize_utf16le_nfc((const uint8_t *)input, length,
                                       (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16be_nfc(char const *input, size_t length,
+size_t utf8norm_normalize_utf16be_nfc(const char *input, size_t length,
                                       char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16be_nfc((uint8_t const *)input, length,
+  return neon_normalize_utf16be_nfc((const uint8_t *)input, length,
                                     (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16be_nfc((uint8_t const *)input, length,
+  return scalar_normalize_utf16be_nfc((const uint8_t *)input, length,
                                       (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16le_nfkc(char const *input, size_t length,
+size_t utf8norm_normalize_utf16le_nfkc(const char *input, size_t length,
                                        char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16le_nfkc((uint8_t const *)input, length,
+  return neon_normalize_utf16le_nfkc((const uint8_t *)input, length,
                                      (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16le_nfkc((uint8_t const *)input, length,
+  return scalar_normalize_utf16le_nfkc((const uint8_t *)input, length,
                                        (uint8_t *)out);
 #endif
 }
 
-size_t utf8norm_normalize_utf16be_nfkc(char const *input, size_t length,
+size_t utf8norm_normalize_utf16be_nfkc(const char *input, size_t length,
                                        char *out) {
 #if UTF8NORM_IMPLEMENTATION_NEON
-  return neon_normalize_utf16be_nfkc((uint8_t const *)input, length,
+  return neon_normalize_utf16be_nfkc((const uint8_t *)input, length,
                                      (uint8_t *)out);
 #endif
 #if !UTF8NORM_IMPLEMENTATION_NEON
-  return scalar_normalize_utf16be_nfkc((uint8_t const *)input, length,
+  return scalar_normalize_utf16be_nfkc((const uint8_t *)input, length,
                                        (uint8_t *)out);
 #endif
 }

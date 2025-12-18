@@ -6,53 +6,53 @@
 #include <stdint.h>
 
 // UTF-8
-size_t scalar_normalize_utf8_nfd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf8_nfd(const uint8_t *input, size_t length,
                                  uint8_t *out);
-size_t scalar_normalize_utf8_nfd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf8_nfd_with_context(const uint8_t *input,
                                               size_t length, uint8_t *out,
                                               bool *end_is_cc);
-size_t scalar_normalize_utf8_nfkd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf8_nfkd(const uint8_t *input, size_t length,
                                   uint8_t *out);
-size_t scalar_normalize_utf8_nfkd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf8_nfkd_with_context(const uint8_t *input,
                                                size_t length, uint8_t *out,
                                                bool *end_is_cc);
-size_t scalar_normalize_utf8_nfc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
                                  uint8_t *out);
-size_t scalar_normalize_utf8_nfkc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
                                   uint8_t *out);
 
 // UTF-16
-size_t scalar_normalize_utf16le_nfd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16le_nfd(const uint8_t *input, size_t length,
                                     uint8_t *out);
-size_t scalar_normalize_utf16le_nfd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf16le_nfd_with_context(const uint8_t *input,
                                                  size_t length, uint8_t *out,
                                                  size_t out_length,
                                                  bool *end_is_cc);
-size_t scalar_normalize_utf16le_nfkd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16le_nfkd(const uint8_t *input, size_t length,
                                      uint8_t *out);
-size_t scalar_normalize_utf16le_nfkd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf16le_nfkd_with_context(const uint8_t *input,
                                                   size_t length, uint8_t *out,
                                                   size_t out_length,
                                                   bool *end_is_cc);
-size_t scalar_normalize_utf16be_nfd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16be_nfd(const uint8_t *input, size_t length,
                                     uint8_t *out);
-size_t scalar_normalize_utf16be_nfd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf16be_nfd_with_context(const uint8_t *input,
                                                  size_t length, uint8_t *out,
                                                  size_t out_length,
                                                  bool *end_is_cc);
-size_t scalar_normalize_utf16be_nfkd(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16be_nfkd(const uint8_t *input, size_t length,
                                      uint8_t *out);
-size_t scalar_normalize_utf16be_nfkd_with_context(uint8_t const *input,
+size_t scalar_normalize_utf16be_nfkd_with_context(const uint8_t *input,
                                                   size_t length, uint8_t *out,
                                                   size_t out_length,
                                                   bool *end_is_cc);
-size_t scalar_normalize_utf16le_nfc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16le_nfc(const uint8_t *input, size_t length,
                                     uint8_t *out);
-size_t scalar_normalize_utf16le_nfkc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16le_nfkc(const uint8_t *input, size_t length,
                                      uint8_t *out);
-size_t scalar_normalize_utf16be_nfc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16be_nfc(const uint8_t *input, size_t length,
                                     uint8_t *out);
-size_t scalar_normalize_utf16be_nfkc(uint8_t const *input, size_t length,
+size_t scalar_normalize_utf16be_nfkc(const uint8_t *input, size_t length,
                                      uint8_t *out);
 
 // Helper functions
@@ -61,11 +61,11 @@ size_t scalar_decompose_utf8_nfd(uint32_t code_point, uint8_t *out,
                                  bool *is_cc);
 size_t scalar_decompose_utf8_nfkd(uint32_t code_point, uint8_t *out,
                                   bool *is_cc);
-size_t scalar_find_nfc_irrelevant_starter_utf8(uint8_t const *input,
+size_t scalar_find_nfc_irrelevant_starter_utf8(const uint8_t *input,
                                                size_t length);
-size_t scalar_find_nfkc_irrelevant_starter_utf8(uint8_t const *input,
+size_t scalar_find_nfkc_irrelevant_starter_utf8(const uint8_t *input,
                                                 size_t length);
-size_t scalar_rfind_starter_utf8(uint8_t const *input, size_t length);
+size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
 size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
                                     size_t amt);
@@ -82,16 +82,16 @@ size_t scalar_decompose_utf16be_nfd(uint32_t code_point, uint8_t *out,
                                     bool *is_cc);
 size_t scalar_decompose_utf16be_nfkd(uint32_t code_point, uint8_t *out,
                                      bool *is_cc);
-size_t scalar_find_nfc_irrelevant_starter_utf16le(uint8_t const *input,
+size_t scalar_find_nfc_irrelevant_starter_utf16le(const uint8_t *input,
                                                   size_t length);
-size_t scalar_find_nfc_irrelevant_starter_utf16be(uint8_t const *input,
+size_t scalar_find_nfc_irrelevant_starter_utf16be(const uint8_t *input,
                                                   size_t length);
-size_t scalar_find_nfkc_irrelevant_starter_utf16le(uint8_t const *input,
+size_t scalar_find_nfkc_irrelevant_starter_utf16le(const uint8_t *input,
                                                    size_t length);
-size_t scalar_find_nfkc_irrelevant_starter_utf16be(uint8_t const *input,
+size_t scalar_find_nfkc_irrelevant_starter_utf16be(const uint8_t *input,
                                                    size_t length);
-size_t scalar_rfind_starter_utf16le(uint8_t const *input, size_t length);
-size_t scalar_rfind_starter_utf16be(uint8_t const *input, size_t length);
+size_t scalar_rfind_starter_utf16le(const uint8_t *input, size_t length);
+size_t scalar_rfind_starter_utf16be(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16le(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16be(const uint8_t *input, size_t length);
 
