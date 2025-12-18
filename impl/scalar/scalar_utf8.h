@@ -9,11 +9,13 @@ size_t scalar_normalize_utf8_nfd(const uint8_t *input, size_t length,
                                  uint8_t *out);
 size_t scalar_normalize_utf8_nfd_with_context(const uint8_t *input,
                                               size_t length, uint8_t *out,
+                                              size_t out_offset,
                                               bool *end_is_cc);
 size_t scalar_normalize_utf8_nfkd(const uint8_t *input, size_t length,
                                   uint8_t *out);
 size_t scalar_normalize_utf8_nfkd_with_context(const uint8_t *input,
                                                size_t length, uint8_t *out,
+                                               size_t out_offset,
                                                bool *end_is_cc);
 size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
                                  uint8_t *out);
@@ -21,7 +23,7 @@ size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
                                   uint8_t *out);
 
 // Helpers
-void scalar_sort_characters_utf8(uint8_t *out);
+void scalar_sort_characters_utf8(uint8_t *out, size_t length);
 size_t scalar_decompose_utf8_nfd(uint32_t code_point, uint8_t *out,
                                  bool *is_cc);
 size_t scalar_decompose_utf8_nfkd(uint32_t code_point, uint8_t *out,

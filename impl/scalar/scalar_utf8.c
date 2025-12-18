@@ -103,16 +103,18 @@ static bool scalar_is_leading_utf8_byte(uint8_t b) {
 // algorithm). This is done by walking backwards from the end of the buffer
 // until a starter character is found and sorting the combining characters from
 // there.
-//
-// TODO: undefined behavior when we can't find a starter when walking backwards?
-//       We don't know when to stop.
-void scalar_sort_characters_utf8(uint8_t *out) {
+void scalar_sort_characters_utf8(uint8_t *out, size_t length) {
+  if (length == 0) {
+    return;
+  }
+
   uint8_t *start = out;
 
   // We need to walk backwards until we find a starter character.
   uint8_t last_ccc = 255;
   bool needs_sort = false;
-  while (true) {
+  out--;
+  while ((size_t)(start - out) <= length) {
     while (!scalar_is_leading_utf8_byte(*out)) {
       out--;
     }
@@ -248,7 +250,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf8_##decomp_suffix##_with_context(                      \
-      const uint8_t *input, size_t length, uint8_t *out, bool *end_is_cc) {         \
+      const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
+      bool *end_is_cc) {                                                            \
     uint8_t *start = out;                                                           \
                                                                                     \
     bool last_is_cc = *end_is_cc;                                                   \
@@ -312,14 +315,14 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
       /* If the last character was a non-starter and the current character is       \
        * a starter, we need to try to reorder the combining characters */           \
       if (last_is_cc && !is_cc) {                                                   \
-        scalar_sort_characters_utf8(c_start - 1);                                   \
+        scalar_sort_characters_utf8(c_start, (c_start - start) + out_offset);       \
       }                                                                             \
       last_is_cc = is_cc;                                                           \
     }                                                                               \
                                                                                     \
     /* Try to sort at EOF */                                                        \
     if (last_is_cc) {                                                               \
-      scalar_sort_characters_utf8(out - 1);                                         \
+      scalar_sort_characters_utf8(out, (out - start) + out_offset);                 \
     }                                                                               \
                                                                                     \
     *end_is_cc = last_is_cc;                                                        \
@@ -331,7 +334,7 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
                                                size_t length, uint8_t *out) {       \
     bool end_is_cc = false;                                                         \
     return scalar_normalize_utf8_##decomp_suffix##_with_context(                    \
-        input, length, out, &end_is_cc);                                            \
+        input, length, out, 0, &end_is_cc);                                         \
   }                                                                                 \
                                                                                     \
   /* Find the next starter character that is composition irrelevant, or -1 if       \
