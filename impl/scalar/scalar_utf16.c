@@ -112,8 +112,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
                                                                                \
   /* Find a starter character in a UTF-16 buffer, searching from right to left \
    */                                                                          \
-  static size_t scalar_rfind_starter_utf16##endianness(const uint8_t *input,   \
-                                                       size_t length) {        \
+  size_t scalar_rfind_starter_utf16##endianness(const uint8_t *input,          \
+                                                size_t length) {               \
     size_t p = 0;                                                              \
     while (p < length) {                                                       \
       uint32_t c = scalar_parse_code_point_utf16##endianness##_reverse(        \
@@ -130,9 +130,8 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
     return -1;                                                                 \
   }                                                                            \
                                                                                \
-  __attribute__((unused)) static void                                          \
-      scalar_print_code_points_utf16##endianness(const uint8_t *input,         \
-                                                 size_t length) {              \
+  void scalar_print_code_points_utf16##endianness(const uint8_t *input,        \
+                                                  size_t length) {             \
     size_t p = 0;                                                              \
     while (p < length) {                                                       \
       uint8_t size;                                                            \
@@ -244,7 +243,8 @@ SCALAR_UTF16_HELPERS(be);
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(         \
-      uint8_t const *input, size_t length, uint8_t *out, bool *end_is_cc) {         \
+      uint8_t const *input, size_t length, uint8_t *out, size_t out_offset,         \
+      bool *end_is_cc) {                                                            \
     uint8_t *start = out;                                                           \
                                                                                     \
     bool last_is_cc = *end_is_cc;                                                   \
@@ -276,14 +276,16 @@ SCALAR_UTF16_HELPERS(be);
       /* Sort if the current character is a starter and the last character is       \
        * a non-starter. */                                                          \
       if (last_is_cc && !is_cc) {                                                   \
-        scalar_sort_characters_utf16##endianness(c_start, c_start - start);         \
+        scalar_sort_characters_utf16##endianness(c_start, (c_start - start) +       \
+                                                              out_offset);          \
       }                                                                             \
       last_is_cc = is_cc;                                                           \
     }                                                                               \
                                                                                     \
     /* Sort on EOF */                                                               \
     if (last_is_cc) {                                                               \
-      scalar_sort_characters_utf16##endianness(out, out - start);                   \
+      scalar_sort_characters_utf16##endianness(out,                                 \
+                                               (out - start) + out_offset);         \
     }                                                                               \
     *end_is_cc = last_is_cc;                                                        \
     return out - start;                                                             \
@@ -293,12 +295,11 @@ SCALAR_UTF16_HELPERS(be);
       const uint8_t *input, size_t length, uint8_t *out) {                          \
     bool end_is_cc = false;                                                         \
     return scalar_normalize_utf16##endianness##_##decomp_form##_with_context(       \
-        input, length, out, &end_is_cc);                                            \
+        input, length, out, 0, &end_is_cc);                                         \
   }                                                                                 \
                                                                                     \
-  static size_t                                                                     \
-      scalar_find_##comp_form##_irrelevant_starter_utf16##endianness(               \
-          const uint8_t *input, size_t length) {                                    \
+  size_t scalar_find_##comp_form##_irrelevant_starter_utf16##endianness(            \
+      const uint8_t *input, size_t length) {                                        \
     uint32_t p = 0;                                                                 \
     while (p < length) {                                                            \
       uint8_t size;                                                                 \

@@ -23,6 +23,10 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
     .{ "utf8norm_utf16be_nfd", utf8normNormalizeUtf16beNFD, .utf16be },
     .{ "utf8norm_utf16le_nfkd", utf8normNormalizeUtf16leNFKD, .utf16le },
     .{ "utf8norm_utf16be_nfkd", utf8normNormalizeUtf16beNFKD, .utf16be },
+    .{ "utf8norm_utf16le_nfc", utf8normNormalizeUtf16leNFC, .utf16le },
+    .{ "utf8norm_utf16be_nfc", utf8normNormalizeUtf16beNFC, .utf16be },
+    .{ "utf8norm_utf16le_nfkc", utf8normNormalizeUtf16leNFKC, .utf16le },
+    .{ "utf8norm_utf16be_nfkc", utf8normNormalizeUtf16beNFKC, .utf16be },
 };
 
 pub fn main() !void {
@@ -219,6 +223,26 @@ fn utf8normNormalizeUtf16leNFKD(src: []const u8) void {
 fn utf8normNormalizeUtf16beNFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.utf8norm_normalize_utf16be_nfkd(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16leNFC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16le_nfc(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16beNFC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16be_nfc(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16leNFKC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16le_nfkc(src.ptr, src.len, &out);
+}
+
+fn utf8normNormalizeUtf16beNFKC(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.utf8norm_normalize_utf16be_nfkc(src.ptr, src.len, &out);
 }
 
 const BenchResult = struct {

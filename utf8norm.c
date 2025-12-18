@@ -122,24 +122,48 @@ size_t utf8norm_normalize_utf16be_nfkd(char const *input, size_t length,
 
 size_t utf8norm_normalize_utf16le_nfc(char const *input, size_t length,
                                       char *out) {
+#if UTF8NORM_IMPLEMENTATION_NEON
+  return neon_normalize_utf16le_nfc((uint8_t const *)input, length,
+                                    (uint8_t *)out);
+#endif
+#if !UTF8NORM_IMPLEMENTATION_NEON
   return scalar_normalize_utf16le_nfc((uint8_t const *)input, length,
                                       (uint8_t *)out);
+#endif
 }
 
 size_t utf8norm_normalize_utf16be_nfc(char const *input, size_t length,
                                       char *out) {
+#if UTF8NORM_IMPLEMENTATION_NEON
+  return neon_normalize_utf16be_nfc((uint8_t const *)input, length,
+                                    (uint8_t *)out);
+#endif
+#if !UTF8NORM_IMPLEMENTATION_NEON
   return scalar_normalize_utf16be_nfc((uint8_t const *)input, length,
                                       (uint8_t *)out);
+#endif
 }
 
 size_t utf8norm_normalize_utf16le_nfkc(char const *input, size_t length,
                                        char *out) {
+#if UTF8NORM_IMPLEMENTATION_NEON
+  return neon_normalize_utf16le_nfkc((uint8_t const *)input, length,
+                                     (uint8_t *)out);
+#endif
+#if !UTF8NORM_IMPLEMENTATION_NEON
   return scalar_normalize_utf16le_nfkc((uint8_t const *)input, length,
                                        (uint8_t *)out);
+#endif
 }
 
 size_t utf8norm_normalize_utf16be_nfkc(char const *input, size_t length,
                                        char *out) {
+#if UTF8NORM_IMPLEMENTATION_NEON
+  return neon_normalize_utf16be_nfkc((uint8_t const *)input, length,
+                                     (uint8_t *)out);
+#endif
+#if !UTF8NORM_IMPLEMENTATION_NEON
   return scalar_normalize_utf16be_nfkc((uint8_t const *)input, length,
                                        (uint8_t *)out);
+#endif
 }
