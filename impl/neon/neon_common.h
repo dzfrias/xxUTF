@@ -22,8 +22,9 @@ uint32x4_t neon_hangul_mask(uint32x4_t input);
 // https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
 uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars);
 
-// memcpy for inputs less than 64 bytes large.
-void neon_memcpy_small(uint8_t *dst, const uint8_t *src, size_t len);
+// memcpy for inputs less than 64 bytes large. The destination buffer needs at
+// lesat 64 bytes of space.
+void neon_memcpy_small(uint8_t *dst, const uint8_t *src);
 
 // Return the offset of the first 0xFFFFFFFF value in the given logical vector.
 uint8_t neon_first_true(uint32x4_t v);

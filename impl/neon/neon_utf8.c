@@ -481,7 +481,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
         scalar_sort_characters_utf8(*out, out_length);                              \
       }                                                                             \
       size_t min = t1 > 52 ? 52 : t1;                                               \
-      neon_memcpy_small(*out, input, min);                                          \
+      neon_memcpy_small(*out, input);                                               \
       *out += min;                                                                  \
       *end_is_cc = false;                                                           \
       return min;                                                                   \
@@ -615,7 +615,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     /* Eagerly skip ASCII, similar to NF(K)D */                                     \
     if (t1 > 2) {                                                                   \
       size_t min = t1 > 52 ? 52 : t1;                                               \
-      neon_memcpy_small(*out, input, min);                                          \
+      neon_memcpy_small(*out, input);                                               \
       *out += min;                                                                  \
       return min;                                                                   \
     }                                                                               \
@@ -687,7 +687,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     /* It is possible that we do buffer overruns (but only _use_ the                \
      * appropriate number of bytes) in specifc cases. This margin makes sure        \
      * that those oversized store operations are safe. */                           \
-    const size_t SAFETY_MARGIN = 16;                                                \
+    const size_t SAFETY_MARGIN = 64;                                                \
     bool end_is_cc = false;                                                         \
     size_t p = 0;                                                                   \
     while (p + 64 + SAFETY_MARGIN <= length) {                                      \
@@ -720,7 +720,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     uint8_t **out_ptr = &out;                                                       \
     uint8_t *start = out;                                                           \
                                                                                     \
-    const size_t SAFETY_MARGIN = 16;                                                \
+    const size_t SAFETY_MARGIN = 64;                                                \
     size_t p = 0;                                                                   \
     while (p + 64 + SAFETY_MARGIN <= length) {                                      \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);                    \

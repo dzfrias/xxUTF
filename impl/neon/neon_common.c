@@ -69,19 +69,10 @@ uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
   return vals;
 }
 
-void neon_memcpy_small(uint8_t *dst, const uint8_t *src, size_t len) {
+void neon_memcpy_small(uint8_t *dst, const uint8_t *src) {
   vst1q_u8(dst, vld1q_u8(src));
-  if (len <= 16) {
-    return;
-  }
   vst1q_u8(dst + 16, vld1q_u8(src + 16));
-  if (len <= 32) {
-    return;
-  }
   vst1q_u8(dst + 32, vld1q_u8(src + 32));
-  if (len <= 48) {
-    return;
-  }
   vst1q_u8(dst + 48, vld1q_u8(src + 48));
 }
 
