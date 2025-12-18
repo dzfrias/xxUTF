@@ -1,5 +1,5 @@
-#ifndef SCALAR_COMMON_H
-#define SCALAR_COMMON_H
+#ifndef XXUTF_SCALAR_COMMON_H
+#define XXUTF_SCALAR_COMMON_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,4 +38,4 @@ void scalar_shift_right(uint8_t *buf, size_t length, size_t amt);
 // Shift the bytes in a byte buffer to the left by a certain amount.
 void scalar_shift_left(uint8_t *buf, size_t length, size_t amt);
 
-#endif // SCALAR_COMMON_H
+#endif // XXUTF_SCALAR_COMMON_H

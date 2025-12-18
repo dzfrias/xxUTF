@@ -1,5 +1,5 @@
-#ifndef NEON_COMMON_H
-#define NEON_COMMON_H
+#ifndef XXUTF_NEON_COMMON_H
+#define XXUTF_NEON_COMMON_H
 
 #include <arm_neon.h>
 #include <stddef.h>
@@ -37,4 +37,4 @@ uint32x4_t neon_evaluate_bloom_nfkd(uint32x4_t input);
 uint32x4_t neon_evaluate_bloom_nfc(uint32x4_t input);
 uint32x4_t neon_evaluate_bloom_nfkc(uint32x4_t input);
 
-#endif // NEON_COMMON_H
+#endif // XXUTF_NEON_COMMON_H

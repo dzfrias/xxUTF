@@ -1,5 +1,5 @@
-#ifndef UTF8NORM_NEON_H
-#define UTF8NORM_NEON_H
+#ifndef XXUTF_NEON_H
+#define XXUTF_NEON_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -30,4 +30,4 @@ size_t neon_normalize_utf16le_nfkc(const uint8_t *input, size_t length,
 size_t neon_normalize_utf16be_nfkc(const uint8_t *input, size_t length,
                                    uint8_t *out);
 
-#endif // UTF8NORM_NEON_H
+#endif // XXUTF_NEON_H

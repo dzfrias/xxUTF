@@ -1,5 +1,5 @@
-#ifndef UTF8NORM_SCALAR_UTF16_H
-#define UTF8NORM_SCALAR_UTF16_H
+#ifndef XXUTF_SCALAR_UTF16_H
+#define XXUTF_SCALAR_UTF16_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -71,4 +71,4 @@ size_t scalar_rfind_starter_utf16be(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16le(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16be(const uint8_t *input, size_t length);
 
-#endif // UTF8NORM_SCALAR_UTF16_H
+#endif // XXUTF_SCALAR_UTF16_H

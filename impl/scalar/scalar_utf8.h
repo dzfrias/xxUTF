@@ -1,5 +1,5 @@
-#ifndef UTF8NORM_SCALAR_UTF8_H
-#define UTF8NORM_SCALAR_UTF8_H
+#ifndef XXUTF_SCALAR_UTF8_H
+#define XXUTF_SCALAR_UTF8_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -35,4 +35,4 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
 size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
                                     size_t amt);
 
-#endif
+#endif // XXUTF_SCALAR_UTF8_H

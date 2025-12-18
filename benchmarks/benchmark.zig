@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @cImport({
-    @cInclude("utf8norm.h");
+    @cInclude("xxutf.h");
     @cInclude("utf8proc.h");
 });
 
@@ -11,22 +11,22 @@ const ImplementationFunc = fn ([]const u8) void;
 const Encoding = enum { utf8, utf16le, utf16be };
 
 const implementations: []const struct { []const u8, ImplementationFunc, Encoding } = &.{
-    .{ "utf8norm_utf8_nfd", utf8normNormalizeUtf8NFD, .utf8 },
+    .{ "xxutf_utf8_nfd", xxutfNormalizeUtf8NFD, .utf8 },
     .{ "utf8proc_utf8_nfd", utf8procNormalizeNFD, .utf8 },
-    .{ "utf8norm_utf8_nfkd", utf8normNormalizeUtf8NFKD, .utf8 },
+    .{ "xxutf_utf8_nfkd", xxutfNormalizeUtf8NFKD, .utf8 },
     .{ "utf8proc_utf8_nfkd", utf8procNormalizeNFKD, .utf8 },
-    .{ "utf8norm_utf8_nfc", utf8normNormalizeUtf8NFC, .utf8 },
+    .{ "xxutf_utf8_nfc", xxutfNormalizeUtf8NFC, .utf8 },
     .{ "utf8proc_utf8_nfc", utf8procNormalizeNFC, .utf8 },
-    .{ "utf8norm_utf8_nfkc", utf8normNormalizeUtf8NFKC, .utf8 },
+    .{ "xxutf_utf8_nfkc", xxutfNormalizeUtf8NFKC, .utf8 },
     .{ "utf8proc_utf8_nfkc", utf8procNormalizeNFKC, .utf8 },
-    .{ "utf8norm_utf16le_nfd", utf8normNormalizeUtf16leNFD, .utf16le },
-    .{ "utf8norm_utf16be_nfd", utf8normNormalizeUtf16beNFD, .utf16be },
-    .{ "utf8norm_utf16le_nfkd", utf8normNormalizeUtf16leNFKD, .utf16le },
-    .{ "utf8norm_utf16be_nfkd", utf8normNormalizeUtf16beNFKD, .utf16be },
-    .{ "utf8norm_utf16le_nfc", utf8normNormalizeUtf16leNFC, .utf16le },
-    .{ "utf8norm_utf16be_nfc", utf8normNormalizeUtf16beNFC, .utf16be },
-    .{ "utf8norm_utf16le_nfkc", utf8normNormalizeUtf16leNFKC, .utf16le },
-    .{ "utf8norm_utf16be_nfkc", utf8normNormalizeUtf16beNFKC, .utf16be },
+    .{ "xxutf_utf16le_nfd", xxutfNormalizeUtf16leNFD, .utf16le },
+    .{ "xxutf_utf16be_nfd", xxutfNormalizeUtf16beNFD, .utf16be },
+    .{ "xxutf_utf16le_nfkd", xxutfNormalizeUtf16leNFKD, .utf16le },
+    .{ "xxutf_utf16be_nfkd", xxutfNormalizeUtf16beNFKD, .utf16be },
+    .{ "xxutf_utf16le_nfc", xxutfNormalizeUtf16leNFC, .utf16le },
+    .{ "xxutf_utf16be_nfc", xxutfNormalizeUtf16beNFC, .utf16be },
+    .{ "xxutf_utf16le_nfkc", xxutfNormalizeUtf16leNFKC, .utf16le },
+    .{ "xxutf_utf16be_nfkc", xxutfNormalizeUtf16beNFKC, .utf16be },
 };
 
 pub fn main() !void {
@@ -141,9 +141,9 @@ fn benchmarkImplementation(
     }
 }
 
-fn utf8normNormalizeUtf8NFD(src: []const u8) void {
+fn xxutfNormalizeUtf8NFD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf8_nfd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf8_nfd(src.ptr, src.len, &out);
 }
 
 fn utf8procNormalizeNFD(src: []const u8) void {
@@ -157,9 +157,9 @@ fn utf8procNormalizeNFD(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeUtf8NFKD(src: []const u8) void {
+fn xxutfNormalizeUtf8NFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf8_nfkd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf8_nfkd(src.ptr, src.len, &out);
 }
 
 fn utf8procNormalizeNFKD(src: []const u8) void {
@@ -173,9 +173,9 @@ fn utf8procNormalizeNFKD(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeUtf8NFC(src: []const u8) void {
+fn xxutfNormalizeUtf8NFC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf8_nfc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf8_nfc(src.ptr, src.len, &out);
 }
 
 fn utf8procNormalizeNFC(src: []const u8) void {
@@ -189,9 +189,9 @@ fn utf8procNormalizeNFC(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeUtf8NFKC(src: []const u8) void {
+fn xxutfNormalizeUtf8NFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf8_nfkc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf8_nfkc(src.ptr, src.len, &out);
 }
 
 fn utf8procNormalizeNFKC(src: []const u8) void {
@@ -205,44 +205,44 @@ fn utf8procNormalizeNFKC(src: []const u8) void {
     c.free(out);
 }
 
-fn utf8normNormalizeUtf16leNFD(src: []const u8) void {
+fn xxutfNormalizeUtf16leNFD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16le_nfd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16le_nfd(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16beNFD(src: []const u8) void {
+fn xxutfNormalizeUtf16beNFD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16be_nfd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16be_nfd(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16leNFKD(src: []const u8) void {
+fn xxutfNormalizeUtf16leNFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16le_nfkd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16le_nfkd(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16beNFKD(src: []const u8) void {
+fn xxutfNormalizeUtf16beNFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16be_nfkd(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16be_nfkd(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16leNFC(src: []const u8) void {
+fn xxutfNormalizeUtf16leNFC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16le_nfc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16le_nfc(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16beNFC(src: []const u8) void {
+fn xxutfNormalizeUtf16beNFC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16be_nfc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16be_nfc(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16leNFKC(src: []const u8) void {
+fn xxutfNormalizeUtf16leNFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16le_nfkc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16le_nfkc(src.ptr, src.len, &out);
 }
 
-fn utf8normNormalizeUtf16beNFKC(src: []const u8) void {
+fn xxutfNormalizeUtf16beNFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
-    _ = c.utf8norm_normalize_utf16be_nfkc(src.ptr, src.len, &out);
+    _ = c.xxutf_normalize_utf16be_nfkc(src.ptr, src.len, &out);
 }
 
 const BenchResult = struct {

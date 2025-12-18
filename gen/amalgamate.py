@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 PREAMBLE = """/*
-This file is an amalgamation of all the C source files in the utf8norm codebase.
-This is the only file you need to compile utf8norm, and compilation will be done
+This file is an amalgamation of all the C source files in the xxUTF codebase.
+This is the only file you need to compile xxUTF, and compilation will be done
 within a single unit.
 
 See: https://www.sqlite.org/amalgamation.html
@@ -37,14 +37,14 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
                     out.write(f"/*amalgamate: skip {line.strip()}*/\n")
             elif (decl_match := decl_re.match(line)) is not None:
                 name = decl_match.group(2)
-                if not line.startswith("static") and not name.startswith("utf8norm_"):
+                if not line.startswith("static") and not name.startswith("xxutf_"):
                     out.write(f"__attribute__((unused)) static {line}")
                 else:
                     out.write(line)
             elif (var_match := var_re.match(line)) is not None:
                 name = var_match.group(2)
                 if not line.startswith("static") and not name.lower().startswith(
-                    "utf8norm_"
+                    "xxutf_"
                 ):
                     if line.startswith("extern"):
                         out.write(
@@ -67,11 +67,9 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="amalgamate",
-        description="Amalgamate the entire utf8norm codebase into one file",
+        description="Amalgamate the entire xxUTF codebase into one file",
     )
-    parser.add_argument(
-        "sources", help="directory with the utf8norm codebase", nargs="+"
-    )
+    parser.add_argument("sources", help="directory with the xxUTF codebase", nargs="+")
     parser.add_argument(
         "-o", "--output", type=str, help="output file (default: stdout)"
     )

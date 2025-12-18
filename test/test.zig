@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @cImport({
-    @cInclude("utf8norm.h");
+    @cInclude("xxutf.h");
 });
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
@@ -135,9 +135,9 @@ fn runTest(
     switch (form) {
         .nfd => {
             const impl = switch (col) {
-                .utf8 => c.utf8norm_normalize_utf8_nfd,
-                .utf16le => c.utf8norm_normalize_utf16le_nfd,
-                .utf16be => c.utf8norm_normalize_utf16be_nfd,
+                .utf8 => c.xxutf_normalize_utf8_nfd,
+                .utf16le => c.xxutf_normalize_utf16le_nfd,
+                .utf16be => c.xxutf_normalize_utf16be_nfd,
             };
 
             // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
@@ -160,9 +160,9 @@ fn runTest(
         },
         .nfc => {
             const impl = switch (col) {
-                .utf8 => c.utf8norm_normalize_utf8_nfc,
-                .utf16le => c.utf8norm_normalize_utf16le_nfc,
-                .utf16be => c.utf8norm_normalize_utf16be_nfc,
+                .utf8 => c.xxutf_normalize_utf8_nfc,
+                .utf16le => c.xxutf_normalize_utf16le_nfc,
+                .utf16be => c.xxutf_normalize_utf16be_nfc,
             };
 
             // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
@@ -185,9 +185,9 @@ fn runTest(
         },
         .nfkd => {
             const impl = switch (col) {
-                .utf8 => c.utf8norm_normalize_utf8_nfkd,
-                .utf16le => c.utf8norm_normalize_utf16le_nfkd,
-                .utf16be => c.utf8norm_normalize_utf16be_nfkd,
+                .utf8 => c.xxutf_normalize_utf8_nfkd,
+                .utf16le => c.xxutf_normalize_utf16le_nfkd,
+                .utf16be => c.xxutf_normalize_utf16be_nfkd,
             };
 
             // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
@@ -207,9 +207,9 @@ fn runTest(
         },
         .nfkc => {
             const impl = switch (col) {
-                .utf8 => c.utf8norm_normalize_utf8_nfkc,
-                .utf16le => c.utf8norm_normalize_utf16le_nfkc,
-                .utf16be => c.utf8norm_normalize_utf16be_nfkc,
+                .utf8 => c.xxutf_normalize_utf8_nfkc,
+                .utf16le => c.xxutf_normalize_utf16le_nfkc,
+                .utf16be => c.xxutf_normalize_utf16be_nfkc,
             };
 
             const expected = test_info.cols[3];

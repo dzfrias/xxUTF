@@ -2,7 +2,7 @@
 // mode instrumentation. It can also be run without AFL++ instrumentation, in
 // which it receives input via stdin.
 
-#include "utf8norm.h"
+#include "xxutf.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -260,12 +260,11 @@ static void print_code_points_utf8(const char *s, size_t len) {
       return false;                                                            \
     }                                                                          \
                                                                                \
-    char utf8norm_out[8192];                                                   \
-    size_t utf8norm_out_length =                                               \
-        utf8norm_normalize_utf8_##form(input, length, utf8norm_out);           \
+    char xxutf_out[8192];                                                      \
+    size_t xxutf_out_length =                                                  \
+        xxutf_normalize_utf8_##form(input, length, xxutf_out);                 \
     size_t pos;                                                                \
-    if (!is_valid_utf8((const uint8_t *)utf8norm_out, utf8norm_out_length,     \
-                       &pos)) {                                                \
+    if (!is_valid_utf8((const uint8_t *)xxutf_out, xxutf_out_length, &pos)) {  \
       if (verbose) {                                                           \
         printf("normalized (%s) output is invaild UTF-8, position %zu\n",      \
                #form_upper, pos);                                              \
@@ -274,16 +273,16 @@ static void print_code_points_utf8(const char *s, size_t len) {
     }                                                                          \
                                                                                \
     icu_out[icu_out_length] = '\0';                                            \
-    utf8norm_out[utf8norm_out_length] = '\0';                                  \
+    xxutf_out[xxutf_out_length] = '\0';                                        \
                                                                                \
-    if (!equal(utf8norm_out, icu_out)) {                                       \
+    if (!equal(xxutf_out, icu_out)) {                                          \
       if (verbose) {                                                           \
         printf("Buffers (UTF-8, %s) not equal\n", #form_upper);                \
         printf("   input: ");                                                  \
         print_code_points_utf8(input, length);                                 \
         printf("\n");                                                          \
-        printf("utf8norm: ");                                                  \
-        print_code_points_utf8(utf8norm_out, utf8norm_out_length);             \
+        printf("xxutf: ");                                                     \
+        print_code_points_utf8(xxutf_out, xxutf_out_length);                   \
         printf("\n");                                                          \
         printf("   icu4c: ");                                                  \
         print_code_points_utf8(icu_out, icu_out_length);                       \
@@ -364,13 +363,12 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    char utf8norm_out[8192];                                                   \
-    size_t utf8norm_out_length =                                               \
-        utf8norm_normalize_utf16##endianness##_##form(                         \
-            utf16_bytes, utf16_length, utf8norm_out);                          \
+    char xxutf_out[8192];                                                      \
+    size_t xxutf_out_length = xxutf_normalize_utf16##endianness##_##form(      \
+        utf16_bytes, utf16_length, xxutf_out);                                 \
     size_t pos;                                                                \
-    if (!is_valid_utf16##endianness((const uint8_t *)utf8norm_out,             \
-                                    utf8norm_out_length, &pos)) {              \
+    if (!is_valid_utf16##endianness((const uint8_t *)xxutf_out,                \
+                                    xxutf_out_length, &pos)) {                 \
       if (verbose) {                                                           \
         printf("normalized (%s, %s) output is invaild UTF-16, position %zu\n", \
                "UTF-16" #endianness_upper, #form_upper, pos);                  \
@@ -379,18 +377,17 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
     }                                                                          \
                                                                                \
     icu_out[icu_out_length] = '\0';                                            \
-    utf8norm_out[utf8norm_out_length] = '\0';                                  \
+    xxutf_out[xxutf_out_length] = '\0';                                        \
                                                                                \
-    if (!equal(utf8norm_out, icu_out)) {                                       \
+    if (!equal(xxutf_out, icu_out)) {                                          \
       if (verbose) {                                                           \
         printf("Buffers (%s, %s) not equal\n", "UTF-16" #endianness_upper,     \
                #form_upper);                                                   \
         printf("   input: ");                                                  \
         print_code_points_utf8(input, length);                                 \
         printf("\n");                                                          \
-        printf("utf8norm: ");                                                  \
-        print_code_points_utf16##endianness(utf8norm_out,                      \
-                                            utf8norm_out_length);              \
+        printf("xxutf: ");                                                     \
+        print_code_points_utf16##endianness(xxutf_out, xxutf_out_length);      \
         printf("\n");                                                          \
         printf("   icu4c: ");                                                  \
         print_code_points_utf16##endianness(icu_out, icu_out_length);          \
@@ -426,8 +423,8 @@ int main() {
 #ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
-  const char *normalization_form = getenv("UTF8NORM_FUZZ_NORMALIZATION_FORM");
-  const char *encoding = getenv("UTF8NORM_FUZZ_ENCODING");
+  const char *normalization_form = getenv("XXUTF_FUZZ_NORMALIZATION_FORM");
+  const char *encoding = getenv("XXUTF_FUZZ_ENCODING");
   if (normalization_form == NULL) {
     normalization_form = "NFD";
   }

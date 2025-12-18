@@ -1,4 +1,4 @@
-// amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
+// amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
 #include "impl/neon/neon_utf16.h"
 #include "impl/neon.h"
@@ -33,8 +33,8 @@ static inline uint16x8_t neon_make_surrogates_mask(uint16x8_t in) {
     *out += length;                                                            \
   }
 
-NEON_UTF16_HELPERS(le, UTF8NORM_BIG_ENDIAN);
-NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
+NEON_UTF16_HELPERS(le, XXUTF_BIG_ENDIAN);
+NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
 
 #undef NEON_UTF16_HELPERS
 
@@ -310,11 +310,11 @@ NEON_UTF16_HELPERS(be, !UTF8NORM_BIG_ENDIAN);
     return *out_ptr - start;                                                   \
   }
 
-NEON_UTF16_IMPLEMENTATION(le, UTF8NORM_BIG_ENDIAN, nfd, nfc);
-NEON_UTF16_IMPLEMENTATION(le, UTF8NORM_BIG_ENDIAN, nfkd, nfkc);
-NEON_UTF16_IMPLEMENTATION(be, !UTF8NORM_BIG_ENDIAN, nfd, nfc);
-NEON_UTF16_IMPLEMENTATION(be, !UTF8NORM_BIG_ENDIAN, nfkd, nfkc);
+NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, nfc);
+NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkd, nfkc);
+NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfd, nfc);
+NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkd, nfkc);
 
 #undef NEON_UTF16_IMPLEMENTATION
 
-// amalgamate add: #endif // UTF8NORM_IMPLEMENTATION_NEON
+// amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

@@ -1,4 +1,4 @@
-// amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
+// amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
 #include "impl/neon/neon_utf8.h"
 #include "impl/neon.h"
@@ -742,4 +742,4 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
 
 #undef NEON_DEFINE_NORMALIZE_FUNCTIONS
 
-// amalgamate add: #endif // UTF8NORM_IMPLEMENTATION_NEON
+// amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

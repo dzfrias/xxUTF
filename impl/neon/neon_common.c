@@ -1,4 +1,4 @@
-// amalgamate add: #if UTF8NORM_IMPLEMENTATION_NEON
+// amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
 #include "impl/neon/neon_common.h"
 #include "normdata.h"
@@ -231,4 +231,4 @@ NEON_COMMON_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
 
 #undef NEON_COMMON_FUNCTIONS
 
-// amalgamate add: #endif
+// amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON
