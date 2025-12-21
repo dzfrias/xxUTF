@@ -21,13 +21,8 @@ pub fn build(b: *std.Build) !void {
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, default_flags);
-    try flags.append(b.allocator, switch (endianness) {
-        .little => "-DXXUTF_BIG_ENDIAN=0",
-        .big => "-DXXUTF_BIG_ENDIAN=1",
-    });
-    if (!add_neon) {
-        try flags.append(b.allocator, "-DXXUTF_IMPLEMENTATION_NEON=0");
-    }
+    try flags.append(b.allocator, booleanFlag("XXUTF_BIG_ENDIAN", endianness == .big));
+    try flags.append(b.allocator, booleanFlag("XXUTF_IMPLEMENTATION_NEON", add_neon));
 
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
     run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
@@ -173,6 +168,13 @@ fn createShimLibrary(
     lib.addCSourceFile(.{ .file = b.path("benchmarks/shim.c") });
     lib.installHeader(b.path("benchmarks/shim.h"), "xxutf_shim.h");
     return lib;
+}
+
+fn booleanFlag(comptime name: []const u8, value: bool) []const u8 {
+    return if (value)
+        "-D" ++ name ++ "=1"
+    else
+        "-D" ++ name ++ "=0";
 }
 
 const default_flags: []const []const u8 = &.{
