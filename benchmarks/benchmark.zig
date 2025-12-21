@@ -5,6 +5,7 @@ const c = @cImport({
     @cInclude("xxutf_shim.h");
 });
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 
 const print_alignment = 30;
 const full_line_length = print_alignment + 16;
@@ -36,10 +37,14 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
 };
 
 pub fn main() !void {
+    var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
+    defer assert(dbg_allocator.deinit() == .ok);
+    const allocator = dbg_allocator.allocator();
+
     var args_it = std.process.args();
     _ = args_it.next().?;
     const input_dir_path = args_it.next() orelse return error.ArgumentError;
-    const arguments = try parseArgs(&args_it);
+    const arguments = try parseArgs(allocator, &args_it);
     var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
     defer input_dir.close();
     var out_dir = if (arguments.output_dir) |path|
@@ -52,7 +57,14 @@ pub fn main() !void {
     const stdout = &stdout_writer.interface;
 
     inline for (implementations) |impl| {
-        if (arguments.pattern == null or std.mem.indexOf(u8, impl[0], arguments.pattern.?) != null) {
+        if (arguments.patterns == null or match: {
+            for (arguments.patterns.?) |pattern| {
+                if (std.mem.indexOf(u8, impl[0], pattern) != null) {
+                    break :match true;
+                }
+            }
+            break :match false;
+        }) {
             try benchmarkImplementation(
                 impl[0],
                 stdout,
@@ -71,24 +83,35 @@ pub fn main() !void {
 const Arguments = struct {
     output_dir: ?[]const u8 = null,
     specific_test: ?[]const u8 = null,
-    pattern: ?[]const u8 = null,
+    patterns: ?[]const []const u8 = null,
 };
 
-fn parseArgs(args: *std.process.ArgIterator) error{ArgumentError}!Arguments {
+fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
     var arguments: Arguments = .{};
     while (args.next()) |arg| {
         const eq_pos = std.mem.indexOfScalar(u8, arg, '=') orelse return error.ArgumentError;
         const arg_name = arg[0..eq_pos];
         const value = arg[eq_pos + 1 ..];
 
-        if (std.mem.eql(u8, arg_name, "-o"))
-            arguments.output_dir = value
-        else if (std.mem.eql(u8, arg_name, "-p"))
-            arguments.pattern = value
-        else if (std.mem.eql(u8, arg_name, "-t"))
-            arguments.specific_test = value
-        else
+        if (std.mem.eql(u8, arg_name, "-o")) {
+            arguments.output_dir = value;
+        } else if (std.mem.eql(u8, arg_name, "-p")) {
+            var patterns: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer patterns.deinit(allocator);
+            const first_sep_pos = std.mem.indexOfScalar(u8, value, ',') orelse value.len;
+            try patterns.append(allocator, value[0..first_sep_pos]);
+            var p = first_sep_pos + 1;
+            while (p < value.len) {
+                const sep_pos = std.mem.indexOfScalar(u8, value[p..], ',') orelse value[p..].len;
+                try patterns.append(allocator, value[p .. p + sep_pos]);
+                p += sep_pos + 1;
+            }
+            arguments.patterns = try patterns.toOwnedSlice(allocator);
+        } else if (std.mem.eql(u8, arg_name, "-t")) {
+            arguments.specific_test = value;
+        } else {
             return error.ArgumentError;
+        }
     }
 
     return arguments;
