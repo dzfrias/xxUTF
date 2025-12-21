@@ -107,57 +107,23 @@ static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
   return x;
 }
 
-static uint32x4x2_t neon_comp_hash(uint32x4_t input) {
-  uint32x4_t h1 = neon_mul_shift_hash(input);
-  uint32x4_t h2 = neon_xorshift_hash(input);
-  uint32x4_t h3 =
-      neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEF)));
-  uint32x4_t h4 = neon_xorshift_mul_hash(input);
-
-  const uint32_t BLOOM_SIZE =
-      sizeof(NORMDATA_NFC_BLOOM_FILTER) / sizeof(uint32_t);
-  // h1 % BLOOM_SIZE
-  uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));
-  // h2 % 32
-  uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));
-  // h3 % 32
-  uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));
-  // h4 % 32
-  uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));
-
-  uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);
-  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));
-  mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));
-
-  uint32x4x2_t vals;
-  vals.val[0] = block_idx;
-  vals.val[1] = mask;
-  return vals;
+static inline uint32x4_t neon_bloom_lookup_non_starters(uint32x4_t block_idx,
+                                                        uint32x4_t mask) {
+  uint32x4_t block = {
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
+      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
+  };
+  uint32x4_t result = vandq_u32(mask, block);
+  uint32x4_t result_eq = vceqq_u32(result, mask);
+  return result_eq;
 }
 
 #define NEON_COMMON_FUNCTIONS(decomp_form, decomp_form_upper, comp_form,       \
                               comp_form_upper)                                 \
-  uint32x4_t neon_evaluate_bloom_##decomp_form(uint32x4_t input) {             \
-    uint32x4_t h1 = neon_mul_shift_hash(input);                                \
-    uint32x4_t h2 = neon_xorshift_hash(input);                                 \
-    uint32x4_t h3 = neon_xorshift_mul_hash(input);                             \
-                                                                               \
-    const uint32_t BLOOM_SIZE =                                                \
-        sizeof(NORMDATA_##decomp_form_upper##_BLOOM_FILTER) /                  \
-        sizeof(uint32_t);                                                      \
-    /* h1 % BLOOM_SIZE */                                                      \
-    uint32x4_t block_idx = vandq_u32(h1, vdupq_n_u32(BLOOM_SIZE - 1));         \
-    /* h2 % 32 */                                                              \
-    uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));                        \
-    /* h3 % 32 */                                                              \
-    uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));                        \
-    /* (h2 + h3) % 32 */                                                       \
-    uint32x4_t shift3 = vandq_u32(vaddq_u32(h2, h3), vdupq_n_u32(31));         \
-                                                                               \
-    uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);                       \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));                 \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));                 \
-                                                                               \
+  static inline uint32x4_t neon_bloom_lookup_##decomp_form##_relevant(         \
+      uint32x4_t block_idx, uint32x4_t mask) {                                 \
     uint32x4_t block = {                                                       \
         NORMDATA_##decomp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,  \
                                                                    0)],        \
@@ -168,15 +134,53 @@ static uint32x4x2_t neon_comp_hash(uint32x4_t input) {
         NORMDATA_##decomp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,  \
                                                                    3)],        \
     };                                                                         \
-                                                                               \
     uint32x4_t result = vandq_u32(mask, block);                                \
     uint32x4_t result_eq = vceqq_u32(result, mask);                            \
-                                                                               \
     return result_eq;                                                          \
   }                                                                            \
                                                                                \
-  static uint32x4_t neon_evaluate_bloom_##comp_form##_qc(uint32x4_t block_idx, \
-                                                         uint32x4_t mask) {    \
+  uint32x4x2_t neon_evaluate_bloom_##decomp_form(uint32x4_t input) {           \
+    uint32x4_t h1 = neon_mul_shift_hash(input);                                \
+    uint32x4_t h2 = neon_xorshift_hash(input);                                 \
+    uint32x4_t h3 =                                                            \
+        neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEFUL)));   \
+    uint32x4_t h4 = neon_xorshift_mul_hash(input);                             \
+                                                                               \
+    const uint32_t DECOMP_BLOOM_SIZE =                                         \
+        sizeof(NORMDATA_##decomp_form_upper##_BLOOM_FILTER) /                  \
+        sizeof(uint32_t);                                                      \
+    const uint32_t NON_STARTERS_BLOOM_SIZE =                                   \
+        sizeof(NORMDATA_NON_STARTERS_BLOOM_FILTER) / sizeof(uint32_t);         \
+    /* h1 % DECOMP_BLOOM_SIZE */                                               \
+    uint32x4_t decomp_block_idx =                                              \
+        vandq_u32(h1, vdupq_n_u32(DECOMP_BLOOM_SIZE - 1));                     \
+    /* h1 % NON_STARTERS_BLOOM_SIZE */                                         \
+    uint32x4_t non_starters_block_idx =                                        \
+        vandq_u32(h1, vdupq_n_u32(NON_STARTERS_BLOOM_SIZE - 1));               \
+    /* h2 % 32 */                                                              \
+    uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));                        \
+    /* h3 % 32 */                                                              \
+    uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));                        \
+    /* h4 % 32 */                                                              \
+    uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));                        \
+                                                                               \
+    uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);                       \
+    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));                 \
+    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));                 \
+                                                                               \
+    uint32x4_t decomp_result =                                                 \
+        neon_bloom_lookup_##decomp_form##_relevant(decomp_block_idx, mask);    \
+    uint32x4_t non_starters_result =                                           \
+        neon_bloom_lookup_non_starters(non_starters_block_idx, mask);          \
+                                                                               \
+    uint32x4x2_t vals;                                                         \
+    vals.val[0] = decomp_result;                                               \
+    vals.val[1] = non_starters_result;                                         \
+    return vals;                                                               \
+  }                                                                            \
+                                                                               \
+  static uint32x4_t neon_bloom_lookup_##comp_form##_qc(uint32x4_t block_idx,   \
+                                                       uint32x4_t mask) {      \
     uint32x4_t block = {                                                       \
         NORMDATA_##comp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,    \
                                                                  0)],          \
@@ -192,27 +196,38 @@ static uint32x4x2_t neon_comp_hash(uint32x4_t input) {
     return result_eq;                                                          \
   }                                                                            \
                                                                                \
-  static uint32x4_t neon_evaluate_bloom_non_starters_##comp_form(              \
-      uint32x4_t block_idx, uint32x4_t mask) {                                 \
-    uint32x4_t block = {                                                       \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],      \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],      \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],      \
-        NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],      \
-    };                                                                         \
-    uint32x4_t result = vandq_u32(mask, block);                                \
-    uint32x4_t result_eq = vceqq_u32(result, mask);                            \
-    return result_eq;                                                          \
-  }                                                                            \
-                                                                               \
   uint32x4_t neon_evaluate_bloom_##comp_form(uint32x4_t input) {               \
-    uint32x4x2_t hash_info = neon_comp_hash(input);                            \
+    uint32x4_t h1 = neon_mul_shift_hash(input);                                \
+    uint32x4_t h2 = neon_xorshift_hash(input);                                 \
+    uint32x4_t h3 =                                                            \
+        neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEFUL)));   \
+    uint32x4_t h4 = neon_xorshift_mul_hash(input);                             \
+                                                                               \
+    const uint32_t COMP_BLOOM_SIZE =                                           \
+        sizeof(NORMDATA_##comp_form_upper##_BLOOM_FILTER) / sizeof(uint32_t);  \
+    const uint32_t NON_STARTERS_BLOOM_SIZE =                                   \
+        sizeof(NORMDATA_NON_STARTERS_BLOOM_FILTER) / sizeof(uint32_t);         \
+    /* h1 % BLOOM_SIZE */                                                      \
+    uint32x4_t comp_block_idx =                                                \
+        vandq_u32(h1, vdupq_n_u32(COMP_BLOOM_SIZE - 1));                       \
+    uint32x4_t non_starters_block_idx =                                        \
+        vandq_u32(h1, vdupq_n_u32(NON_STARTERS_BLOOM_SIZE - 1));               \
+    /* h2 % 32 */                                                              \
+    uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));                        \
+    /* h3 % 32 */                                                              \
+    uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));                        \
+    /* h4 % 32 */                                                              \
+    uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));                        \
+                                                                               \
+    uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);                       \
+    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));                 \
+    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));                 \
+                                                                               \
     /* NF(K)C QC and the non starters bloom filter use the same hashing scheme \
      */                                                                        \
-    uint32x4_t qc = neon_evaluate_bloom_##comp_form##_qc(hash_info.val[0],     \
-                                                         hash_info.val[1]);    \
-    uint32x4_t non_starters = neon_evaluate_bloom_non_starters_##comp_form(    \
-        hash_info.val[0], hash_info.val[1]);                                   \
+    uint32x4_t qc = neon_bloom_lookup_##comp_form##_qc(comp_block_idx, mask);  \
+    uint32x4_t non_starters =                                                  \
+        neon_bloom_lookup_non_starters(non_starters_block_idx, mask);          \
     uint32x4_t combined = vorrq_u32(qc, non_starters);                         \
     return combined;                                                           \
   }

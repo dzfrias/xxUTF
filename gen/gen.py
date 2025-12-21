@@ -707,8 +707,8 @@ def main() -> None:
             multiply_shift_hash,
             [
                 xorshift_hash,
+                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
                 hash_32bit_fast,
-                lambda c: xorshift_hash(c) + hash_32bit_fast(c),
             ],
             list(nfd_map.keys()),
         )
@@ -718,8 +718,8 @@ def main() -> None:
             multiply_shift_hash,
             [
                 xorshift_hash,
+                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
                 hash_32bit_fast,
-                lambda c: xorshift_hash(c) + hash_32bit_fast(c),
             ],
             list(nfkd_map.keys()),
         )
