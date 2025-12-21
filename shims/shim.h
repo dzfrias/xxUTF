@@ -2,6 +2,7 @@
 #define ICU_SHIM_H
 
 #include <stdint.h>
+#include <unicode/ucnv.h>
 #include <unicode/unorm.h>
 #include <unicode/utypes.h>
 
@@ -19,5 +20,14 @@ const UNormalizer2 *shim_unorm2_getNFKCInstance(UErrorCode *pErrorCode);
 int32_t shim_unorm2_normalize(const UNormalizer2 *norm2, const UChar *src,
                               int32_t length, UChar *dest, int32_t capacity,
                               UErrorCode *pErrorCode);
+
+UConverter *shim_ucnv_open(const char *converterName, UErrorCode *err);
+int32_t shim_ucnv_fromUChars(UConverter *cnv, char *dest, int32_t destCapacity,
+                             const UChar *src, int32_t srcLength,
+                             UErrorCode *pErrorCode);
+int32_t shim_ucnv_toUChars(UConverter *cnv, UChar *dest, int32_t destCapacity,
+                           const char *src, int32_t srcLength,
+                           UErrorCode *pErrorCode);
+void shim_ucnv_close(UConverter *cnv);
 
 #endif // ICU_SHIM_H

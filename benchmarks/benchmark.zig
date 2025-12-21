@@ -27,13 +27,53 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
     .{ "utf8proc_utf8_nfkc", utf8procNormalizeNFKC, .utf8 },
     .{ "icu_utf8_nfkc", IcuNormalizerUtf8(c.shim_unorm2_getNFKCInstance).implementation, .utf8 },
     .{ "xxutf_utf16le_nfd", xxutfNormalizeUtf16leNFD, .utf16le },
+    .{
+        "icu_utf16le_nfd",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFDInstance, .utf16le).implementation,
+        .utf16le,
+    },
     .{ "xxutf_utf16be_nfd", xxutfNormalizeUtf16beNFD, .utf16be },
+    .{
+        "icu_utf16be_nfd",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFDInstance, .utf16be).implementation,
+        .utf16be,
+    },
     .{ "xxutf_utf16le_nfkd", xxutfNormalizeUtf16leNFKD, .utf16le },
+    .{
+        "icu_utf16le_nfkd",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFKDInstance, .utf16le).implementation,
+        .utf16le,
+    },
     .{ "xxutf_utf16be_nfkd", xxutfNormalizeUtf16beNFKD, .utf16be },
+    .{
+        "icu_utf16be_nfkd",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFKDInstance, .utf16be).implementation,
+        .utf16be,
+    },
     .{ "xxutf_utf16le_nfc", xxutfNormalizeUtf16leNFC, .utf16le },
+    .{
+        "icu_utf16le_nfc",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFCInstance, .utf16le).implementation,
+        .utf16le,
+    },
     .{ "xxutf_utf16be_nfc", xxutfNormalizeUtf16beNFC, .utf16be },
+    .{
+        "icu_utf16be_nfc",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFCInstance, .utf16be).implementation,
+        .utf16be,
+    },
     .{ "xxutf_utf16le_nfkc", xxutfNormalizeUtf16leNFKC, .utf16le },
+    .{
+        "icu_utf16le_nfkc",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFKCInstance, .utf16le).implementation,
+        .utf16le,
+    },
     .{ "xxutf_utf16be_nfkc", xxutfNormalizeUtf16beNFKC, .utf16be },
+    .{
+        "icu_utf16be_nfkc",
+        IcuNormalizerAnyEncoding(c.shim_unorm2_getNFKCInstance, .utf16be).implementation,
+        .utf16be,
+    },
 };
 
 pub fn main() !void {
@@ -45,6 +85,7 @@ pub fn main() !void {
     _ = args_it.next().?;
     const input_dir_path = args_it.next() orelse return error.ArgumentError;
     const arguments = try parseArgs(allocator, &args_it);
+    defer if (arguments.patterns) |patterns| allocator.free(patterns);
     var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
     defer input_dir.close();
     var out_dir = if (arguments.output_dir) |path|
@@ -274,7 +315,9 @@ fn xxutfNormalizeUtf16beNFKC(src: []const u8) void {
     _ = c.xxutf_normalize_utf16be_nfkc(src.ptr, src.len, &out);
 }
 
-fn IcuNormalizerUtf8(comptime getNormalizerFunc: fn (*c.UErrorCode) callconv(.c) ?*const c.UNormalizer2) type {
+fn IcuNormalizerUtf8(
+    comptime getNormalizerFunc: fn (*c.UErrorCode) callconv(.c) ?*const c.UNormalizer2,
+) type {
     return struct {
         fn implementation(src: []const u8) void {
             var uchar_out: [16384]c.UChar = undefined;
@@ -316,42 +359,56 @@ fn IcuNormalizerUtf8(comptime getNormalizerFunc: fn (*c.UErrorCode) callconv(.c)
     };
 }
 
-fn icuNormalizeUtf8NFD(src: []const u8) void {
-    var uchar_out: [16384]c.UChar = undefined;
-    var uchar_length: i32 = undefined;
-    var status: c.UErrorCode = c.U_ZERO_ERROR;
-    _ = c.shim_u_strFromUTF8(
-        &uchar_out,
-        uchar_out.len,
-        &uchar_length,
-        src.ptr,
-        @intCast(src.len),
-        &status,
-    );
-    assert(status == c.U_ZERO_ERROR);
-    const normalizer = c.shim_unorm2_getNFDInstance(&status);
-    assert(status == c.U_ZERO_ERROR);
-    var normalized_out: [16384]c.UChar = undefined;
-    const normalized_length = c.shim_unorm2_normalize(
-        normalizer,
-        &uchar_out,
-        uchar_length,
-        &normalized_out,
-        normalized_out.len,
-        &status,
-    );
-    assert(status == c.U_ZERO_ERROR);
-    var utf8_out: [16384]u8 = undefined;
-    var utf8_length: i32 = undefined;
-    _ = c.shim_u_strToUTF8(
-        &utf8_out,
-        utf8_out.len,
-        &utf8_length,
-        &normalized_out,
-        normalized_length,
-        &status,
-    );
-    assert(status == c.U_ZERO_ERROR);
+fn IcuNormalizerAnyEncoding(
+    comptime getNormalizerFunc: fn (*c.UErrorCode) callconv(.c) ?*const c.UNormalizer2,
+    comptime encoding: Encoding,
+) type {
+    return struct {
+        fn implementation(src: []const u8) void {
+            var status: c.UErrorCode = c.U_ZERO_ERROR;
+            const conv = c.shim_ucnv_open(switch (encoding) {
+                .utf16le => "UTF-16LE",
+                .utf16be => "UTF-16BE",
+                .utf8 => "UTF-8",
+            }, &status);
+            assert(status == c.U_ZERO_ERROR);
+
+            var uchar_out: [16384]c.UChar = undefined;
+            const uchar_length = c.shim_ucnv_toUChars(
+                conv,
+                &uchar_out,
+                uchar_out.len,
+                src.ptr,
+                @intCast(src.len),
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            const normalizer = getNormalizerFunc(&status);
+            assert(status == c.U_ZERO_ERROR);
+            var normalized_out: [16384]c.UChar = undefined;
+            const normalized_length = c.shim_unorm2_normalize(
+                normalizer,
+                &uchar_out,
+                uchar_length,
+                &normalized_out,
+                normalized_out.len,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+
+            var encoded_out: [16384]u8 = undefined;
+            _ = c.shim_ucnv_fromUChars(
+                conv,
+                &encoded_out,
+                encoded_out.len,
+                &normalized_out,
+                normalized_length,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            c.shim_ucnv_close(conv);
+        }
+    };
 }
 
 const BenchResult = struct {

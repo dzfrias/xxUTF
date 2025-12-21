@@ -1,5 +1,6 @@
 #include "shim.h"
 #include <stdint.h>
+#include <unicode/ucnv.h>
 #include <unicode/unorm.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
@@ -34,3 +35,18 @@ int32_t shim_unorm2_normalize(const UNormalizer2 *norm2, const UChar *src,
                               UErrorCode *pErrorCode) {
   return unorm2_normalize(norm2, src, length, dest, capacity, pErrorCode);
 }
+
+UConverter *shim_ucnv_open(const char *converterName, UErrorCode *err) {
+  return ucnv_open(converterName, err);
+}
+int32_t shim_ucnv_fromUChars(UConverter *cnv, char *dest, int32_t destCapacity,
+                             const UChar *src, int32_t srcLength,
+                             UErrorCode *pErrorCode) {
+  return ucnv_fromUChars(cnv, dest, destCapacity, src, srcLength, pErrorCode);
+}
+int32_t shim_ucnv_toUChars(UConverter *cnv, UChar *dest, int32_t destCapacity,
+                           const char *src, int32_t srcLength,
+                           UErrorCode *pErrorCode) {
+  return ucnv_toUChars(cnv, dest, destCapacity, src, srcLength, pErrorCode);
+}
+void shim_ucnv_close(UConverter *cnv) { ucnv_close(cnv); }
