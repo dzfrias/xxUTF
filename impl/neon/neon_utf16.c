@@ -44,7 +44,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
                                   comp_form)                                   \
   /* Decompose UTF-16 code points that have some number of precomposed Hangul  \
    * syllables in them, but no table-based decompositions. */                  \
-  static inline void neon_decompose_hangul_utf16##endianness##_##decomp_form(  \
+  static inline void neon_write_hangul_utf16##endianness##_##decomp_form(      \
       uint16x4_t in, uint32x4_t relevant, uint8_t **out, size_t out_length,    \
       const uint8_t *input, bool *end_is_cc) {                                 \
     if (*end_is_cc) {                                                          \
@@ -81,10 +81,9 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
                                                                                \
   /* Decompose UTF-16 code points that have some number of precomposed or      \
    * combining characters in them, but no precomposed Hangul syllables. */     \
-  static inline void                                                           \
-      neon_decompose_non_hangul_utf16##endianness##_##decomp_form(             \
-          uint16x4_t in, uint32x4_t relevant, uint8_t **out,                   \
-          size_t out_length, const uint8_t *input, bool *end_is_cc) {          \
+  static inline void neon_write_non_hangul_utf16##endianness##_##decomp_form(  \
+      uint16x4_t in, uint32x4_t relevant, uint8_t **out, size_t out_length,    \
+      const uint8_t *input, bool *end_is_cc) {                                 \
     bool last_is_cc = *end_is_cc;                                              \
     for (size_t i = 0; i < 4; i++) {                                           \
       uint16_t v = in[i];                                                      \
@@ -113,7 +112,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
   }                                                                            \
                                                                                \
   static inline void                                                           \
-      neon_decompose_non_hangul_starters_utf16##endianness##_##decomp_form(    \
+      neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
           uint16x4_t in, uint32x4_t relevant, uint8_t **out,                   \
           size_t out_length, const uint8_t *input, bool *end_is_cc) {          \
     if (*end_is_cc) {                                                          \
@@ -145,6 +144,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint16x4_t in, const uint8_t *input, uint8_t **out, size_t out_length,   \
       bool *end_is_cc) {                                                       \
     uint32x4_t wide = vmovl_u16(in);                                           \
+    /* Get bloom results for both decomp relevant characters and non starter   \
+     * characters. */                                                          \
     uint32x4x2_t bloom_results = neon_evaluate_bloom_##decomp_form(wide);      \
     uint32x4_t decomp_relevant = bloom_results.val[0];                         \
     uint32x4_t non_starter = bloom_results.val[1];                             \
@@ -159,24 +160,23 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       return;                                                                  \
     }                                                                          \
     if (likely(decomp_result && !non_starter_result && !hangul_result)) {      \
-      neon_decompose_non_hangul_starters_utf16##endianness##_##decomp_form(    \
+      neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
           in, decomp_relevant, out, out_length, input, end_is_cc);             \
       return;                                                                  \
     }                                                                          \
     /* At this point we just merge the two */                                  \
     uint32x4_t bloom = vorrq_u32(decomp_relevant, non_starter);                \
     bool bloom_result = vmaxvq_u32(bloom) > 0;                                 \
-    /* There are four cases:                                                   \
-     * 1. No decomposable/combining or precomposed Hangul characters: skip     \
+    /* There are three cases:                                                  \
+     * 1. Decomposable/combining but no precomposed Hangul characters          \
      * 2. Precomposed Hangul but no decomposable/combining characters          \
-     * 3. Decomposable/combining but no precomposed Hangul characters          \
-     * 4. Decomposable/combining AND precomposed Hangul characters: go scalar  \
+     * 3. Decomposable/combining AND precomposed Hangul characters             \
      * */                                                                      \
     if (bloom_result && !hangul_result) {                                      \
-      neon_decompose_non_hangul_utf16##endianness##_##decomp_form(             \
+      neon_write_non_hangul_utf16##endianness##_##decomp_form(                 \
           in, bloom, out, out_length, input, end_is_cc);                       \
     } else if (hangul_result && !bloom_result) {                               \
-      neon_decompose_hangul_utf16##endianness##_##decomp_form(                 \
+      neon_write_hangul_utf16##endianness##_##decomp_form(                     \
           in, hangul, out, out_length, input, end_is_cc);                      \
     } else {                                                                   \
       *out +=                                                                  \
