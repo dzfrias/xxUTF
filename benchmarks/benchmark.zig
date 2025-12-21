@@ -2,7 +2,9 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("xxutf.h");
     @cInclude("utf8proc.h");
+    @cInclude("xxutf_shim.h");
 });
+const assert = std.debug.assert;
 
 const print_alignment = 30;
 const full_line_length = print_alignment + 16;
@@ -13,12 +15,16 @@ const Encoding = enum { utf8, utf16le, utf16be };
 const implementations: []const struct { []const u8, ImplementationFunc, Encoding } = &.{
     .{ "xxutf_utf8_nfd", xxutfNormalizeUtf8NFD, .utf8 },
     .{ "utf8proc_utf8_nfd", utf8procNormalizeNFD, .utf8 },
+    .{ "icu_utf8_nfd", IcuNormalizerUtf8(c.shim_unorm2_getNFDInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfkd", xxutfNormalizeUtf8NFKD, .utf8 },
     .{ "utf8proc_utf8_nfkd", utf8procNormalizeNFKD, .utf8 },
+    .{ "icu_utf8_nfkd", IcuNormalizerUtf8(c.shim_unorm2_getNFKDInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfc", xxutfNormalizeUtf8NFC, .utf8 },
     .{ "utf8proc_utf8_nfc", utf8procNormalizeNFC, .utf8 },
+    .{ "icu_utf8_nfc", IcuNormalizerUtf8(c.shim_unorm2_getNFCInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfkc", xxutfNormalizeUtf8NFKC, .utf8 },
     .{ "utf8proc_utf8_nfkc", utf8procNormalizeNFKC, .utf8 },
+    .{ "icu_utf8_nfkc", IcuNormalizerUtf8(c.shim_unorm2_getNFKCInstance).implementation, .utf8 },
     .{ "xxutf_utf16le_nfd", xxutfNormalizeUtf16leNFD, .utf16le },
     .{ "xxutf_utf16be_nfd", xxutfNormalizeUtf16beNFD, .utf16be },
     .{ "xxutf_utf16le_nfkd", xxutfNormalizeUtf16leNFKD, .utf16le },
@@ -243,6 +249,86 @@ fn xxutfNormalizeUtf16leNFKC(src: []const u8) void {
 fn xxutfNormalizeUtf16beNFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.xxutf_normalize_utf16be_nfkc(src.ptr, src.len, &out);
+}
+
+fn IcuNormalizerUtf8(comptime getNormalizerFunc: fn (*c.UErrorCode) callconv(.c) ?*const c.UNormalizer2) type {
+    return struct {
+        fn implementation(src: []const u8) void {
+            var uchar_out: [16384]c.UChar = undefined;
+            var uchar_length: i32 = undefined;
+            var status: c.UErrorCode = c.U_ZERO_ERROR;
+            _ = c.shim_u_strFromUTF8(
+                &uchar_out,
+                uchar_out.len,
+                &uchar_length,
+                src.ptr,
+                @intCast(src.len),
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            const normalizer = getNormalizerFunc(&status);
+            assert(status == c.U_ZERO_ERROR);
+            var normalized_out: [16384]c.UChar = undefined;
+            const normalized_length = c.shim_unorm2_normalize(
+                normalizer,
+                &uchar_out,
+                uchar_length,
+                &normalized_out,
+                normalized_out.len,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            var utf8_out: [16384]u8 = undefined;
+            var utf8_length: i32 = undefined;
+            _ = c.shim_u_strToUTF8(
+                &utf8_out,
+                utf8_out.len,
+                &utf8_length,
+                &normalized_out,
+                normalized_length,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+        }
+    };
+}
+
+fn icuNormalizeUtf8NFD(src: []const u8) void {
+    var uchar_out: [16384]c.UChar = undefined;
+    var uchar_length: i32 = undefined;
+    var status: c.UErrorCode = c.U_ZERO_ERROR;
+    _ = c.shim_u_strFromUTF8(
+        &uchar_out,
+        uchar_out.len,
+        &uchar_length,
+        src.ptr,
+        @intCast(src.len),
+        &status,
+    );
+    assert(status == c.U_ZERO_ERROR);
+    const normalizer = c.shim_unorm2_getNFDInstance(&status);
+    assert(status == c.U_ZERO_ERROR);
+    var normalized_out: [16384]c.UChar = undefined;
+    const normalized_length = c.shim_unorm2_normalize(
+        normalizer,
+        &uchar_out,
+        uchar_length,
+        &normalized_out,
+        normalized_out.len,
+        &status,
+    );
+    assert(status == c.U_ZERO_ERROR);
+    var utf8_out: [16384]u8 = undefined;
+    var utf8_length: i32 = undefined;
+    _ = c.shim_u_strToUTF8(
+        &utf8_out,
+        utf8_out.len,
+        &utf8_length,
+        &normalized_out,
+        normalized_length,
+        &status,
+    );
+    assert(status == c.U_ZERO_ERROR);
 }
 
 const BenchResult = struct {

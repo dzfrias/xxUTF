@@ -103,8 +103,11 @@ pub fn build(b: *std.Build) !void {
         flags.items,
         amalgamation,
     );
+    const shim_lib = createShimLibrary(b, target, optimize);
     benchmark_exe.linkLibrary(optimized_lib);
+    benchmark_exe.linkLibrary(shim_lib);
     benchmark_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
+    benchmark_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
     run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
     for (b.args orelse &.{}) |arg| {
@@ -148,6 +151,27 @@ fn createLibrary(
     }
     lib.installHeader(b.path("xxutf.h"), "xxutf.h");
 
+    return lib;
+}
+
+fn createShimLibrary(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Step.Compile {
+    const lib = b.addLibrary(.{
+        .name = "xxutf_shim",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+        .linkage = .static,
+    });
+    lib.linkLibC();
+    lib.addIncludePath(b.path("shims"));
+    lib.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
+    lib.addCSourceFile(.{ .file = b.path("shims/icu_shim.c") });
+    lib.installHeader(b.path("shims/shim.h"), "xxutf_shim.h");
     return lib;
 }
 
