@@ -1,10 +1,14 @@
-#ifndef ICU_SHIM_H
-#define ICU_SHIM_H
+#ifndef XXUTF_SHIM_H
+#define XXUTF_SHIM_H
 
 #include <stdint.h>
 #include <unicode/ucnv.h>
 #include <unicode/unorm.h>
 #include <unicode/utypes.h>
+
+// Zig has trouble importing ICU functions due to their macro usage in header
+// files, so this small library defines shims for the necessary functions for
+// `benchmark.zig`.
 
 UChar *shim_u_strFromUTF8(UChar *dest, int32_t destCapacity,
                           int32_t *pDestLength, const char *src,
@@ -30,4 +34,4 @@ int32_t shim_ucnv_toUChars(UConverter *cnv, UChar *dest, int32_t destCapacity,
                            UErrorCode *pErrorCode);
 void shim_ucnv_close(UConverter *cnv);
 
-#endif // ICU_SHIM_H
+#endif // XXUTF_SHIM_H

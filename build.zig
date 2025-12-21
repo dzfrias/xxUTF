@@ -168,10 +168,10 @@ fn createShimLibrary(
         .linkage = .static,
     });
     lib.linkLibC();
-    lib.addIncludePath(b.path("shims"));
     lib.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
-    lib.addCSourceFile(.{ .file = b.path("shims/icu_shim.c") });
-    lib.installHeader(b.path("shims/shim.h"), "xxutf_shim.h");
+    lib.addIncludePath(b.path("benchmarks"));
+    lib.addCSourceFile(.{ .file = b.path("benchmarks/shim.c") });
+    lib.installHeader(b.path("benchmarks/shim.h"), "xxutf_shim.h");
     return lib;
 }
 
