@@ -414,6 +414,16 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
        * decomposition yields no results, we just copy the input */                 \
       if (!r || (nwritten = scalar_decompose_utf8_##decomp_form(                    \
                      v, *out, &is_cc)) == 0) {                                      \
+        /* TODO: we perform significantly faster on odyessy.txt if we include       \
+         * this line, despite this function _never_ being called during             \
+         * `odyessy.txt`'s execution. By browsing the assembly, it looks like       \
+         * this function is inlined in neon_decompose_non_hangul_utf8 in some       \
+         * special way if the following line is included. Putting                   \
+         * `__attribute__((force_inline))` on this function does not recreate       \
+         * this behavior though. I don't want to include this line for a            \
+         * reason I don't understand, though, so I'm leaving it here to             \
+         * revisit. */                                                              \
+        /* vst1q_u8(*out, vld1q_u8(input)); */                                      \
         for (size_t j = 0; j < size; j++) {                                         \
           (*out)[j] = input[j];                                                     \
         }                                                                           \
