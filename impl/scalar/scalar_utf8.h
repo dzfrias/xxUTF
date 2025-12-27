@@ -23,11 +23,16 @@ size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
                                   uint8_t *out);
 
 // Helpers
+size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes);
 void scalar_sort_characters_utf8(uint8_t *out, size_t length);
-size_t scalar_decompose_utf8_nfd(uint32_t code_point, uint8_t *out,
-                                 bool *is_cc);
-size_t scalar_decompose_utf8_nfkd(uint32_t code_point, uint8_t *out,
-                                  bool *is_cc);
+size_t scalar_decompose_utf8_nfd_supplementary(uint32_t code_point,
+                                               uint8_t *out, bool *is_cc);
+size_t scalar_decompose_utf8_nfkd_supplementary(uint32_t code_point,
+                                                uint8_t *out, bool *is_cc);
+size_t scalar_decompose_utf8_nfd_bmp(uint32_t code_point, uint8_t *out,
+                                     bool *is_cc);
+size_t scalar_decompose_utf8_nfkd_bmp(uint32_t code_point, uint8_t *out,
+                                      bool *is_cc);
 size_t scalar_find_nfc_irrelevant_starter_utf8(const uint8_t *input,
                                                size_t length);
 size_t scalar_find_nfkc_irrelevant_starter_utf8(const uint8_t *input,

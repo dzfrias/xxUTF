@@ -235,7 +235,7 @@ static void neon_write_3_byte_code_point_utf8(uint16_t code_point,
 // code points are copied as-is from the input buffer.
 //
 // This function assumes that the input code points are Hangul syllables.
-static void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
+static void neon_decompose_hangul_utf8(uint16x4_t chars, uint16x4_t relevant,
                                        uint8_t **out, size_t out_length,
                                        const uint8_t *input, bool *end_is_cc) {
   if (*end_is_cc) {
@@ -249,7 +249,6 @@ static void neon_decompose_hangul_utf8(uint32x4_t values, uint32x4_t relevant,
   // which causes a branch miss for the pure Hangul code path, and puts is in
   // this path. Therefore, we can still eagerly compute the Hangul jamo values,
   // and then only write the relevant ones.
-  uint16x4_t chars = vmovn_u32(values);
   uint16x4x3_t lvt = neon_compute_hangul_jamo(chars);
 
 #pragma clang loop unroll(enable)
@@ -375,19 +374,17 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   return mask;
 }
 
-#define likely(x) __builtin_expect(!!(x), 1)
-
 #define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_form, decomp_table_name,             \
                                         comp_form, comp_table_name)                 \
-  /* Decompose a 32x4-bit vector of code points into their UTF-8                    \
-   * representations, writing them into the output buffer. The `relevant` mask      \
-   * indicates which code points should be decomposed (0 meaning irrelevant).       \
+  /* Decompose code points into their UTF-8 representations. `values` is a          \
+   * vector corresponding to 4 16-bit code points who have been looked up in        \
+   * the NF(K)D Trie.                                                               \
    *                                                                                \
    * This function assumes that the input code points are not Hangul                \
    * syllables. */                                                                  \
   static void neon_write_non_hangul_utf8_##decomp_form(                             \
-      uint32x4_t values, uint32x4_t relevant, uint8_t **out,                        \
-      size_t out_length, const uint8_t *input, bool *end_is_cc) {                   \
+      uint32x4_t values, uint8_t **out, size_t out_length,                          \
+      const uint8_t *input, bool *end_is_cc) {                                      \
     uint8_t *start = *out;                                                          \
     bool last_is_cc = *end_is_cc;                                                   \
                                                                                     \
@@ -404,52 +401,51 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
         continue;                                                                   \
       }                                                                             \
                                                                                     \
+      uint32_t value = values[i];                                                   \
       uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
-      uint32_t v = values[i];                                                       \
-      bool r = relevant[i] > 0;                                                     \
-      bool is_cc = false;                                                           \
-                                                                                    \
-      size_t nwritten = 0;                                                          \
-      /* If the code point is not relevant or, (if it is relevant) but              \
-       * decomposition yields no results, we just copy the input */                 \
-      if (!r || (nwritten = scalar_decompose_utf8_##decomp_form(                    \
-                     v, *out, &is_cc)) == 0) {                                      \
-        /* TODO: we perform significantly faster on odyessy.txt if we include       \
-         * this line, despite this function _never_ being called during             \
-         * `odyessy.txt`'s execution. By browsing the assembly, it looks like       \
-         * this function is inlined in neon_decompose_non_hangul_utf8 in some       \
-         * special way if the following line is included. Putting                   \
-         * `__attribute__((force_inline))` on this function does not recreate       \
-         * this behavior though. I don't want to include this line for a            \
-         * reason I don't understand, though, so I'm leaving it here to             \
-         * revisit. */                                                              \
-        /* vst1q_u8(*out, vld1q_u8(input)); */                                      \
-        for (size_t j = 0; j < size; j++) {                                         \
-          (*out)[j] = input[j];                                                     \
+      if (value == 0) {                                                             \
+        if (last_is_cc) {                                                           \
+          scalar_sort_characters_utf8(*out, out_length + (*out - start));           \
         }                                                                           \
-        nwritten = size;                                                            \
+        vst1_u8(*out, vld1_u8(input));                                              \
+        *out += size;                                                               \
+        input += size;                                                              \
+        last_is_cc = false;                                                         \
+        continue;                                                                   \
       }                                                                             \
+                                                                                    \
+      uint8_t ccc = (value >> 16) & 0xFF;                                           \
+      bool is_cc = ccc > 0;                                                         \
       if (last_is_cc && !is_cc) {                                                   \
         scalar_sort_characters_utf8(*out, out_length + (*out - start));             \
       }                                                                             \
-      last_is_cc = is_cc;                                                           \
+      const uint32_t *decomp_offset =                                               \
+          NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS +                      \
+          (value & 0xFFFF);                                                         \
+      uint8_t length = value >> 24;                                                 \
+      /* TODO: try SIMD load and store to UTF-8 here? */                            \
+      for (size_t j = 0; j < length; j++) {                                         \
+        uint32_t decomp_char = decomp_offset[j];                                    \
+        *out += scalar_write_code_point_utf8(decomp_char, *out);                    \
+      }                                                                             \
       input += size;                                                                \
-      *out += nwritten;                                                             \
+      last_is_cc = ccc > 0;                                                         \
     }                                                                               \
                                                                                     \
     *end_is_cc = last_is_cc;                                                        \
   }                                                                                 \
                                                                                     \
-  /* Decompose a 32x4-bit vector of code points into their UTF-8                    \
-   * representations, writing them into the output buffer. The `relevant` mask      \
-   * indicates which code points should be decomposed (0 meaning irrelevant).       \
+  /* Decompose code points into their UTF-8 representations. `values` is a          \
+   * vector corresponding to 4 16-bit code points who have been looked up in        \
+   * the NF(K)D Trie.                                                               \
    *                                                                                \
    * This function assumes that the input code points are not Hangul                \
    * syllables AND that they are all starter characters. */                         \
   static inline void neon_write_non_hangul_starters_utf8_##decomp_form(             \
-      uint32x4_t values, uint32x4_t relevant, uint8_t **out,                        \
-      size_t out_length, const uint8_t *input, bool *end_is_cc) {                   \
-    /*  This is the only point in which we will have to check cc stuff. */          \
+      uint32x4_t values, uint8_t **out, size_t out_length,                          \
+      const uint8_t *input, bool *end_is_cc) {                                      \
+    /*  This is the only point in which we will have to check for a cc sort.        \
+     */                                                                             \
     if (*end_is_cc) {                                                               \
       scalar_sort_characters_utf8(*out, out_length);                                \
     }                                                                               \
@@ -463,21 +459,27 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
         continue;                                                                   \
       }                                                                             \
                                                                                     \
+      uint32_t value = values[i];                                                   \
       uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
-      uint32_t v = values[i];                                                       \
-      bool r = relevant[i] > 0;                                                     \
-      bool is_cc = false;                                                           \
-                                                                                    \
-      size_t nwritten = 0;                                                          \
-      if (!r || (nwritten = scalar_decompose_utf8_##decomp_form(                    \
-                     v, *out, &is_cc)) == 0) {                                      \
-        for (size_t j = 0; j < size; j++) {                                         \
-          (*out)[j] = input[j];                                                     \
-        }                                                                           \
-        nwritten = size;                                                            \
+      /* If we have zero, then it is not decomposable */                            \
+      if (value == 0) {                                                             \
+        vst1_u8(*out, vld1_u8(input));                                              \
+        *out += size;                                                               \
+        input += size;                                                              \
+        continue;                                                                   \
+      }                                                                             \
+      const uint32_t *decomp_offset =                                               \
+          NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS +                      \
+          (value & 0xFFFF);                                                         \
+      /* The length value here corresponds to how many code points we should        \
+       * copy from NORMDATA_NF(K)D_TRIE_DECOMPOSITIONS. */                          \
+      uint8_t length = value >> 24;                                                 \
+      /* TODO: try SIMD load and store to UTF-8 here? */                            \
+      for (size_t j = 0; j < length; j++) {                                         \
+        uint32_t decomp_char = decomp_offset[j];                                    \
+        *out += scalar_write_code_point_utf8(decomp_char, *out);                    \
       }                                                                             \
       input += size;                                                                \
-      *out += nwritten;                                                             \
     }                                                                               \
   }                                                                                 \
                                                                                     \
@@ -487,27 +489,45 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
    * byte `in` vector. */                                                           \
   __attribute__((always_inline)) static inline void                                 \
       neon_decompose_non_hangul_utf8_##decomp_form(                                 \
-          uint8x16_t in, uint32x4_t chars, size_t n_bytes,                          \
+          uint8x16_t in, uint16x4_t chars, size_t n_bytes,                          \
           const uint8_t *input, uint8_t **out, size_t out_length,                   \
           bool *end_is_cc) {                                                        \
-    /* Hangul isn't possible here, so we don't need to check for it. */             \
-    uint32x4x2_t bloom_results = neon_evaluate_bloom_##decomp_form(chars);          \
-    uint32x4_t decomp_relevant = bloom_results.val[0];                              \
-    uint32x4_t non_starter = bloom_results.val[1];                                  \
-    bool decomp_result = vmaxvq_u32(decomp_relevant) > 0;                           \
-    bool non_starter_result = vmaxvq_u32(non_starter) > 0;                          \
-    if (!decomp_result && !non_starter_result) {                                    \
-      /* No decomposable characters and no non-starters, so we can skip */          \
+    uint16x4_t index = vshr_n_u16(chars, 6);                                        \
+    uint16x4_t block_index = {                                                      \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 0)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 1)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 2)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 3)],         \
+    };                                                                              \
+    uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
+    uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
+    uint32x4_t values = {                                                           \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               0)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               1)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               2)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               3)],                 \
+    };                                                                              \
+    /* In this case, all of our code points have value 0, which means we can        \
+     * skip. */                                                                     \
+    if (vmaxvq_u32(values) == 0) {                                                  \
       neon_skip_decomp_utf8(in, n_bytes, out, out_length, end_is_cc);               \
-    } else if (decomp_result && !non_starter_result) {                              \
-      /* We have decomposable characters but no non-starters */                     \
+      return;                                                                       \
+    }                                                                               \
+    /* Extract the ccc values from each code point */                               \
+    uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x00FF0000UL));             \
+    /* Check if we have no combining characters, in which case we can do a          \
+     * specialized version of the write function. */                                \
+    if (vmaxvq_u32(ccc_mask) == 0) {                                                \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
-          chars, decomp_relevant, out, out_length, input, end_is_cc);               \
+          values, out, out_length, input, end_is_cc);                               \
     } else {                                                                        \
-      /* We have both decomposable characters and non-starters */                   \
-      uint32x4_t relevant = vorrq_u32(decomp_relevant, non_starter);                \
-      neon_write_non_hangul_utf8_##decomp_form(chars, relevant, out,                \
-                                               out_length, input, end_is_cc);       \
+      /* Slow path */                                                               \
+      neon_write_non_hangul_utf8_##decomp_form(values, out, out_length, input,      \
+                                               end_is_cc);                          \
     }                                                                               \
   }                                                                                 \
                                                                                     \
@@ -517,40 +537,41 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
    * vector are used for the `chars` parameter. The `input` parameter is the        \
    * original pointer to UTF-8 bytes. */                                            \
   static inline void neon_decompose_utf8_##decomp_form(                             \
-      uint8x16_t in, uint32x4_t chars, size_t n_bytes, const uint8_t *input,        \
+      uint8x16_t in, uint16x4_t chars, size_t n_bytes, const uint8_t *input,        \
       uint8_t **out, size_t out_length, bool *end_is_cc) {                          \
-    uint32x4x2_t bloom_results = neon_evaluate_bloom_##decomp_form(chars);          \
-    uint32x4_t decomp_relevant = bloom_results.val[0];                              \
-    uint32x4_t non_starter = bloom_results.val[1];                                  \
-    uint32x4_t hangul_mask = neon_hangul_mask(chars);                               \
-    /* We use these results to split the input into four cases that have            \
-     * specialized handling for each case. */                                       \
-    bool decomp_result = vmaxvq_u32(decomp_relevant) > 0;                           \
-    /* TODO: a more advanced check might be to see if we have any pairwise non      \
-     *       starters or the end_is_cc and the first value of                       \
-     *       `non_starter_result` is non-zero. */                                   \
-    bool non_starter_result = vmaxvq_u32(non_starter) > 0;                          \
-    bool hangul_result = vmaxvq_u32(hangul_mask) > 0;                               \
-    /* First fast path: no relevant characters */                                   \
-    if (likely(!decomp_result && !non_starter_result && !hangul_result)) {          \
+    uint16x4_t hangul_mask = neon_hangul_mask_u16(chars);                           \
+    bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
+    uint16x4_t index = vshr_n_u16(chars, 6);                                        \
+    uint16x4_t block_index = {                                                      \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 0)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 1)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 2)],         \
+        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 3)],         \
+    };                                                                              \
+    uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
+    uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
+    uint32x4_t values = {                                                           \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               0)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               1)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               2)],                 \
+        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
+                                                               3)],                 \
+    };                                                                              \
+    bool decomp_result = vmaxvq_u32(values) > 0;                                    \
+    /* Case where we have no Hangul syllables and no relevant characters */         \
+    if (!hangul_result && !decomp_result) {                                         \
       neon_skip_decomp_utf8(in, n_bytes, out, out_length, end_is_cc);               \
       return;                                                                       \
     }                                                                               \
-    /* Second fast path: precomposed characters but no combining characters */      \
-    if (likely(decomp_result && !non_starter_result && !hangul_result)) {           \
+    uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x00FF0000UL));             \
+    bool non_starter_result = vmaxvq_u32(ccc_mask) > 0;                             \
+    if (!non_starter_result && !hangul_result) {                                    \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
-          chars, decomp_relevant, out, out_length, input, end_is_cc);               \
-      return;                                                                       \
-    }                                                                               \
-    /* At this point we just merge the two */                                       \
-    uint32x4_t bloom = vorrq_u32(decomp_relevant, non_starter);                     \
-    bool bloom_result = vmaxvq_u32(bloom) > 0;                                      \
-    if (bloom_result && !hangul_result) {                                           \
-      /* Case where we have precomposed characters, but no Hangul */                \
-      neon_write_non_hangul_utf8_##decomp_form(chars, decomp_relevant, out,         \
-                                               out_length, input, end_is_cc);       \
-    } else if (hangul_result && !bloom_result) {                                    \
-      /* Case where we have Hangul syllables, but no precomposed characters */      \
+          values, out, out_length, input, end_is_cc);                               \
+    } else if (hangul_result && !decomp_result) {                                   \
       neon_decompose_hangul_utf8(chars, hangul_mask, out, out_length, input,        \
                                  end_is_cc);                                        \
     } else {                                                                        \
@@ -619,8 +640,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
       }                                                                             \
                                                                                     \
       /* Fallback path for 4 3-byte characters */                                   \
-      uint32x4_t wide = vmovl_u16(chars);                                           \
-      neon_decompose_utf8_##decomp_form(in, wide, 12, input, out, out_length,       \
+      neon_decompose_utf8_##decomp_form(in, chars, 12, input, out, out_length,      \
                                         end_is_cc);                                 \
       return 12;                                                                    \
     }                                                                               \
@@ -628,10 +648,9 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     /* Four two-byte code points */                                                 \
     if ((sml_mask & 0xFF) == 0xAA) {                                                \
       uint16x4_t chars = neon_parse_2_byte_utf8(in);                                \
-      uint32x4_t wide = vmovl_u16(chars);                                           \
       /* Precomposed Hangul syllables are not possible in 2 byte code points        \
        */                                                                           \
-      neon_decompose_non_hangul_utf8_##decomp_form(in, wide, 8, input, out,         \
+      neon_decompose_non_hangul_utf8_##decomp_form(in, chars, 8, input, out,        \
                                                    out_length, end_is_cc);          \
       return 8;                                                                     \
     }                                                                               \
@@ -642,17 +661,14 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     if (idx < NORMDATA_SHUFUTF8_INDEX_12) {                                         \
       /* Four one to two byte code points */                                        \
       uint16x4_t chars = neon_parse_4_12_utf8(in, idx);                             \
-      /* Only the first four code points are used */                                \
-      uint32x4_t wide = vmovl_u16(chars);                                           \
       /* Precomposed Hangul syllables are not possible in 1 to 2 byte code          \
        * points */                                                                  \
       neon_decompose_non_hangul_utf8_##decomp_form(                                 \
-          in, wide, n_bytes, input, out, out_length, end_is_cc);                    \
+          in, chars, n_bytes, input, out, out_length, end_is_cc);                   \
     } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {                                 \
       /* Four code points */                                                        \
       uint16x4_t chars = neon_parse_4_123_utf8(in, idx);                            \
-      uint32x4_t wide = vmovl_u16(chars);                                           \
-      neon_decompose_utf8_##decomp_form(in, wide, n_bytes, input, out,              \
+      neon_decompose_utf8_##decomp_form(in, chars, n_bytes, input, out,             \
                                         out_length, end_is_cc);                     \
     } else if (idx < NORMDATA_SHUFUTF8_INDEX_1234) {                                \
       /* TODO: right now, anytime we have 3 1..4-byte code points, we just          \

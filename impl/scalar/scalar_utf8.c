@@ -9,8 +9,7 @@
 
 // Write a code point into the output buffer as UTF-8 bytes. Returns the number
 // of bytes written.
-static size_t scalar_write_code_point_utf8(uint32_t code_point,
-                                           uint8_t *utf8_bytes) {
+size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes) {
   if (code_point <= 0x7F) {
     utf8_bytes[0] = (uint8_t)(code_point & 0xFF);
     return 1;
@@ -226,8 +225,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
    * a decomposition.                                                               \
    *                                                                                \
    * Note that this does not handle Hangul code points. */                          \
-  size_t scalar_decompose_utf8_##decomp_suffix(uint32_t code_point,                 \
-                                               uint8_t *out, bool *is_cc) {         \
+  size_t scalar_decompose_utf8_##decomp_suffix##_supplementary(                     \
+      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
     uint8_t *start = out;                                                           \
     uint32_t salt_hash = scalar_phash(                                              \
         code_point, 0, NORMDATA_##decomp_table_name##_TABLE_SIZE);                  \
@@ -249,6 +248,25 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
+  size_t scalar_decompose_utf8_##decomp_suffix##_bmp(                               \
+      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
+    uint8_t *start = out;                                                           \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index = NORMDATA_##decomp_table_name##_TRIE_INDEX[shift];              \
+    uint32_t value = NORMDATA_##decomp_table_name##_TRIE_DATA[index + masked];      \
+    uint8_t ccc = (value >> 16) & 0xFF;                                             \
+    uint8_t length = (value >> 24) & 0xFF;                                          \
+    uint16_t offset = value & 0xFFFF;                                               \
+    uint32_t const *chars =                                                         \
+        &NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS[offset];                \
+    for (size_t k = 0; k < length; k++) {                                           \
+      out += scalar_write_code_point_utf8(chars[k], out);                           \
+    }                                                                               \
+    *is_cc = ccc > 0;                                                               \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
   size_t scalar_normalize_utf8_##decomp_suffix##_with_context(                      \
       const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
       bool *end_is_cc) {                                                            \
@@ -267,8 +285,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
       } else if ((leading & 0b11100000) == 0b11000000) {                            \
         uint32_t code_point =                                                       \
             (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);              \
-        size_t nwritten =                                                           \
-            scalar_decompose_utf8_##decomp_suffix(code_point, out, &is_cc);         \
+        size_t nwritten = scalar_decompose_utf8_##decomp_suffix##_bmp(              \
+            code_point, out, &is_cc);                                               \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \
@@ -284,8 +302,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
           is_cc = false;                                                            \
           out += scalar_decompose_hangul_utf8(code_point, out);                     \
         } else {                                                                    \
-          size_t nwritten =                                                         \
-              scalar_decompose_utf8_##decomp_suffix(code_point, out, &is_cc);       \
+          size_t nwritten = scalar_decompose_utf8_##decomp_suffix##_bmp(            \
+              code_point, out, &is_cc);                                             \
           if (nwritten == 0) {                                                      \
             *out++ = leading;                                                       \
             *out++ = input[p + 1];                                                  \
@@ -300,7 +318,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
             (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |      \
             (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);         \
         size_t nwritten =                                                           \
-            scalar_decompose_utf8_##decomp_suffix(code_point, out, &is_cc);         \
+            scalar_decompose_utf8_##decomp_suffix##_supplementary(                  \
+                code_point, out, &is_cc);                                           \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \

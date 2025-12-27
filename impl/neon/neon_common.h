@@ -15,7 +15,8 @@ void neon_print_uint32x2_t(const char *name, uint32x2_t vec);
 // Check if a code point vector contains Hangul syllables. The result is a
 // vector of 0s and 0xFFFFFFFFs, where 0 means the code point is not a Hangul
 // syllable and 0xFFFFFFFF means it is a Hangul syllable.
-uint32x4_t neon_hangul_mask(uint32x4_t input);
+uint32x4_t neon_hangul_mask_u32(uint32x4_t input);
+uint16x4_t neon_hangul_mask_u16(uint16x4_t input);
 
 // Compute the L, V, and T indices for Hangul syllable decomposition.
 //

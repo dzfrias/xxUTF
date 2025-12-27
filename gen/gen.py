@@ -2,6 +2,7 @@
 
 from itertools import batched
 from dataclasses import dataclass
+from trie import Trie
 
 
 @dataclass
@@ -92,18 +93,53 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
     return salts, keys
 
 
-@dataclass
-class TableInfo:
-    nfd_chars_len: int
-    nfd_len: int
-    nfkd_chars_len: int
-    nfkd_len: int
-    comp_len: int
+class HeaderDef:
+    def __init__(self, name: str, type_: str):
+        self.name = name
+        self.type_ = type_
+        self.array_sizes: list[int] = []
+
+    @classmethod
+    def array(cls, name: str, type_: str, array_size: int):
+        inst = cls(name, type_)
+        inst.array_sizes.append(array_size)
+        return inst
+
+    @classmethod
+    def multi_array(cls, name: str, type_: str, array_sizes: list[int]):
+        inst = cls(name, type_)
+        inst.array_sizes = array_sizes
+        return inst
+
+    def size(self, element_size: int) -> int:
+        product = element_size
+        for size in self.array_sizes:
+            product *= size
+        return product
+
+
+def generate_array(writer, name: str, data: list[int], data_width: int) -> HeaderDef:
+    writer.write(f"\nconst uint{data_width}_t {name}[{len(data)}] = {{\n")
+    for row in batched(data, 10):
+        writer.write(" ")
+        for x in row:
+            assert x < 2**data_width
+            if data_width == 32:
+                writer.write(f" 0x{x:08X},")
+            elif data_width == 16:
+                writer.write(f" 0x{x:04X},")
+            elif data_width == 8:
+                writer.write(f" 0x{x:02X},")
+            else:
+                raise ValueError(f"Unknown data width: {data_width}")
+        writer.write("\n")
+    writer.write("};\n")
+    return HeaderDef.array(name, f"uint{data_width}_t", len(data))
 
 
 def generate_decomp_hash_table(
     writer, decomp_map: DecompMap, name: str
-) -> tuple[int, int]:
+) -> list[HeaderDef]:
     offsets = {}
     lengths = {}
     offset = 0
@@ -143,14 +179,19 @@ def generate_decomp_hash_table(
         writer.write("\n")
     writer.write("};\n")
 
-    return len(all_decomps), len(decomp_keys)
+    return [
+        HeaderDef.array(f"NORMDATA_{name}_CHARS", "uint32_t", len(all_decomps)),
+        HeaderDef.array(f"NORMDATA_{name}_SALT", "uint16_t", len(decomp_salt)),
+        HeaderDef.array(f"NORMDATA_{name}_KV", "NormdataTableEntry", len(decomp_keys)),
+    ]
 
 
 def generate_hash_tables(
     writer, nfd_map: DecompMap, nfkd_map: DecompMap, comp_map: CompMap
-) -> TableInfo:
-    nfd_bytes_len, nfd_len = generate_decomp_hash_table(writer, nfd_map, "NFD")
-    nfkd_bytes_len, nfkd_len = generate_decomp_hash_table(writer, nfkd_map, "NFKD")
+) -> list[HeaderDef]:
+    headers = []
+    headers.extend(generate_decomp_hash_table(writer, nfd_map, "NFD"))
+    headers.extend(generate_decomp_hash_table(writer, nfkd_map, "NFKD"))
 
     # Write the composition map
     comp_table = {}
@@ -183,13 +224,14 @@ def generate_hash_tables(
         writer.write(f"  if (c1 == 0x{c1:08X} && c2 == 0x{c2:08X}) return 0x{x:08X};\n")
     writer.write("  return 0;\n}\n")
 
-    return TableInfo(
-        nfd_chars_len=nfd_bytes_len,
-        nfd_len=nfd_len,
-        nfkd_chars_len=nfkd_bytes_len,
-        nfkd_len=nfkd_len,
-        comp_len=len(comp_keys),
+    headers.extend(
+        [
+            HeaderDef.array("NORMDATA_NFC_SALT", "uint16_t", len(comp_salt)),
+            HeaderDef.multi_array("NORMDATA_NFC_KV", "uint32_t", [len(comp_keys), 2]),
+        ]
     )
+
+    return headers
 
 
 def is_bit_set(mask: int, i: int) -> bool:
@@ -253,13 +295,7 @@ def build_shuf(sizes: tuple[int, ...]) -> list[int]:
     return answer
 
 
-@dataclass
-class ShuffleInfo:
-    shufutf8_len: int
-    code_point_index_len: int
-
-
-def generate_shuffle_tables(writer) -> ShuffleInfo:
+def generate_shuffle_tables(writer) -> list[HeaderDef]:
     case12_set: set[tuple[int, ...]] = set()
     case123_set: set[tuple[int, ...]] = set()
     case1234_set: set[tuple[int, ...]] = set()
@@ -329,12 +365,14 @@ def generate_shuffle_tables(writer) -> ShuffleInfo:
         writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
     writer.write("};\n")
 
-    return ShuffleInfo(shufutf8_len=len(cases), code_point_index_len=len(arrg))
-
-
-@dataclass
-class BloomFilterInfo:
-    blocks: list[int]
+    return [
+        HeaderDef.multi_array("NORMDATA_SHUFUTF8", "uint8_t", [len(cases), 16]),
+        HeaderDef.multi_array("NORMDATA_CODE_POINT_INDEX", "uint8_t", [len(arrg), 2]),
+        HeaderDef("NORMDATA_SHUFUTF8_INDEX_12", "uint8_t"),
+        HeaderDef("NORMDATA_SHUFUTF8_INDEX_123", "uint8_t"),
+        HeaderDef("NORMDATA_SHUFUTF8_INDEX_1234", "uint8_t"),
+        HeaderDef.array("NORMDATA_HANGUL_SHUF", "NormdataHangulShuf", 16),
+    ]
 
 
 def xorshift_hash(x: int, seed: int = 0) -> int:
@@ -395,67 +433,22 @@ class BloomFilter:
         return self.size // 32
 
 
-def generate_bloom_filter(writer, name: str, bloom: BloomFilter):
-    writer.write(f"\nconst uint32_t {name}[{bloom.n_blocks()}] = {{\n")
-    for row in batched(bloom.blocks, 10):
-        writer.write(" ")
-        for block in row:
-            writer.write(f" 0x{block:08X},")
-        writer.write("\n")
-    writer.write("};\n")
+def generate_bloom_filter(writer, name: str, bloom: BloomFilter) -> list[HeaderDef]:
+    return [generate_array(writer, name, bloom.blocks, 32)]
 
 
-def generate_header(
-    writer,
-    table_info: TableInfo,
-    shuf_info: ShuffleInfo,
-    nfd_bloom: BloomFilter,
-    nfkd_bloom: BloomFilter,
-    nfc_bloom: BloomFilter,
-    nfkc_bloom: BloomFilter,
-    non_starters_bloom: BloomFilter,
-):
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFD_CHARS[{table_info.nfd_chars_len}];\n"
-    )
-    writer.write(f"extern const uint16_t NORMDATA_NFD_SALT[{table_info.nfd_len}];\n")
-    writer.write(
-        f"extern const NormdataTableEntry NORMDATA_NFD_KV[{table_info.nfd_len}];\n"
-    )
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFKD_CHARS[{table_info.nfkd_chars_len}];\n"
-    )
-    writer.write(f"extern const uint16_t NORMDATA_NFKD_SALT[{table_info.nfkd_len}];\n")
-    writer.write(
-        f"extern const NormdataTableEntry NORMDATA_NFKD_KV[{table_info.nfkd_len}];\n"
-    )
-    writer.write(f"extern const uint16_t NORMDATA_NFC_SALT[{table_info.comp_len}];\n")
-    writer.write(f"extern const uint32_t NORMDATA_NFC_KV[{table_info.comp_len}][2];\n")
-    writer.write(
-        f"extern const uint8_t NORMDATA_SHUFUTF8[{shuf_info.shufutf8_len}][16];\n"
-    )
-    writer.write(
-        f"extern const uint8_t NORMDATA_CODE_POINT_INDEX[{shuf_info.code_point_index_len}][2];\n"
-    )
-    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;\n")
-    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_123;\n")
-    writer.write(f"extern const uint8_t NORMDATA_SHUFUTF8_INDEX_1234;\n")
-    writer.write(f"extern const NormdataHangulShuf NORMDATA_HANGUL_SHUF[16];\n")
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[{nfd_bloom.n_blocks()}];\n"
-    )
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFKD_BLOOM_FILTER[{nfkd_bloom.n_blocks()}];\n"
-    )
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[{nfc_bloom.n_blocks()}];\n"
-    )
-    writer.write(
-        f"extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[{nfkc_bloom.n_blocks()}];\n"
-    )
-    writer.write(
-        f"extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[{non_starters_bloom.n_blocks()}];\n"
-    )
+def generate_trie(
+    writer, name: str, trie: Trie, index_width: int, data_width: int
+) -> list[HeaderDef]:
+    return [
+        generate_array(writer, name + "_INDEX", trie.index, index_width),
+        generate_array(writer, name + "_DATA", trie.data, data_width),
+    ]
+
+
+def generate_header_def(writer, header_def: HeaderDef) -> None:
+    array_info = "".join([f"[{x}]" for x in header_def.array_sizes])
+    writer.write(f"extern const {header_def.type_} {header_def.name}{array_info};\n")
 
 
 PREAMBLE_H = """// This file was generated by gen/gen.py
@@ -539,20 +532,6 @@ def code_points():
             yield value
 
 
-def bloom_filter_fps(
-    code_points, info: BloomFilterInfo, mask_fn, negative_fn
-) -> tuple[list[int], float]:
-    fps = []
-    n = 0
-    for c in code_points:
-        n += 1
-        block_idx, mask = mask_fn(c)
-        block = info.blocks[block_idx]
-        if (block & mask) == mask and negative_fn(c):
-            fps.append(c)
-    return fps, len(fps) / n
-
-
 def align_key_value_lines(lines: list[str]) -> list[str]:
     """
     Aligns a list of strings of the form 'key: value' so that the colons line up.
@@ -601,6 +580,26 @@ def load_decomp_maps() -> tuple[DecompMap, DecompMap]:
             nfkd_map[value] = DecompValue([int(x, 16) for x in mappings], ccc)
 
     return nfd_map, nfkd_map
+
+
+def create_decomp_trie(decomp_map: DecompMap) -> tuple[Trie, list[int]]:
+    trie = Trie()
+    data = []
+    for x in range(0x10000):
+        if x not in decomp_map:
+            trie.set(x, 0)
+            continue
+        decomp = decomp_map[x]
+        offset = len(data)
+        # We use the lower 16 bits for the offset into the data table
+        assert offset <= 0xFFFF
+        data.extend(decomp.decomps)
+        # Upper 8 bits for the length of the decomposition, middle 8 bits for
+        # the combining class, and lower 16 bits for the offset
+        value = (len(decomp.decomps) << 24) | (decomp.ccc << 16) | offset
+        trie.set(x, value)
+    trie.compact()
+    return trie, data
 
 
 @dataclass
@@ -698,129 +697,94 @@ def main() -> None:
             if x in nfd_map:
                 nfd_map[x].ccc = 1
 
+    default_hash_scheme = [
+        xorshift_hash,
+        lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
+        hash_32bit_fast,
+    ]
+    nfd_bloom = BloomFilter(
+        131072,
+        multiply_shift_hash,
+        default_hash_scheme,
+        list(nfd_map.keys()),
+    )
+    nfkd_bloom = BloomFilter(
+        262144,
+        multiply_shift_hash,
+        default_hash_scheme,
+        list(nfkd_map.keys()),
+    )
+    nfc_bloom = BloomFilter(
+        131072,
+        multiply_shift_hash,
+        default_hash_scheme,
+        derived.nfc_qc,
+    )
+    nfkc_bloom = BloomFilter(
+        131072,
+        multiply_shift_hash,
+        default_hash_scheme,
+        derived.nfkc_qc,
+    )
+    non_starters_bloom = BloomFilter(
+        131072,
+        multiply_shift_hash,
+        default_hash_scheme,
+        non_starters,
+    )
+    nfd_trie, nfd_data = create_decomp_trie(nfd_map)
+    nfkd_trie, nfkd_data = create_decomp_trie(nfkd_map)
+
+    headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
-        hash_info = generate_hash_tables(f, nfd_map, nfkd_map, comp_map)
-        shuf_info = generate_shuffle_tables(f)
-        nfd_bloom = BloomFilter(
-            131072,
-            multiply_shift_hash,
-            [
-                xorshift_hash,
-                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
-                hash_32bit_fast,
-            ],
-            list(nfd_map.keys()),
+        headers.extend(generate_hash_tables(f, nfd_map, nfkd_map, comp_map))
+        headers.extend(generate_shuffle_tables(f))
+        headers.append(
+            generate_array(f, "NORMDATA_NFD_TRIE_DECOMPOSITIONS", nfd_data, 32)
         )
-        generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom)
-        nfkd_bloom = BloomFilter(
-            262144,
-            multiply_shift_hash,
-            [
-                xorshift_hash,
-                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
-                hash_32bit_fast,
-            ],
-            list(nfkd_map.keys()),
+        headers.append(
+            generate_array(f, "NORMDATA_NFKD_TRIE_DECOMPOSITIONS", nfkd_data, 32)
         )
-        generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)
-        nfc_bloom = BloomFilter(
-            131072,
-            multiply_shift_hash,
-            [
-                xorshift_hash,
-                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
-                hash_32bit_fast,
-            ],
-            derived.nfc_qc,
+        headers.extend(generate_trie(f, "NORMDATA_NFD_TRIE", nfd_trie, 16, 32))
+        headers.extend(generate_trie(f, "NORMDATA_NFKD_TRIE", nfkd_trie, 16, 32))
+        headers.extend(generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom))
+        headers.extend(
+            generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)
         )
-        generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom)
-        nfkc_bloom = BloomFilter(
-            131072,
-            multiply_shift_hash,
-            [
-                xorshift_hash,
-                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
-                hash_32bit_fast,
-            ],
-            derived.nfkc_qc,
+        headers.extend(generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom))
+        headers.extend(
+            generate_bloom_filter(f, "NORMDATA_NFKC_BLOOM_FILTER", nfkc_bloom)
         )
-        generate_bloom_filter(f, "NORMDATA_NFKC_BLOOM_FILTER", nfkc_bloom)
-        non_starters_bloom = BloomFilter(
-            131072,
-            multiply_shift_hash,
-            [
-                xorshift_hash,
-                lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
-                hash_32bit_fast,
-            ],
-            non_starters,
-        )
-        generate_bloom_filter(
-            f, "NORMDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
+        headers.extend(
+            generate_bloom_filter(
+                f, "NORMDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
+            )
         )
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
-        generate_header(
-            f,
-            hash_info,
-            shuf_info,
-            nfd_bloom,
-            nfkd_bloom,
-            nfc_bloom,
-            nfkc_bloom,
-            non_starters_bloom,
-        )
+        for header in headers:
+            generate_header_def(f, header)
         f.write(POSTAMBLE_H)
 
+    lines: list[str] = []
+    ELEMENT_SIZES = {
+        "uint8_t": 1,
+        "uint16_t": 2,
+        "uint32_t": 4,
+        "uint64_t": 8,
+        "NormdataTableEntry": 8,
+        "NormdataHangulShuf": 25,
+    }
     KILOBYTE = 1024
-    lines = []
-    lines.append(f"Decomposed chars: {hash_info.nfd_chars_len / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed salt: {(hash_info.nfd_len * 2) / KILOBYTE:.1f}KiB")
-    lines.append(f"Decomposed KV: {(hash_info.nfd_len * 8) / KILOBYTE:.1f}KiB")
-    lines.append(f"Composition salt: {(hash_info.comp_len * 2) / KILOBYTE:.1f}KiB")
-    lines.append(f"Composition KV: {(hash_info.comp_len * 8) / KILOBYTE:.1f}KiB")
-    lines.append(f"UTF-8 shuffle: {(shuf_info.shufutf8_len * 16) / KILOBYTE:.1f}KiB")
-    lines.append(
-        f"Code point index: {(shuf_info.code_point_index_len * 2) / KILOBYTE:.1f}KiB"
-    )
-
-    lines.append(f"NFD bloom filter: {(nfd_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
-    fp_list, fpr = nfd_bloom.false_positives(code_points())
-    lines.append(f"NFD bloom filter FPR: {fpr:.5f}")
-    lines.append(f"NFD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
-    lines.append(f"NFD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-
-    lines.append(f"NFKD bloom filter: {(nfkd_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
-    fp_list, fpr = nfkd_bloom.false_positives(code_points())
-    lines.append(f"NFKD bloom filter FPR: {fpr:.5f}")
-    lines.append(f"NFKD bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
-    lines.append(f"NFKD bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-
-    lines.append(f"NFC QC bloom filter: {(nfc_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB")
-    fp_list, fpr = nfc_bloom.false_positives(code_points())
-    # TODO: might be worth it to make a BMP-specific bloom filter
-    lines.append(f"NFC QC bloom filter FPR: {fpr:.5f}")
-    lines.append(f"NFC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}")
-    lines.append(f"NFC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-
-    lines.append(
-        f"NFKC QC bloom filter: {(nfkc_bloom.n_blocks() * 4) / KILOBYTE:.1f}KiB"
-    )
-    fp_list, fpr = nfkc_bloom.false_positives(code_points())
-    lines.append(f"NFKC QC bloom filter FPR: {fpr:.5f}")
-    lines.append(
-        f"NFKC QC bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}"
-    )
-    lines.append(f"NFKC QC bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-
-    fp_list, fpr = non_starters_bloom.false_positives(code_points())
-    lines.append(f"ccc > 0 bloom filter FPR: {fpr:.5f}")
-    lines.append(
-        f"ccc > 0 bloom filter BMP: {len([c for c in fp_list if c <= 0xFFFF])}"
-    )
-    lines.append(f"ccc > 0 bloom filter ASCII: {len([c for c in fp_list if c < 128])}")
-
+    total = 0
+    for header in headers:
+        if not header.array_sizes:
+            continue
+        size = header.size(ELEMENT_SIZES[header.type_])
+        lines.append(f"{header.name}: {size / KILOBYTE:.1f}KiB")
+        total += size
+    lines.append(f"TOTAL: {total / KILOBYTE:.1f}KiB")
     aligned = align_key_value_lines(lines)
     for line in aligned:
         print(line)

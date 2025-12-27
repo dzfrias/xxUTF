@@ -28,11 +28,19 @@ NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
 
 #undef NEON_PRINT_FUNC
 
-uint32x4_t neon_hangul_mask(uint32x4_t input) {
+uint32x4_t neon_hangul_mask_u32(uint32x4_t input) {
   uint32x4_t ge = vcgeq_u32(input, vdupq_n_u32(NORMDATA_S_BASE));
   uint32x4_t lt =
       vcltq_u32(input, vdupq_n_u32(NORMDATA_S_BASE + NORMDATA_S_COUNT));
   uint32x4_t cmp = vandq_u32(lt, ge);
+  return cmp;
+}
+
+uint16x4_t neon_hangul_mask_u16(uint16x4_t input) {
+  uint16x4_t ge = vcge_u16(input, vdup_n_u16(NORMDATA_S_BASE));
+  uint16x4_t lt =
+      vclt_u16(input, vdup_n_u16(NORMDATA_S_BASE + NORMDATA_S_COUNT));
+  uint16x4_t cmp = vand_u16(lt, ge);
   return cmp;
 }
 

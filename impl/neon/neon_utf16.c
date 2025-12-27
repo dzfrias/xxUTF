@@ -149,7 +149,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     uint32x4x2_t bloom_results = neon_evaluate_bloom_##decomp_form(wide);      \
     uint32x4_t decomp_relevant = bloom_results.val[0];                         \
     uint32x4_t non_starter = bloom_results.val[1];                             \
-    uint32x4_t hangul = neon_hangul_mask(wide);                                \
+    uint32x4_t hangul = neon_hangul_mask_u32(wide);                            \
     bool decomp_result = vmaxvq_u32(decomp_relevant) > 0;                      \
     bool non_starter_result = vmaxvq_u32(non_starter) > 0;                     \
     bool hangul_result = vmaxvq_u32(hangul) > 0;                               \
