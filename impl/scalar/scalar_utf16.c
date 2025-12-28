@@ -7,13 +7,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
-/* TODO: this needs to be renamed */
-void scalar_write_uint16_le(uint16_t x, uint8_t *out) {
+void scalar_write_uint16le(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x & 0xFF);
   out[1] = (uint8_t)(x >> 8);
 }
 
-void scalar_write_uint16_be(uint16_t x, uint8_t *out) {
+void scalar_write_uint16be(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x >> 8);
   out[1] = (uint8_t)(x & 0xFF);
 }
@@ -46,14 +45,14 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
     /* Check if in BMP */                                                      \
     if (code_point <= 0xFFFF) {                                                \
       uint16_t u = (uint16_t)code_point;                                       \
-      scalar_write_uint16_##endianness(u, utf16_bytes);                        \
+      scalar_write_uint16##endianness(u, utf16_bytes);                         \
       return 2;                                                                \
     }                                                                          \
     code_point -= 0x10000;                                                     \
     uint16_t high = 0xD800 | (code_point >> 10);                               \
     uint16_t low = 0xDC00 | (code_point & 0x3FF);                              \
-    scalar_write_uint16_##endianness(high, utf16_bytes);                       \
-    scalar_write_uint16_##endianness(low, utf16_bytes + 2);                    \
+    scalar_write_uint16##endianness(high, utf16_bytes);                        \
+    scalar_write_uint16##endianness(low, utf16_bytes + 2);                     \
     return 4;                                                                  \
   }                                                                            \
                                                                                \

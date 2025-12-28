@@ -46,8 +46,8 @@ size_t scalar_normalize_utf16be_nfkc(const uint8_t *input, size_t length,
                                      uint8_t *out);
 
 // Helpers
-void scalar_write_uint16_le(uint16_t x, uint8_t *out);
-void scalar_write_uint16_be(uint16_t x, uint8_t *out);
+void scalar_write_uint16le(uint16_t x, uint8_t *out);
+void scalar_write_uint16be(uint16_t x, uint8_t *out);
 uint16_t scalar_read_uint16le(const uint8_t *input);
 uint16_t scalar_read_uint16be(const uint8_t *input);
 void scalar_sort_characters_utf16le(uint8_t *out, size_t length);

@@ -72,11 +72,11 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint16_t v = lvt.val[1][i];                                              \
       uint16_t t = lvt.val[2][i];                                              \
                                                                                \
-      scalar_write_uint16_le(l, *out);                                         \
+      scalar_write_uint16##endianness(l, *out);                                \
       *out += 2;                                                               \
-      scalar_write_uint16_le(v, *out);                                         \
+      scalar_write_uint16##endianness(v, *out);                                \
       *out += 2;                                                               \
-      scalar_write_uint16_le(t, *out);                                         \
+      scalar_write_uint16##endianness(t, *out);                                \
       *out += 2 * (t - NORMDATA_T_BASE > 0);                                   \
       input += 2;                                                              \
     }                                                                          \
