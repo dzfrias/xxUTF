@@ -583,10 +583,10 @@ def load_decomp_maps() -> tuple[DecompMap, DecompMap]:
 
 
 def create_decomp_trie(
-    decomp_map: DecompMap, large_decompositions: bool
+    decomp_map: DecompMap, encoding: str, decomp_bound: int
 ) -> tuple[Trie, list[int]]:
     trie = Trie()
-    data = []
+    data: list[int] = []
     for x in range(0x10000):
         if x not in decomp_map:
             trie.set(x, 0)
@@ -596,12 +596,9 @@ def create_decomp_trie(
         # We use the lower 16 bits for the offset into the data table
         assert offset <= 0xFFFF
         for c in decomp.decomps:
-            data.extend(chr(c).encode("UTF-8"))
+            data.extend(chr(c).encode(encoding))
         length = len(data) - offset
-        if not large_decompositions:
-            assert length <= 16
-        else:
-            assert length <= 48
+        assert length <= decomp_bound
         # Upper 8 bits for the length of the decomposition, middle 8 bits for
         # the combining class, and lower 16 bits for the offset
         value = (length << 24) | (decomp.ccc << 16) | offset
@@ -740,8 +737,18 @@ def main() -> None:
         default_hash_scheme,
         non_starters,
     )
-    nfd_trie, nfd_data = create_decomp_trie(nfd_map, False)
-    nfkd_trie, nfkd_data = create_decomp_trie(nfkd_map, True)
+    utf8_nfd_trie, utf8_nfd_data = create_decomp_trie(nfd_map, "UTF-8", decomp_bound=16)
+    utf8_nfkd_trie, utf8_nfkd_data = create_decomp_trie(
+        nfkd_map, "UTF-8", decomp_bound=48
+    )
+    utf16_nfd_trie, utf16_nfd_data = create_decomp_trie(
+        nfd_map, "UTF-16LE", decomp_bound=16
+    )
+    utf16_nfkd_trie, utf16_nfkd_data = create_decomp_trie(
+        nfkd_map,
+        "UTF-16LE",
+        decomp_bound=48,
+    )
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
@@ -749,13 +756,35 @@ def main() -> None:
         headers.extend(generate_hash_tables(f, nfd_map, nfkd_map, comp_map))
         headers.extend(generate_shuffle_tables(f))
         headers.append(
-            generate_array(f, "NORMDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", nfd_data, 8)
+            generate_array(f, "NORMDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", utf8_nfd_data, 8)
         )
         headers.append(
-            generate_array(f, "NORMDATA_UTF8_NFKD_TRIE_DECOMPOSITIONS", nfkd_data, 8)
+            generate_array(
+                f, "NORMDATA_UTF8_NFKD_TRIE_DECOMPOSITIONS", utf8_nfkd_data, 8
+            )
         )
-        headers.extend(generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", nfd_trie, 16, 32))
-        headers.extend(generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", nfkd_trie, 16, 32))
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 32)
+        )
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 32)
+        )
+        headers.append(
+            generate_array(
+                f, "NORMDATA_UTF16_NFD_TRIE_DECOMPOSITIONS", utf16_nfd_data, 8
+            )
+        )
+        headers.append(
+            generate_array(
+                f, "NORMDATA_UTF16_NFKD_TRIE_DECOMPOSITIONS", utf16_nfkd_data, 8
+            )
+        )
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF16_NFD_TRIE", utf16_nfd_trie, 16, 32)
+        )
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF16_NFKD_TRIE", utf16_nfkd_trie, 16, 32)
+        )
         headers.extend(generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom))
         headers.extend(
             generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)

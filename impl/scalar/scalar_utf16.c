@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
+/* TODO: this needs to be renamed */
 void scalar_write_uint16_le(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x & 0xFF);
   out[1] = (uint8_t)(x >> 8);
@@ -18,11 +18,11 @@ void scalar_write_uint16_be(uint16_t x, uint8_t *out) {
   out[1] = (uint8_t)(x & 0xFF);
 }
 
-static inline uint16_t scalar_read_uint16le(const uint8_t *input) {
+uint16_t scalar_read_uint16le(const uint8_t *input) {
   return (uint16_t)input[0] | (uint16_t)input[1] << 8;
 }
 
-static inline uint16_t scalar_read_uint16be(const uint8_t *input) {
+uint16_t scalar_read_uint16be(const uint8_t *input) {
   return ((uint16_t)input[0] << 8) | (uint16_t)input[1];
 }
 
@@ -217,10 +217,12 @@ SCALAR_UTF16_HELPERS(be);
 
 #undef SCALAR_UTF16_HELPERS
 
-#define SCALAR_UTF16_IMPLEMENTATION(                                                \
-    endianness, decomp_form, decomp_form_upper, comp_form, comp_form_upper)         \
-  size_t scalar_decompose_utf16##endianness##_##decomp_form(                        \
-      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
+#define SCALAR_UTF16_IMPLEMENTATION(endianness, swap_endianness, decomp_form,       \
+                                    decomp_form_upper, comp_form,                   \
+                                    comp_form_upper)                                \
+  static size_t                                                                     \
+      scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(           \
+          uint32_t code_point, uint8_t *out, bool *is_cc) {                         \
     uint8_t *start = out;                                                           \
     uint32_t salt_hash = scalar_phash(                                              \
         code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                  \
@@ -242,6 +244,38 @@ SCALAR_UTF16_HELPERS(be);
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
+  static size_t scalar_decompose_utf16##endianness##_##decomp_form##_bmp(           \
+      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
+    uint8_t *start = out;                                                           \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index = NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shift];        \
+    uint32_t value =                                                                \
+        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];             \
+    if (value == 0) {                                                               \
+      *is_cc = false;                                                               \
+      return 0;                                                                     \
+    }                                                                               \
+    uint8_t ccc = (value >> 16) & 0xFF;                                             \
+    uint8_t length = (value >> 24) & 0xFF;                                          \
+    assert(length % 2 == 0);                                                        \
+    uint16_t offset = value & 0xFFFF;                                               \
+    const uint8_t *bytes =                                                          \
+        &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];          \
+    for (size_t k = 0; k < length; k += 2) {                                        \
+      if (swap_endianness) {                                                        \
+        out[0] = bytes[k + 1];                                                      \
+        out[1] = bytes[k];                                                          \
+      } else {                                                                      \
+        out[0] = bytes[k];                                                          \
+        out[1] = bytes[k + 1];                                                      \
+      }                                                                             \
+      out += 2;                                                                     \
+    }                                                                               \
+    *is_cc = ccc > 0;                                                               \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
   size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(         \
       const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
       bool *end_is_cc) {                                                            \
@@ -260,8 +294,16 @@ SCALAR_UTF16_HELPERS(be);
         is_cc = false;                                                              \
         out += scalar_decompose_hangul_utf16##endianness(code_point, out);          \
       } else {                                                                      \
-        size_t nwritten = scalar_decompose_utf16##endianness##_##decomp_form(       \
-            code_point, out, &is_cc);                                               \
+        size_t nwritten;                                                            \
+        if (size == 2) {                                                            \
+          nwritten = scalar_decompose_utf16##endianness##_##decomp_form##_bmp(      \
+              code_point, out, &is_cc);                                             \
+        } else {                                                                    \
+          assert(size == 4);                                                        \
+          nwritten =                                                                \
+              scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(   \
+                  code_point, out, &is_cc);                                         \
+        }                                                                           \
         if (nwritten == 0) {                                                        \
           /* Copy if no decomposition is found */                                   \
           for (uint8_t i = 0; i < size; i++) {                                      \
@@ -462,9 +504,9 @@ SCALAR_UTF16_HELPERS(be);
     return out - start;                                                             \
   }
 
-SCALAR_UTF16_IMPLEMENTATION(le, nfd, NFD, nfc, NFC);
-SCALAR_UTF16_IMPLEMENTATION(be, nfd, NFD, nfc, NFC);
-SCALAR_UTF16_IMPLEMENTATION(le, nfkd, NFKD, nfkc, NFKC);
-SCALAR_UTF16_IMPLEMENTATION(be, nfkd, NFKD, nfkc, NFKC);
+SCALAR_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC);
+SCALAR_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC);
+SCALAR_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC);
+SCALAR_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC);
 
 #undef SCALAR_UTF16_IMPLEMENTATION

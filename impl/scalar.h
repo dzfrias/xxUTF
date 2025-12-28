@@ -79,16 +79,10 @@ size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
 
 void scalar_write_uint16_le(uint16_t x, uint8_t *out);
 void scalar_write_uint16_be(uint16_t x, uint8_t *out);
+uint16_t scalar_read_uint16le(const uint8_t *input);
+uint16_t scalar_read_uint16be(const uint8_t *input);
 void scalar_sort_characters_utf16le(uint8_t *out, size_t length);
 void scalar_sort_characters_utf16be(uint8_t *out, size_t length);
-size_t scalar_decompose_utf16le_nfd(uint32_t code_point, uint8_t *out,
-                                    bool *is_cc);
-size_t scalar_decompose_utf16le_nfkd(uint32_t code_point, uint8_t *out,
-                                     bool *is_cc);
-size_t scalar_decompose_utf16be_nfd(uint32_t code_point, uint8_t *out,
-                                    bool *is_cc);
-size_t scalar_decompose_utf16be_nfkd(uint32_t code_point, uint8_t *out,
-                                     bool *is_cc);
 size_t scalar_find_nfc_irrelevant_starter_utf16le(const uint8_t *input,
                                                   size_t length);
 size_t scalar_find_nfc_irrelevant_starter_utf16be(const uint8_t *input,
