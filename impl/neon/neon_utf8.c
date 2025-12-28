@@ -588,6 +588,9 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     if (!non_starter_result && !hangul_result) {                                    \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
           values, out, out_length, input, end_is_cc);                               \
+    } else if (non_starter_result && !hangul_result) {                              \
+      neon_write_non_hangul_utf8_##decomp_form(values, out, out_length, input,      \
+                                               end_is_cc);                          \
     } else if (hangul_result && !decomp_result) {                                   \
       neon_decompose_hangul_utf8(chars, hangul_mask, out, out_length, input,        \
                                  end_is_cc);                                        \
