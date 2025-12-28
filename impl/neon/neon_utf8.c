@@ -374,8 +374,11 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   return mask;
 }
 
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 #define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_form, decomp_table_name,             \
-                                        comp_form, comp_table_name)                 \
+                                        comp_form, comp_table_name,                 \
+                                        large_decompositions)                       \
   /* Decompose code points into their UTF-8 representations. `values` is a          \
    * vector corresponding to 4 16-bit code points who have been looked up in        \
    * the NF(K)D Trie.                                                               \
@@ -419,15 +422,18 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
       if (last_is_cc && !is_cc) {                                                   \
         scalar_sort_characters_utf8(*out, out_length + (*out - start));             \
       }                                                                             \
-      const uint32_t *decomp_offset =                                               \
-          NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS +                      \
-          (value & 0xFFFF);                                                         \
+      const uint8_t *decomp_offset =                                                \
+          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS[value &          \
+                                                                   0xFFFF];         \
       uint8_t length = value >> 24;                                                 \
-      /* TODO: try SIMD load and store to UTF-8 here? */                            \
-      for (size_t j = 0; j < length; j++) {                                         \
-        uint32_t decomp_char = decomp_offset[j];                                    \
-        *out += scalar_write_code_point_utf8(decomp_char, *out);                    \
+      vst1q_u8(*out, vld1q_u8(decomp_offset));                                      \
+      if (large_decompositions && unlikely(length > 16)) {                          \
+        vst1q_u8(*out + 16, vld1q_u8(decomp_offset + 16));                          \
+        for (size_t j = 32; j < length; j++) {                                      \
+          (*out)[j] = decomp_offset[j];                                             \
+        }                                                                           \
       }                                                                             \
+      *out += length;                                                               \
       input += size;                                                                \
       last_is_cc = ccc > 0;                                                         \
     }                                                                               \
@@ -468,17 +474,20 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
         input += size;                                                              \
         continue;                                                                   \
       }                                                                             \
-      const uint32_t *decomp_offset =                                               \
-          NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS +                      \
-          (value & 0xFFFF);                                                         \
+      const uint8_t *decomp_offset =                                                \
+          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS[value &          \
+                                                                   0xFFFF];         \
       /* The length value here corresponds to how many code points we should        \
-       * copy from NORMDATA_NF(K)D_TRIE_DECOMPOSITIONS. */                          \
+       * copy from NORMDATA_UTF8_NF(K)D_TRIE_DECOMPOSITIONS. */                     \
       uint8_t length = value >> 24;                                                 \
-      /* TODO: try SIMD load and store to UTF-8 here? */                            \
-      for (size_t j = 0; j < length; j++) {                                         \
-        uint32_t decomp_char = decomp_offset[j];                                    \
-        *out += scalar_write_code_point_utf8(decomp_char, *out);                    \
+      vst1q_u8(*out, vld1q_u8(decomp_offset));                                      \
+      if (large_decompositions && unlikely(length > 16)) {                          \
+        vst1q_u8(*out + 16, vld1q_u8(decomp_offset + 16));                          \
+        for (size_t j = 32; j < length; j++) {                                      \
+          (*out)[j] = decomp_offset[j];                                             \
+        }                                                                           \
       }                                                                             \
+      *out += length;                                                               \
       input += size;                                                                \
     }                                                                               \
   }                                                                                 \
@@ -494,22 +503,26 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
           bool *end_is_cc) {                                                        \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
     uint16x4_t block_index = {                                                      \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 0)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 1)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 2)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 3)],         \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     0)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     1)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     2)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     3)],           \
     };                                                                              \
     uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
     uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
     uint32x4_t values = {                                                           \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               0)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               1)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               2)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               3)],                 \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 0)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 1)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 2)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 3)],                                                       \
     };                                                                              \
     /* In this case, all of our code points have value 0, which means we can        \
      * skip. */                                                                     \
@@ -543,22 +556,26 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
     uint16x4_t block_index = {                                                      \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 0)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 1)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 2)],         \
-        NORMDATA_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index, 3)],         \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     0)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     1)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     2)],           \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+                                                                     3)],           \
     };                                                                              \
     uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
     uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
     uint32x4_t values = {                                                           \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               0)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               1)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               2)],                 \
-        NORMDATA_##decomp_table_name##_TRIE_DATA[vget_lane_u16(data_offset,         \
-                                                               3)],                 \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 0)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 1)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 2)],                                                       \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+            data_offset, 3)],                                                       \
     };                                                                              \
     bool decomp_result = vmaxvq_u32(values) > 0;                                    \
     /* Case where we have no Hangul syllables and no relevant characters */         \
@@ -848,8 +865,8 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
     return *out_ptr - start;                                                        \
   }
 
-NEON_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
-NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
+NEON_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC, false);
+NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
 
 #undef NEON_DEFINE_NORMALIZE_FUNCTIONS
 

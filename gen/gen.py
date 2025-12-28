@@ -582,7 +582,9 @@ def load_decomp_maps() -> tuple[DecompMap, DecompMap]:
     return nfd_map, nfkd_map
 
 
-def create_decomp_trie(decomp_map: DecompMap) -> tuple[Trie, list[int]]:
+def create_decomp_trie(
+    decomp_map: DecompMap, large_decompositions: bool
+) -> tuple[Trie, list[int]]:
     trie = Trie()
     data = []
     for x in range(0x10000):
@@ -593,10 +595,16 @@ def create_decomp_trie(decomp_map: DecompMap) -> tuple[Trie, list[int]]:
         offset = len(data)
         # We use the lower 16 bits for the offset into the data table
         assert offset <= 0xFFFF
-        data.extend(decomp.decomps)
+        for c in decomp.decomps:
+            data.extend(chr(c).encode("UTF-8"))
+        length = len(data) - offset
+        if not large_decompositions:
+            assert length <= 16
+        else:
+            assert length <= 48
         # Upper 8 bits for the length of the decomposition, middle 8 bits for
         # the combining class, and lower 16 bits for the offset
-        value = (len(decomp.decomps) << 24) | (decomp.ccc << 16) | offset
+        value = (length << 24) | (decomp.ccc << 16) | offset
         trie.set(x, value)
     trie.compact()
     return trie, data
@@ -732,8 +740,8 @@ def main() -> None:
         default_hash_scheme,
         non_starters,
     )
-    nfd_trie, nfd_data = create_decomp_trie(nfd_map)
-    nfkd_trie, nfkd_data = create_decomp_trie(nfkd_map)
+    nfd_trie, nfd_data = create_decomp_trie(nfd_map, False)
+    nfkd_trie, nfkd_data = create_decomp_trie(nfkd_map, True)
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
@@ -741,13 +749,13 @@ def main() -> None:
         headers.extend(generate_hash_tables(f, nfd_map, nfkd_map, comp_map))
         headers.extend(generate_shuffle_tables(f))
         headers.append(
-            generate_array(f, "NORMDATA_NFD_TRIE_DECOMPOSITIONS", nfd_data, 32)
+            generate_array(f, "NORMDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", nfd_data, 8)
         )
         headers.append(
-            generate_array(f, "NORMDATA_NFKD_TRIE_DECOMPOSITIONS", nfkd_data, 32)
+            generate_array(f, "NORMDATA_UTF8_NFKD_TRIE_DECOMPOSITIONS", nfkd_data, 8)
         )
-        headers.extend(generate_trie(f, "NORMDATA_NFD_TRIE", nfd_trie, 16, 32))
-        headers.extend(generate_trie(f, "NORMDATA_NFKD_TRIE", nfkd_trie, 16, 32))
+        headers.extend(generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", nfd_trie, 16, 32))
+        headers.extend(generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", nfkd_trie, 16, 32))
         headers.extend(generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom))
         headers.extend(
             generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)

@@ -253,15 +253,16 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
     uint8_t *start = out;                                                           \
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
-    uint16_t index = NORMDATA_##decomp_table_name##_TRIE_INDEX[shift];              \
-    uint32_t value = NORMDATA_##decomp_table_name##_TRIE_DATA[index + masked];      \
+    uint16_t index = NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[shift];         \
+    uint32_t value =                                                                \
+        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[index + masked];              \
     uint8_t ccc = (value >> 16) & 0xFF;                                             \
     uint8_t length = (value >> 24) & 0xFF;                                          \
     uint16_t offset = value & 0xFFFF;                                               \
-    uint32_t const *chars =                                                         \
-        &NORMDATA_##decomp_table_name##_TRIE_DECOMPOSITIONS[offset];                \
+    const uint8_t *bytes =                                                          \
+        &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k++) {                                           \
-      out += scalar_write_code_point_utf8(chars[k], out);                           \
+      *out++ = bytes[k];                                                            \
     }                                                                               \
     *is_cc = ccc > 0;                                                               \
     return out - start;                                                             \
