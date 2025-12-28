@@ -180,7 +180,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
   static void neon_decompose_utf16##endianness##_##decomp_form(                \
       uint16x4_t chars, const uint8_t *input, uint8_t **out,                   \
       size_t out_length, bool *end_is_cc) {                                    \
-    uint16x4_t hangul_mask = neon_hangul_mask_u16(chars);                      \
+    uint16x4_t hangul_mask = neon_hangul_mask(chars);                          \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                           \
     uint16x4_t index = vshr_n_u16(chars, 6);                                   \
     uint16x4_t block_index = {                                                 \

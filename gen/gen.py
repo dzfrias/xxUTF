@@ -140,11 +140,13 @@ def generate_array(writer, name: str, data: list[int], data_width: int) -> Heade
 def generate_decomp_hash_table(
     writer, decomp_map: DecompMap, name: str
 ) -> list[HeaderDef]:
+    supplementary_map: DecompMap = {k: v for k, v in decomp_map.items() if k > 0xFFFF}
+
     offsets = {}
     lengths = {}
     offset = 0
     all_decomps = []
-    for k, decomp in decomp_map.items():
+    for k, decomp in supplementary_map.items():
         offsets[k] = offset
         all_decomps.extend(decomp.decomps)
         lengths[k] = len(decomp.decomps)
@@ -159,7 +161,7 @@ def generate_decomp_hash_table(
         writer.write("\n")
     writer.write("};\n")
 
-    decomp_salt, decomp_keys = minimal_perfect_hash(decomp_map)
+    decomp_salt, decomp_keys = minimal_perfect_hash(supplementary_map)
     writer.write(f"\nconst uint16_t NORMDATA_{name}_SALT[{len(decomp_salt)}] = {{\n")
     for salts in batched(decomp_salt, 14):
         writer.write(" ")
@@ -174,7 +176,7 @@ def generate_decomp_hash_table(
     for batch in batched(decomp_keys, 5):
         writer.write(" ")
         for k in batch:
-            ccc = decomp_map[k].ccc
+            ccc = supplementary_map[k].ccc
             writer.write(f" {{{lengths[k]}, {ccc}, 0x{offsets[k]:03X}, 0x{k:05X}}},")
         writer.write("\n")
     writer.write("};\n")
@@ -707,18 +709,6 @@ def main() -> None:
         lambda c: hash_32bit_fast(c ^ 0xDEADBEEF),
         hash_32bit_fast,
     ]
-    nfd_bloom = BloomFilter(
-        131072,
-        multiply_shift_hash,
-        default_hash_scheme,
-        list(nfd_map.keys()),
-    )
-    nfkd_bloom = BloomFilter(
-        262144,
-        multiply_shift_hash,
-        default_hash_scheme,
-        list(nfkd_map.keys()),
-    )
     nfc_bloom = BloomFilter(
         131072,
         multiply_shift_hash,
@@ -784,10 +774,6 @@ def main() -> None:
         )
         headers.extend(
             generate_trie(f, "NORMDATA_UTF16_NFKD_TRIE", utf16_nfkd_trie, 16, 32)
-        )
-        headers.extend(generate_bloom_filter(f, "NORMDATA_NFD_BLOOM_FILTER", nfd_bloom))
-        headers.extend(
-            generate_bloom_filter(f, "NORMDATA_NFKD_BLOOM_FILTER", nfkd_bloom)
         )
         headers.extend(generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom))
         headers.extend(

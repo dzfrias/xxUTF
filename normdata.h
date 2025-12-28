@@ -29,12 +29,12 @@ static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
 
 uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
 
-extern const uint32_t NORMDATA_NFD_CHARS[4380];
-extern const uint16_t NORMDATA_NFD_SALT[3011];
-extern const NormdataTableEntry NORMDATA_NFD_KV[3011];
-extern const uint32_t NORMDATA_NFKD_CHARS[10122];
-extern const uint16_t NORMDATA_NFKD_SALT[6843];
-extern const NormdataTableEntry NORMDATA_NFKD_KV[6843];
+extern const uint32_t NORMDATA_NFD_CHARS[873];
+extern const uint16_t NORMDATA_NFD_SALT[814];
+extern const NormdataTableEntry NORMDATA_NFD_KV[814];
+extern const uint32_t NORMDATA_NFKD_CHARS[2409];
+extern const uint16_t NORMDATA_NFKD_SALT[2251];
+extern const NormdataTableEntry NORMDATA_NFKD_KV[2251];
 extern const uint16_t NORMDATA_NFC_SALT[928];
 extern const uint32_t NORMDATA_NFC_KV[928][2];
 extern const uint8_t NORMDATA_SHUFUTF8[145][16];
@@ -55,8 +55,6 @@ extern const uint16_t NORMDATA_UTF16_NFD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF16_NFD_TRIE_DATA[6436];
 extern const uint16_t NORMDATA_UTF16_NFKD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF16_NFKD_TRIE_DATA[9690];
-extern const uint32_t NORMDATA_NFD_BLOOM_FILTER[4096];
-extern const uint32_t NORMDATA_NFKD_BLOOM_FILTER[8192];
 extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[4096];

@@ -552,7 +552,7 @@ static uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   static inline void neon_decompose_utf8_##decomp_form(                             \
       uint8x16_t in, uint16x4_t chars, size_t n_bytes, const uint8_t *input,        \
       uint8_t **out, size_t out_length, bool *end_is_cc) {                          \
-    uint16x4_t hangul_mask = neon_hangul_mask_u16(chars);                           \
+    uint16x4_t hangul_mask = neon_hangul_mask(chars);                               \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
     uint16x4_t block_index = {                                                      \
