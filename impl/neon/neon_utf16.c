@@ -20,12 +20,8 @@ static inline uint16x8_t neon_make_surrogates_mask(uint16x8_t in) {
 #define NEON_UTF16_HELPERS(endianness, swap_endianness)                        \
   /* Copy the input vector into the output buffer. */                          \
   static void neon_skip_decomp_utf16##endianness(                              \
-      uint16x8_t in, size_t length, uint8_t **out, size_t out_length,          \
-      bool *end_is_cc) {                                                       \
-    if (*end_is_cc) {                                                          \
-      scalar_sort_characters_utf16##endianness(*out, out_length);              \
-    }                                                                          \
-    *end_is_cc = false;                                                        \
+      uint16x8_t in, size_t length, uint8_t **out, uint8_t *last_ccc) {        \
+    *last_ccc = 0;                                                             \
     if (swap_endianness) {                                                     \
       in = vreinterpretq_u16_u8(vrev16q_u8(vreinterpretq_u8_u16(in)));         \
     }                                                                          \
@@ -48,12 +44,9 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
   /* Decompose UTF-16 code points that have some number of precomposed Hangul  \
    * syllables in them, but no table-based decompositions. */                  \
   static inline void neon_write_hangul_utf16##endianness##_##decomp_form(      \
-      uint16x4_t in, uint16x4_t relevant, uint8_t **out, size_t out_length,    \
-      const uint8_t *input, bool *end_is_cc) {                                 \
-    if (*end_is_cc) {                                                          \
-      scalar_sort_characters_utf16##endianness(*out, out_length);              \
-    }                                                                          \
-    *end_is_cc = false;                                                        \
+      uint16x4_t in, uint16x4_t relevant, uint8_t **out, const uint8_t *input, \
+      uint8_t *last_ccc) {                                                     \
+    *last_ccc = 0;                                                             \
                                                                                \
     /* Naively compute Hangul Jamo. In practice, if this function is called,   \
      * most characters will be precomposed syllables (for example, when an     \
@@ -86,31 +79,22 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
    * combining characters in them, but no precomposed Hangul syllables. */     \
   static inline void neon_write_non_hangul_utf16##endianness##_##decomp_form(  \
       uint32x4_t values, uint8_t **out, size_t out_length,                     \
-      const uint8_t *input, bool *end_is_cc) {                                 \
-    bool last_is_cc = *end_is_cc;                                              \
+      const uint8_t *input, uint8_t *last_ccc) {                               \
     for (size_t i = 0; i < 4; i++) {                                           \
       uint32_t value = values[i];                                              \
       if (value == 0) {                                                        \
-        if (last_is_cc) {                                                      \
-          scalar_sort_characters_utf16##endianness(*out, out_length);          \
-        }                                                                      \
         *(*out)++ = *input++;                                                  \
         *(*out)++ = *input++;                                                  \
-        last_is_cc = false;                                                    \
+        *last_ccc = 0;                                                         \
         continue;                                                              \
       }                                                                        \
       uint8_t ccc = (value >> 16) & 0xFF;                                      \
-      bool is_cc = ccc > 0;                                                    \
-      if (last_is_cc && !is_cc) {                                              \
-        scalar_sort_characters_utf16##endianness(*out, out_length);            \
-      }                                                                        \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
                                                                     0xFFFF];   \
       uint8_t length = value >> 24;                                            \
       /* `length` is length in bytes, not code units */                        \
       assert(length % 2 == 0);                                                 \
-      /* We don't care about loading in code units, only the raw bytes */      \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
       if (swap_endianness) {                                                   \
         decomp_bytes = vrev16q_u8(decomp_bytes);                               \
@@ -127,22 +111,21 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
           }                                                                    \
         }                                                                      \
       }                                                                        \
-      last_is_cc = is_cc;                                                      \
       *out += length;                                                          \
       out_length += length;                                                    \
+      if (ccc != 0 && *last_ccc > ccc) {                                       \
+        ccc = scalar_sort_characters_utf16##endianness(*out, out_length);      \
+      }                                                                        \
       input += 2;                                                              \
+      *last_ccc = ccc;                                                         \
     }                                                                          \
-    *end_is_cc = last_is_cc;                                                   \
   }                                                                            \
                                                                                \
   static inline void                                                           \
       neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
-          uint32x4_t values, uint8_t **out, size_t out_length,                 \
-          const uint8_t *input, bool *end_is_cc) {                             \
-    if (*end_is_cc) {                                                          \
-      scalar_sort_characters_utf16##endianness(*out, out_length);              \
-    }                                                                          \
-    *end_is_cc = false;                                                        \
+          uint32x4_t values, uint8_t **out, const uint8_t *input,              \
+          uint8_t *last_ccc) {                                                 \
+    *last_ccc = 0;                                                             \
     for (size_t i = 0; i < 4; i++) {                                           \
       uint32_t value = values[i];                                              \
       if (value == 0) {                                                        \
@@ -179,7 +162,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
   /* Decompose four UTF-16 code points in the BMP. */                          \
   static void neon_decompose_utf16##endianness##_##decomp_form(                \
       uint16x4_t chars, const uint8_t *input, uint8_t **out,                   \
-      size_t out_length, bool *end_is_cc) {                                    \
+      size_t out_length, uint8_t *last_ccc) {                                  \
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                          \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                           \
     uint16x4_t index = vshr_n_u16(chars, 6);                                   \
@@ -210,8 +193,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
      * can skip */                                                             \
     if (!hangul_result && !decomp_result) {                                    \
       uint16x8_t in_dummy = vcombine_u16(chars, vdup_n_u16(0));                \
-      neon_skip_decomp_utf16##endianness(in_dummy, 8, out, out_length,         \
-                                         end_is_cc);                           \
+      neon_skip_decomp_utf16##endianness(in_dummy, 8, out, last_ccc);          \
       return;                                                                  \
     }                                                                          \
     uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x00FF0000UL));        \
@@ -220,20 +202,20 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       /* Special path with no combining code points and no Hangul characters   \
        */                                                                      \
       neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
-          values, out, out_length, input, end_is_cc);                          \
+          values, out, input, last_ccc);                                       \
     } else if (non_starter_result && !hangul_result) {                         \
       /* Path with combining code points but no Hangul characters */           \
       neon_write_non_hangul_utf16##endianness##_##decomp_form(                 \
-          values, out, out_length, input, end_is_cc);                          \
+          values, out, out_length, input, last_ccc);                           \
     } else if (hangul_result && !decomp_result) {                              \
       /* Path with only Hangul characters but no decomposable/combining code   \
        * points */                                                             \
       neon_write_hangul_utf16##endianness##_##decomp_form(                     \
-          chars, hangul_mask, out, out_length, input, end_is_cc);              \
+          chars, hangul_mask, out, input, last_ccc);                           \
     } else {                                                                   \
       *out +=                                                                  \
           scalar_normalize_utf16##endianness##_##decomp_form##_with_context(   \
-              input, 8, *out, out_length, end_is_cc);                          \
+              input, 8, *out, out_length, last_ccc);                           \
     }                                                                          \
   }                                                                            \
                                                                                \
@@ -243,7 +225,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     uint8_t *start = out;                                                      \
                                                                                \
     const size_t SAFETY_MARGIN = 16;                                           \
-    bool end_is_cc = false;                                                    \
+    uint8_t last_ccc = 0;                                                      \
     size_t p = 0;                                                              \
     while (p + SAFETY_MARGIN < length) {                                       \
       uint8x16_t bytes = vld1q_u8(input + p);                                  \
@@ -254,8 +236,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint16x8_t ascii_mask = vcleq_u16(in, vdupq_n_u16(0x7F));                \
       /* ASCII fast path */                                                    \
       if (vminvq_u16(ascii_mask) != 0) {                                       \
-        neon_skip_decomp_utf16##endianness(in, 16, out_ptr, *out_ptr - start,  \
-                                           &end_is_cc);                        \
+        neon_skip_decomp_utf16##endianness(in, 16, out_ptr, &last_ccc);        \
         p += 16;                                                               \
         continue;                                                              \
       }                                                                        \
@@ -267,9 +248,9 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         /* Decompose the low code points and the high code points separately   \
          */                                                                    \
         neon_decompose_utf16##endianness##_##decomp_form(                      \
-            in1, input + p, out_ptr, *out_ptr - start, &end_is_cc);            \
+            in1, input + p, out_ptr, *out_ptr - start, &last_ccc);             \
         neon_decompose_utf16##endianness##_##decomp_form(                      \
-            in2, input + p + 8, out_ptr, *out_ptr - start, &end_is_cc);        \
+            in2, input + p + 8, out_ptr, *out_ptr - start, &last_ccc);         \
       } else {                                                                 \
         /* In the case that we do have surrogate pairs, we fall back to a      \
          * scalar implementation */                                            \
@@ -281,7 +262,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         *out_ptr +=                                                            \
             scalar_normalize_utf16##endianness##_##decomp_form##_with_context( \
                 input + p, normalize_range, *out_ptr, *out_ptr - start,        \
-                &end_is_cc);                                                   \
+                &last_ccc);                                                    \
         /* Advance the input possibly by 2 more */                             \
         p += normalize_range - 16;                                             \
       }                                                                        \
@@ -289,13 +270,9 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     }                                                                          \
                                                                                \
     if (p < length) {                                                          \
-      if (end_is_cc) {                                                         \
-        scalar_sort_characters_utf16##endianness(*out_ptr, *out_ptr - start);  \
-      }                                                                        \
-      bool dummy = false;                                                      \
       *out_ptr +=                                                              \
           scalar_normalize_utf16##endianness##_##decomp_form##_with_context(   \
-              input + p, length - p, *out_ptr, *out_ptr - start, &dummy);      \
+              input + p, length - p, *out_ptr, *out_ptr - start, &last_ccc);   \
     }                                                                          \
                                                                                \
     return *out_ptr - start;                                                   \

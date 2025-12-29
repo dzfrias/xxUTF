@@ -10,13 +10,13 @@ size_t scalar_normalize_utf8_nfd(const uint8_t *input, size_t length,
 size_t scalar_normalize_utf8_nfd_with_context(const uint8_t *input,
                                               size_t length, uint8_t *out,
                                               size_t out_offset,
-                                              bool *end_is_cc);
+                                              uint8_t *last_ccc);
 size_t scalar_normalize_utf8_nfkd(const uint8_t *input, size_t length,
                                   uint8_t *out);
 size_t scalar_normalize_utf8_nfkd_with_context(const uint8_t *input,
                                                size_t length, uint8_t *out,
                                                size_t out_offset,
-                                               bool *end_is_cc);
+                                               uint8_t *last_ccc);
 size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
                                  uint8_t *out);
 size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
@@ -24,15 +24,11 @@ size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
 
 // Helpers
 size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes);
-void scalar_sort_characters_utf8(uint8_t *out, size_t length);
-size_t scalar_decompose_utf8_nfd_supplementary(uint32_t code_point,
-                                               uint8_t *out, bool *is_cc);
-size_t scalar_decompose_utf8_nfkd_supplementary(uint32_t code_point,
-                                                uint8_t *out, bool *is_cc);
-size_t scalar_decompose_utf8_nfd_bmp(uint32_t code_point, uint8_t *out,
-                                     bool *is_cc);
-size_t scalar_decompose_utf8_nfkd_bmp(uint32_t code_point, uint8_t *out,
-                                      bool *is_cc);
+uint8_t scalar_sort_characters_utf8(uint8_t *out, size_t length);
+size_t scalar_sort_utf8_nfd(const uint8_t *input, size_t input_length,
+                            uint8_t *out, size_t out_length, size_t *nread);
+size_t scalar_sort_utf8_nfkd(const uint8_t *input, size_t input_length,
+                             uint8_t *out, size_t out_length, size_t *nread);
 size_t scalar_find_nfc_irrelevant_starter_utf8(const uint8_t *input,
                                                size_t length);
 size_t scalar_find_nfkc_irrelevant_starter_utf8(const uint8_t *input,

@@ -102,12 +102,17 @@ static bool scalar_is_leading_utf8_byte(uint8_t b) {
 // algorithm). This is done by walking backwards from the end of the buffer
 // until a starter character is found and sorting the combining characters from
 // there.
-void scalar_sort_characters_utf8(uint8_t *out, size_t length) {
+//
+// Returns the character class of the last character in the sorting range after
+// the sort has completed.
+uint8_t scalar_sort_characters_utf8(uint8_t *out, size_t length) {
   if (length == 0) {
-    return;
+    return 0;
   }
 
   uint8_t *start = out;
+  // Tracks the ccc of the final character in the sorting range.
+  uint8_t final_ccc = 255;
 
   // We need to walk backwards until we find a starter character.
   uint8_t last_ccc = 255;
@@ -120,6 +125,9 @@ void scalar_sort_characters_utf8(uint8_t *out, size_t length) {
     uint8_t size;
     uint32_t code_point = scalar_parse_code_point_utf8(out, &size);
     uint8_t ccc = scalar_lookup_ccc(code_point);
+    if (final_ccc == 255) {
+      final_ccc = ccc;
+    }
     if (last_ccc < ccc) {
       needs_sort = true;
     }
@@ -133,7 +141,7 @@ void scalar_sort_characters_utf8(uint8_t *out, size_t length) {
 
   // Fast path if the combining characters are already sorted
   if (!needs_sort) {
-    return;
+    return final_ccc;
   }
 
   // We do bubble sort on starting at the starter code point, up until the next
@@ -167,12 +175,19 @@ void scalar_sort_characters_utf8(uint8_t *out, size_t length) {
         scalar_rotate(out + j, size1 + size2, size2);
         last_size = size2;
         did_swap = true;
+        if (j + size1 + size2 == n) {
+          // Swapped the last character in the sorting range, so update
+          // `final_ccc`
+          final_ccc = ccc1;
+        }
       }
     }
     if (!did_swap) {
       break;
     }
   }
+
+  return final_ccc;
 }
 
 // Find a starter character in a UTF-8 buffer, searching from right to left.
@@ -225,8 +240,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
    * a decomposition.                                                               \
    *                                                                                \
    * Note that this does not handle Hangul code points. */                          \
-  size_t scalar_decompose_utf8_##decomp_suffix##_supplementary(                     \
-      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
+  static size_t scalar_decompose_utf8_##decomp_suffix##_supplementary(              \
+      uint32_t code_point, uint8_t *out, uint8_t *ccc) {                            \
     uint8_t *start = out;                                                           \
     uint32_t salt_hash = scalar_phash(                                              \
         code_point, 0, NORMDATA_##decomp_table_name##_TABLE_SIZE);                  \
@@ -240,23 +255,23 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
       for (size_t k = 0; k < kv.len; k++) {                                         \
         out += scalar_write_code_point_utf8(chars[k], out);                         \
       }                                                                             \
-      *is_cc = kv.ccc > 0;                                                          \
+      *ccc = kv.last_ccc;                                                           \
     } else {                                                                        \
-      *is_cc = false;                                                               \
+      *ccc = 0;                                                                     \
     }                                                                               \
                                                                                     \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
-  size_t scalar_decompose_utf8_##decomp_suffix##_bmp(                               \
-      uint32_t code_point, uint8_t *out, bool *is_cc) {                             \
+  static size_t scalar_decompose_utf8_##decomp_suffix##_bmp(                        \
+      uint32_t code_point, uint8_t *out, uint8_t *ccc) {                            \
     uint8_t *start = out;                                                           \
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
     uint16_t index = NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[shift];         \
     uint32_t value =                                                                \
         NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[index + masked];              \
-    uint8_t ccc = (value >> 16) & 0xFF;                                             \
+    *ccc = (value >> 16) & 0xFF;                                                    \
     uint8_t length = (value >> 24) & 0xFF;                                          \
     uint16_t offset = value & 0xFFFF;                                               \
     const uint8_t *bytes =                                                          \
@@ -264,22 +279,19 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
     for (size_t k = 0; k < length; k++) {                                           \
       *out++ = bytes[k];                                                            \
     }                                                                               \
-    *is_cc = ccc > 0;                                                               \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf8_##decomp_suffix##_with_context(                      \
       const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
-      bool *end_is_cc) {                                                            \
+      uint8_t *last_ccc) {                                                          \
     uint8_t *start = out;                                                           \
                                                                                     \
-    bool last_is_cc = *end_is_cc;                                                   \
     size_t p = 0;                                                                   \
     while (p < length) {                                                            \
       uint8_t leading = input[p];                                                   \
                                                                                     \
-      bool is_cc = false;                                                           \
-      uint8_t *c_start = out;                                                       \
+      uint8_t ccc = 0;                                                              \
       if (leading < 0b10000000) { /* ASCII, no need to do a lookup */               \
         *out++ = leading;                                                           \
         p++;                                                                        \
@@ -287,7 +299,7 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
         uint32_t code_point =                                                       \
             (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);              \
         size_t nwritten = scalar_decompose_utf8_##decomp_suffix##_bmp(              \
-            code_point, out, &is_cc);                                               \
+            code_point, out, &ccc);                                                 \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \
@@ -300,11 +312,10 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
                               (input[p + 1] & 0b00111111) << 6 |                    \
                               (input[p + 2] & 0b00111111);                          \
         if (scalar_is_hangul(code_point)) {                                         \
-          is_cc = false;                                                            \
           out += scalar_decompose_hangul_utf8(code_point, out);                     \
         } else {                                                                    \
           size_t nwritten = scalar_decompose_utf8_##decomp_suffix##_bmp(            \
-              code_point, out, &is_cc);                                             \
+              code_point, out, &ccc);                                               \
           if (nwritten == 0) {                                                      \
             *out++ = leading;                                                       \
             *out++ = input[p + 1];                                                  \
@@ -319,8 +330,8 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
             (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |      \
             (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);         \
         size_t nwritten =                                                           \
-            scalar_decompose_utf8_##decomp_suffix##_supplementary(                  \
-                code_point, out, &is_cc);                                           \
+            scalar_decompose_utf8_##decomp_suffix##_supplementary(code_point,       \
+                                                                  out, &ccc);       \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \
@@ -332,29 +343,20 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
         p += 4;                                                                     \
       }                                                                             \
                                                                                     \
-      /* If the last character was a non-starter and the current character is       \
-       * a starter, we need to try to reorder the combining characters */           \
-      if (last_is_cc && !is_cc) {                                                   \
-        scalar_sort_characters_utf8(c_start, (c_start - start) + out_offset);       \
+      if (ccc != 0 && *last_ccc > ccc) {                                            \
+        ccc = scalar_sort_characters_utf8(out, (out - start) + out_offset);         \
       }                                                                             \
-      last_is_cc = is_cc;                                                           \
+      *last_ccc = ccc;                                                              \
     }                                                                               \
-                                                                                    \
-    /* Try to sort at EOF */                                                        \
-    if (last_is_cc) {                                                               \
-      scalar_sort_characters_utf8(out, (out - start) + out_offset);                 \
-    }                                                                               \
-                                                                                    \
-    *end_is_cc = last_is_cc;                                                        \
                                                                                     \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
   size_t scalar_normalize_utf8_##decomp_suffix(const uint8_t *input,                \
                                                size_t length, uint8_t *out) {       \
-    bool end_is_cc = false;                                                         \
+    uint8_t last_ccc = 0;                                                           \
     return scalar_normalize_utf8_##decomp_suffix##_with_context(                    \
-        input, length, out, 0, &end_is_cc);                                         \
+        input, length, out, 0, &last_ccc);                                          \
   }                                                                                 \
                                                                                     \
   /* Find the next starter character that is composition irrelevant, or -1 if       \

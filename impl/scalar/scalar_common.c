@@ -46,10 +46,9 @@ uint8_t scalar_lookup_ccc(uint32_t code_point) {
   if (code_point <= 0xFFFF) {
     uint16_t shift = code_point >> 6;
     uint16_t masked = code_point & 63;
-    uint16_t index = NORMDATA_UTF8_NFD_TRIE_INDEX[shift];
-    uint32_t value = NORMDATA_UTF8_NFD_TRIE_DATA[index + masked];
-    uint8_t ccc = (value >> 16) & 0xFF;
-    return ccc;
+    uint16_t index = NORMDATA_CCC_TRIE_INDEX[shift];
+    uint8_t value = NORMDATA_CCC_TRIE_DATA[index + masked];
+    return value;
   }
   uint32_t salt_hash = scalar_phash(code_point, 0, NORMDATA_NFD_TABLE_SIZE);
   uint32_t salt = NORMDATA_NFD_SALT[salt_hash];

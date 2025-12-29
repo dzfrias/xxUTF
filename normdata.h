@@ -8,6 +8,7 @@
 typedef struct NormdataTableEntry {
   uint8_t len;
   uint8_t ccc;
+  uint8_t last_ccc;
   uint16_t offset;
   uint32_t k;
 } NormdataTableEntry;
@@ -55,6 +56,8 @@ extern const uint16_t NORMDATA_UTF16_NFD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF16_NFD_TRIE_DATA[6436];
 extern const uint16_t NORMDATA_UTF16_NFKD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF16_NFKD_TRIE_DATA[9690];
+extern const uint16_t NORMDATA_CCC_TRIE_INDEX[1024];
+extern const uint8_t NORMDATA_CCC_TRIE_DATA[3319];
 extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[4096];
