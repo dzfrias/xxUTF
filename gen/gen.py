@@ -12,6 +12,7 @@ class DecompValue:
 
 
 DecompMap = dict[int, DecompValue]
+CasefoldMap = dict[int, list[int]]
 CompMap = dict[tuple[int, int], int]
 
 
@@ -123,6 +124,7 @@ def generate_array(writer, name: str, data: list[int], data_width: int) -> Heade
     for row in batched(data, 10):
         writer.write(" ")
         for x in row:
+            # TODO: handle negative numbers
             assert x < 2**data_width
             if data_width == 32:
                 writer.write(f" 0x{x:08X},")
@@ -623,6 +625,57 @@ def create_decomp_trie(
     return trie, data
 
 
+def load_casefold_map() -> CasefoldMap:
+    map: CasefoldMap = {}
+
+    with open("CaseFolding.txt", "r") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split(";")
+            c = int(parts[0], 16)
+            kind = parts[1].strip()
+            mappings = [int(x, 16) for x in parts[2].strip().split(" ")]
+            # Skip Turkic mappings for now
+            if kind == "T":
+                continue
+            map[c] = mappings
+
+    return map
+
+
+def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[int]]:
+    trie = Trie()
+    data: list[int] = []
+    for x in range(0x10000):
+        if x not in map:
+            trie.set(x, 0)
+            continue
+        casefold = map[x]
+        if len(casefold) == 1:
+            # The case map should also be in the BMP
+            # TODO: value layout should be: 24 bits at top that is either a delta
+            # or an offset. One byte at bottom. Leading bit of the byte should
+            # indicate if it is complex. If it is complex, other 7 bits indicate
+            # length. This design allows simple deltas to be accessed via a signed
+            # shift right on a 32 bit vector.
+            assert casefold[0] <= 0xFFFF
+            trie.set(x, x - casefold[0])
+        else:
+            offset = len(data)
+            # Lower 16 bits are used for the offset
+            assert offset <= 0xFFFF
+            for c in casefold:
+                data.extend(chr(c).encode(encoding))
+            length = len(data) - offset
+            assert length <= 0xFF
+            # Bit position 31 indicates if the value has a complex mapping
+            value = (1 << 31) | (length << 16) | offset
+            trie.set(x, offset)
+    trie.compact()
+    return trie, data
+
+
 @dataclass
 class DerivedProps:
     comp_exclusions: list[int]
@@ -675,6 +728,7 @@ def flatten_decomp_map(map: DecompMap):
 def main() -> None:
     nfd_map, nfkd_map = load_decomp_maps()
     derived = load_derived_props()
+    casefold_map = load_casefold_map()
 
     non_starters = [x for x, decomp in nfd_map.items() if decomp.ccc > 0]
 
@@ -760,6 +814,7 @@ def main() -> None:
         else:
             ccc_trie.set(x, 0)
     ccc_trie.compact()
+    casefold_trie, casefold_data = create_casefold_trie(casefold_map, "UTF-8")
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
@@ -805,6 +860,12 @@ def main() -> None:
             generate_bloom_filter(
                 f, "NORMDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
             )
+        )
+        headers.append(
+            generate_array(f, "NORMDATA_UTF8_CASEFOLD_DATA", casefold_data, 8)
+        )
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_trie, 16, 32)
         )
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)
