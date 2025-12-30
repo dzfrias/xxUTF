@@ -1,6 +1,5 @@
 // amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
-#include "impl/neon/neon_utf16.h"
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"

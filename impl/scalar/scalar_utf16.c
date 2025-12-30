@@ -1,4 +1,4 @@
-#include "impl/scalar/scalar_utf16.h"
+#include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
 #include "normdata.h"
 #include <assert.h>

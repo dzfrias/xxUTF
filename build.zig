@@ -205,18 +205,14 @@ const all_files: []const []const u8 = &.{
     "normdata.c",
     "impl/scalar.h",
     "impl/scalar/scalar_utf8.c",
-    "impl/scalar/scalar_utf8.h",
     "impl/scalar/scalar_utf16.c",
-    "impl/scalar/scalar_utf16.h",
     "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_common.h",
     "impl/neon.h",
     "impl/neon/neon_common.c",
     "impl/neon/neon_common.h",
     "impl/neon/neon_utf8.c",
-    "impl/neon/neon_utf8.h",
     "impl/neon/neon_utf16.c",
-    "impl/neon/neon_utf16.h",
 };
 
 const default_sources: []const []const u8 = &.{
