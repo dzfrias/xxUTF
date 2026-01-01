@@ -5,73 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-
-void scalar_write_uint16le(uint16_t x, uint8_t *out) {
-  out[0] = (uint8_t)(x & 0xFF);
-  out[1] = (uint8_t)(x >> 8);
-}
-
-void scalar_write_uint16be(uint16_t x, uint8_t *out) {
-  out[0] = (uint8_t)(x >> 8);
-  out[1] = (uint8_t)(x & 0xFF);
-}
-
-uint16_t scalar_read_uint16le(const uint8_t *input) {
-  return (uint16_t)input[0] | (uint16_t)input[1] << 8;
-}
-
-uint16_t scalar_read_uint16be(const uint8_t *input) {
-  return ((uint16_t)input[0] << 8) | (uint16_t)input[1];
-}
-
-static inline size_t scalar_code_point_size_utf16(uint32_t code_point) {
-  return code_point <= 0xFFFF ? 2 : 4;
-}
-
-static inline bool scalar_is_utf16_low_surrogate(uint16_t code_unit) {
-  return code_unit >= 0xDC00 && code_unit <= 0xDFFF;
-}
-
-static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
-  return code_unit >= 0xD800 && code_unit <= 0xDBFF;
-}
 
 #define SCALAR_UTF16_HELPERS(endianness)                                       \
-  /* Write a code point into the output buffer as UTF-16 bytes. Returns the    \
-   * number of bytes written. */                                               \
-  static size_t scalar_write_code_point_utf16##endianness(                     \
-      uint32_t code_point, uint8_t *utf16_bytes) {                             \
-    /* Check if in BMP */                                                      \
-    if (code_point <= 0xFFFF) {                                                \
-      uint16_t u = (uint16_t)code_point;                                       \
-      scalar_write_uint16##endianness(u, utf16_bytes);                         \
-      return 2;                                                                \
-    }                                                                          \
-    code_point -= 0x10000;                                                     \
-    uint16_t high = 0xD800 | (code_point >> 10);                               \
-    uint16_t low = 0xDC00 | (code_point & 0x3FF);                              \
-    scalar_write_uint16##endianness(high, utf16_bytes);                        \
-    scalar_write_uint16##endianness(low, utf16_bytes + 2);                     \
-    return 4;                                                                  \
-  }                                                                            \
-                                                                               \
-  /* Parse a UTF-16 code point from a byte buffer. */                          \
-  static uint32_t scalar_parse_code_point_utf16##endianness(                   \
-      const uint8_t *input, uint8_t *size) {                                   \
-    uint16_t w1 = scalar_read_uint16##endianness(input);                       \
-    if (scalar_is_utf16_high_surrogate(w1)) {                                  \
-      uint16_t w2 = scalar_read_uint16##endianness(input + 2);                 \
-      uint32_t cp =                                                            \
-          (((uint32_t)(w1 - 0xD800) << 10) | ((uint32_t)(w2 - 0xDC00))) +      \
-          0x10000;                                                             \
-      *size = 4;                                                               \
-      return cp;                                                               \
-    }                                                                          \
-    *size = 2;                                                                 \
-    return w1;                                                                 \
-  }                                                                            \
-                                                                               \
   /* Decompose a Hangul code point into UTF-16 */                              \
   static size_t scalar_decompose_hangul_utf16##endianness(uint32_t code_point, \
                                                           uint8_t *out) {      \
@@ -127,19 +62,6 @@ static inline bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
       p += 2;                                                                  \
     }                                                                          \
     return -1;                                                                 \
-  }                                                                            \
-                                                                               \
-  void scalar_print_code_points_utf16##endianness(const uint8_t *input,        \
-                                                  size_t length) {             \
-    size_t p = 0;                                                              \
-    while (p < length) {                                                       \
-      uint8_t size;                                                            \
-      uint32_t c =                                                             \
-          scalar_parse_code_point_utf16##endianness(input + p, &size);         \
-      printf("%u(p=%zu) ", c, p);                                              \
-      p += size;                                                               \
-    }                                                                          \
-    printf("\n");                                                              \
   }                                                                            \
                                                                                \
   /* Sort combining characters in-place (implementation of the canonical       \

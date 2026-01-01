@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // Hash using the perfect hash function for the given key and salt. See
 // gen/gen.py for the reference implementation of the perfect hash function.
@@ -169,3 +170,174 @@ void scalar_shift_left(uint8_t *buf, size_t length, size_t amt) {
     *i = *(i + amt);
   }
 }
+
+size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes) {
+  if (code_point <= 0x7F) {
+    utf8_bytes[0] = (uint8_t)(code_point & 0xFF);
+    return 1;
+  } else if (code_point <= 0x7FF) {
+    utf8_bytes[0] = 0xC0 | (code_point >> 6);
+    utf8_bytes[1] = 0x80 | (code_point & 0x3F);
+    return 2;
+  } else if (code_point <= 0xFFFF) {
+    utf8_bytes[0] = 0xE0 | (code_point >> 12);
+    utf8_bytes[1] = 0x80 | ((code_point >> 6) & 0x3F);
+    utf8_bytes[2] = 0x80 | (code_point & 0x3F);
+    return 3;
+  } else if (code_point <= 0x10FFFF) {
+    utf8_bytes[0] = 0xF0 | (code_point >> 18);
+    utf8_bytes[1] = 0x80 | ((code_point >> 12) & 0x3F);
+    utf8_bytes[2] = 0x80 | ((code_point >> 6) & 0x3F);
+    utf8_bytes[3] = 0x80 | (code_point & 0x3F);
+    return 4;
+  } else {
+    // Code point is too large, but we don't handle errors
+    return 0;
+  }
+}
+
+size_t scalar_code_point_size_utf8(uint32_t code_point) {
+  if (code_point <= 0x7F) {
+    return 1;
+  } else if (code_point <= 0x7FF) {
+    return 2;
+  } else if (code_point <= 0xFFFF) {
+    return 3;
+  } else if (code_point <= 0x10FFFF) {
+    return 4;
+  } else {
+    // Code point is too large, but we don't handle errors
+    return 0;
+  }
+}
+
+uint32_t scalar_parse_code_point_utf8(const uint8_t *input, uint8_t *size) {
+  uint8_t leading = *input;
+  if (leading < 0b10000000) {
+    *size = 1;
+    return leading;
+  } else if ((leading & 0b11100000) == 0b11000000) {
+    *size = 2;
+    return (leading & 0b00011111) << 6 | (input[1] & 0b00111111);
+  } else if ((leading & 0b11110000) == 0b11100000) {
+    *size = 3;
+    return (leading & 0b00001111) << 12 | (input[1] & 0b00111111) << 6 |
+           (input[2] & 0b00111111);
+  } else if ((leading & 0b11111000) == 0b11110000) {
+    *size = 4;
+    return (leading & 0b00000111) << 18 | (input[1] & 0b00111111) << 12 |
+           (input[2] & 0b00111111) << 6 | (input[3] & 0b00111111);
+  } else {
+    *size = 0;
+    // This should be an error, but we don't handle errors
+    return 0;
+  }
+}
+
+bool scalar_is_leading_utf8_byte(uint8_t b) {
+  return (b & 0b11000000) != 0b10000000;
+}
+
+size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
+                                    size_t amt) {
+  uint8_t *start = out;
+  for (size_t i = 0; i < amt; i++) {
+    uint8_t size = NORMDATA_UTF8_SIZE[input[0]];
+    for (uint8_t j = 0; j < size; j++) {
+      *out++ = input[j];
+    }
+    input += size;
+  }
+  return out - start;
+}
+
+void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
+  size_t p = 0;
+  while (p < length) {
+    uint8_t size;
+    uint32_t c = scalar_parse_code_point_utf8(input + p, &size);
+    printf("%u(p=%zu) ", c, p);
+    p += size;
+  }
+  printf("\n");
+}
+
+void scalar_write_uint16le(uint16_t x, uint8_t *out) {
+  out[0] = (uint8_t)(x & 0xFF);
+  out[1] = (uint8_t)(x >> 8);
+}
+
+void scalar_write_uint16be(uint16_t x, uint8_t *out) {
+  out[0] = (uint8_t)(x >> 8);
+  out[1] = (uint8_t)(x & 0xFF);
+}
+
+uint16_t scalar_read_uint16le(const uint8_t *input) {
+  return (uint16_t)input[0] | (uint16_t)input[1] << 8;
+}
+
+uint16_t scalar_read_uint16be(const uint8_t *input) {
+  return ((uint16_t)input[0] << 8) | (uint16_t)input[1];
+}
+
+size_t scalar_code_point_size_utf16(uint32_t code_point) {
+  return code_point <= 0xFFFF ? 2 : 4;
+}
+
+bool scalar_is_utf16_low_surrogate(uint16_t code_unit) {
+  return code_unit >= 0xDC00 && code_unit <= 0xDFFF;
+}
+
+bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
+  return code_unit >= 0xD800 && code_unit <= 0xDBFF;
+}
+
+#define SCALAR_UTF16_HELPERS(endianness)                                       \
+  size_t scalar_write_code_point_utf16##endianness(uint32_t code_point,        \
+                                                   uint8_t *utf16_bytes) {     \
+    /* Check if in BMP */                                                      \
+    if (code_point <= 0xFFFF) {                                                \
+      uint16_t u = (uint16_t)code_point;                                       \
+      scalar_write_uint16##endianness(u, utf16_bytes);                         \
+      return 2;                                                                \
+    }                                                                          \
+    code_point -= 0x10000;                                                     \
+    uint16_t high = 0xD800 | (code_point >> 10);                               \
+    uint16_t low = 0xDC00 | (code_point & 0x3FF);                              \
+    scalar_write_uint16##endianness(high, utf16_bytes);                        \
+    scalar_write_uint16##endianness(low, utf16_bytes + 2);                     \
+    return 4;                                                                  \
+  }                                                                            \
+                                                                               \
+  uint32_t scalar_parse_code_point_utf16##endianness(const uint8_t *input,     \
+                                                     uint8_t *size) {          \
+    uint16_t w1 = scalar_read_uint16##endianness(input);                       \
+    if (scalar_is_utf16_high_surrogate(w1)) {                                  \
+      uint16_t w2 = scalar_read_uint16##endianness(input + 2);                 \
+      uint32_t cp =                                                            \
+          (((uint32_t)(w1 - 0xD800) << 10) | ((uint32_t)(w2 - 0xDC00))) +      \
+          0x10000;                                                             \
+      *size = 4;                                                               \
+      return cp;                                                               \
+    }                                                                          \
+    *size = 2;                                                                 \
+    return w1;                                                                 \
+  }                                                                            \
+                                                                               \
+  void scalar_print_code_points_utf16##endianness(const uint8_t *input,        \
+                                                  size_t length) {             \
+    size_t p = 0;                                                              \
+    while (p < length) {                                                       \
+      uint8_t size;                                                            \
+      uint32_t c =                                                             \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);         \
+      printf("%u(p=%zu) ", c, p);                                              \
+      p += size;                                                               \
+    }                                                                          \
+    printf("\n");                                                              \
+  }
+
+SCALAR_UTF16_HELPERS(le);
+SCALAR_UTF16_HELPERS(be);
+
+#undef SCALAR_UTF16_HELPERS

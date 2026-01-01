@@ -35,4 +35,20 @@ uint8_t neon_first_true(uint32x4_t v);
 uint32x4_t neon_evaluate_bloom_nfc(uint32x4_t input);
 uint32x4_t neon_evaluate_bloom_nfkc(uint32x4_t input);
 
+// Parse four three-byte UTF-8 code points into their 16-bit code point values.
+uint16x4_t neon_parse_3_byte_utf8(uint8x16_t in);
+// Parse four two-byte UTF-8 code points into their 16-bit code point values.
+uint16x4_t neon_parse_2_byte_utf8(uint8x16_t in);
+// Parse three four-byte UTF-8 code points into the 32-bit code point values.
+uint32x4_t neon_parse_4_byte_utf8(uint8x16_t in);
+// Parse four code points encoded in UTF-8 into 16-bit code point values.
+uint16x4_t neon_parse_4_12_utf8(uint8x16_t in, size_t shufutf8_idx);
+// Parse four code points encoded in UTF-8 into 16-bit code point values.
+uint16x4_t neon_parse_4_123_utf8(uint8x16_t in, size_t shufutf8_idx);
+// Parse three code points encoded in UTF-8 into 32-bit code point values.
+uint32x4_t neon_parse_3_1234_utf8(uint8x16_t in, size_t shufutf8_idx);
+
+uint8x16_t neon_get_utf8_code_point_starts(uint8x16_t in);
+uint64_t neon_make_utf8_code_point_mask(const uint8_t *input);
+
 #endif // XXUTF_NEON_COMMON_H

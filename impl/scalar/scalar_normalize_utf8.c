@@ -5,49 +5,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-
-// Write a code point into the output buffer as UTF-8 bytes. Returns the number
-// of bytes written.
-size_t scalar_write_code_point_utf8(uint32_t code_point, uint8_t *utf8_bytes) {
-  if (code_point <= 0x7F) {
-    utf8_bytes[0] = (uint8_t)(code_point & 0xFF);
-    return 1;
-  } else if (code_point <= 0x7FF) {
-    utf8_bytes[0] = 0xC0 | (code_point >> 6);
-    utf8_bytes[1] = 0x80 | (code_point & 0x3F);
-    return 2;
-  } else if (code_point <= 0xFFFF) {
-    utf8_bytes[0] = 0xE0 | (code_point >> 12);
-    utf8_bytes[1] = 0x80 | ((code_point >> 6) & 0x3F);
-    utf8_bytes[2] = 0x80 | (code_point & 0x3F);
-    return 3;
-  } else if (code_point <= 0x10FFFF) {
-    utf8_bytes[0] = 0xF0 | (code_point >> 18);
-    utf8_bytes[1] = 0x80 | ((code_point >> 12) & 0x3F);
-    utf8_bytes[2] = 0x80 | ((code_point >> 6) & 0x3F);
-    utf8_bytes[3] = 0x80 | (code_point & 0x3F);
-    return 4;
-  } else {
-    // Code point is too large, but we don't handle errors
-    return 0;
-  }
-}
-
-static size_t scalar_code_point_size_utf8(uint32_t code_point) {
-  if (code_point <= 0x7F) {
-    return 1;
-  } else if (code_point <= 0x7FF) {
-    return 2;
-  } else if (code_point <= 0xFFFF) {
-    return 3;
-  } else if (code_point <= 0x10FFFF) {
-    return 4;
-  } else {
-    // Code point is too large, but we don't handle errors
-    return 0;
-  }
-}
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
 static size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out) {
@@ -65,37 +22,6 @@ static size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out) {
         scalar_write_code_point_utf8(NORMDATA_T_BASE + t_index, out + nwritten);
   }
   return nwritten;
-}
-
-// Parse a UTF-8 code point from the input buffer. The size of the code point is
-// written to the `size` pointer.
-static uint32_t scalar_parse_code_point_utf8(const uint8_t *input,
-                                             uint8_t *size) {
-  uint8_t leading = *input;
-  if (leading < 0b10000000) {
-    *size = 1;
-    return leading;
-  } else if ((leading & 0b11100000) == 0b11000000) {
-    *size = 2;
-    return (leading & 0b00011111) << 6 | (input[1] & 0b00111111);
-  } else if ((leading & 0b11110000) == 0b11100000) {
-    *size = 3;
-    return (leading & 0b00001111) << 12 | (input[1] & 0b00111111) << 6 |
-           (input[2] & 0b00111111);
-  } else if ((leading & 0b11111000) == 0b11110000) {
-    *size = 4;
-    return (leading & 0b00000111) << 18 | (input[1] & 0b00111111) << 12 |
-           (input[2] & 0b00111111) << 6 | (input[3] & 0b00111111);
-  } else {
-    *size = 0;
-    // This should be an error, but we don't handle errors
-    return 0;
-  }
-}
-
-// Check if a given byte is the leading byte of a UTF-8 code point
-static bool scalar_is_leading_utf8_byte(uint8_t b) {
-  return (b & 0b11000000) != 0b10000000;
 }
 
 // Sort combining characters in-place (implementation of the canonical ordering
@@ -207,30 +133,6 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     p++;
   }
   return -1;
-}
-
-size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
-                                    size_t amt) {
-  uint8_t *start = out;
-  for (size_t i = 0; i < amt; i++) {
-    uint8_t size = NORMDATA_UTF8_SIZE[input[0]];
-    for (uint8_t j = 0; j < size; j++) {
-      *out++ = input[j];
-    }
-    input += size;
-  }
-  return out - start;
-}
-
-void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
-  size_t p = 0;
-  while (p < length) {
-    uint8_t size;
-    uint32_t c = scalar_parse_code_point_utf8(input + p, &size);
-    printf("%u(p=%zu) ", c, p);
-    p += size;
-  }
-  printf("\n");
 }
 
 #define SCALAR_DEFINE_NORMALIZE_FUNCTIONS(decomp_suffix, decomp_table_name,         \
