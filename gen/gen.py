@@ -644,6 +644,10 @@ def load_casefold_map() -> CasefoldMap:
     return map
 
 
+def to_uint24(x: int) -> int:
+    return x & ((1 << 24) - 1)
+
+
 def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[int]]:
     trie = Trie()
     data: list[int] = []
@@ -660,7 +664,11 @@ def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[in
             # length. This design allows simple deltas to be accessed via a signed
             # shift right on a 32 bit vector.
             assert casefold[0] <= 0xFFFF
-            trie.set(x, x - casefold[0])
+            delta = x - casefold[0]
+            # Top 24 bits used as the delta. If the entire 32-bit value is treated
+            # as a signed 32-bit integer, we get get the signed delta value by doing
+            # a right shift by 8.
+            trie.set(x, to_uint24(delta) << 8)
         else:
             offset = len(data)
             # Lower 16 bits are used for the offset
@@ -668,10 +676,10 @@ def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[in
             for c in casefold:
                 data.extend(chr(c).encode(encoding))
             length = len(data) - offset
-            assert length <= 0xFF
-            # Bit position 31 indicates if the value has a complex mapping
-            value = (1 << 31) | (length << 16) | offset
-            trie.set(x, offset)
+            assert length <= 0x7F
+            # Bit position 8 indicates that it is a complex mapping
+            value = (offset << 8) | (1 << 7) | length
+            trie.set(x, value)
     trie.compact()
     return trie, data
 
