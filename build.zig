@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) !void {
     try flags.append(b.allocator, booleanFlag("XXUTF_IMPLEMENTATION_NEON", add_neon));
 
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
+    run_amalgamate.setCwd(b.path(""));
     run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
     for (all_sources) |source| {
         run_amalgamate.addFileArg(b.path(source));
