@@ -43,11 +43,11 @@ Finally, the command to run `afl-fuzz` on the instrumented binary:
 afl-fuzz -i code/test/corpus -o /output -- ./fuzz_target
 ```
 
-It is important to note that this will, by default, _only_ test **NFD
-normalization**. If you would like to test another normalization form
+It is important to note that this will, by default, _only_ fuzz **NFD
+normalization**. If you would like to test another xxUTF algorithm
 or change the encoding, you may set the following environment variables:
 
 ```
-XXUTF_FUZZ_NORMALIZATION_FORM="NFC"
+XXUTF_FUZZ_ALGORITHM="NFC"
 XXUTF_FUZZ_ENCODING="UTF-16LE"
 ```

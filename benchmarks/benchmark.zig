@@ -74,6 +74,8 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
         IcuNormalizerAnyEncoding(c.shim_unorm2_getNFKCInstance, .utf16be).implementation,
         .utf16be,
     },
+    .{ "xxutf_utf8_cf", xxutfCasefoldUtf8, .utf8 },
+    .{ "icu_utf8_cf", icuCasefoldUtf8, .utf8 },
 };
 
 pub fn main() !void {
@@ -313,6 +315,28 @@ fn xxutfNormalizeUtf16leNFKC(src: []const u8) void {
 fn xxutfNormalizeUtf16beNFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.xxutf_normalize_utf16be_nfkc(src.ptr, src.len, &out);
+}
+
+fn xxutfCasefoldUtf8(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.xxutf_casefold_utf8(src.ptr, src.len, &out);
+}
+
+fn icuCasefoldUtf8(src: []const u8) void {
+    var status: c.UErrorCode = c.U_ZERO_ERROR;
+    const csm = c.shim_ucasemap_open(null, 0, &status);
+    assert(status == c.U_ZERO_ERROR);
+    var utf8_out: [16384]u8 = undefined;
+    _ = c.shim_ucasemap_utf8FoldCase(
+        csm,
+        &utf8_out,
+        utf8_out.len,
+        src.ptr,
+        @intCast(src.len),
+        &status,
+    );
+    assert(status == c.U_ZERO_ERROR);
+    c.shim_ucasemap_close(csm);
 }
 
 fn IcuNormalizerUtf8(

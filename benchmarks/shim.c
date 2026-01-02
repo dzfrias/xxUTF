@@ -50,3 +50,15 @@ int32_t shim_ucnv_toUChars(UConverter *cnv, UChar *dest, int32_t destCapacity,
   return ucnv_toUChars(cnv, dest, destCapacity, src, srcLength, pErrorCode);
 }
 void shim_ucnv_close(UConverter *cnv) { ucnv_close(cnv); }
+
+UCaseMap *shim_ucasemap_open(const char *locale, uint32_t options,
+                             UErrorCode *pErrorCode) {
+  return ucasemap_open(locale, options, pErrorCode);
+}
+int32_t shim_ucasemap_utf8FoldCase(const UCaseMap *csm, char *dest,
+                                   int32_t destCapacity, const char *src,
+                                   int32_t srcLength, UErrorCode *pErrorCode) {
+  return ucasemap_utf8FoldCase(csm, dest, destCapacity, src, srcLength,
+                               pErrorCode);
+}
+void shim_ucasemap_close(UCaseMap *csm) { ucasemap_close(csm); }

@@ -2,6 +2,7 @@
 #define XXUTF_SHIM_H
 
 #include <stdint.h>
+#include <unicode/ucasemap.h>
 #include <unicode/ucnv.h>
 #include <unicode/unorm.h>
 #include <unicode/utypes.h>
@@ -33,5 +34,12 @@ int32_t shim_ucnv_toUChars(UConverter *cnv, UChar *dest, int32_t destCapacity,
                            const char *src, int32_t srcLength,
                            UErrorCode *pErrorCode);
 void shim_ucnv_close(UConverter *cnv);
+
+UCaseMap *shim_ucasemap_open(const char *locale, uint32_t options,
+                             UErrorCode *pErrorCode);
+int32_t shim_ucasemap_utf8FoldCase(const UCaseMap *csm, char *dest,
+                                   int32_t destCapacity, const char *src,
+                                   int32_t srcLength, UErrorCode *pErrorCode);
+void shim_ucasemap_close(UCaseMap *csm);
 
 #endif // XXUTF_SHIM_H

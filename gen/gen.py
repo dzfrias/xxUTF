@@ -198,7 +198,11 @@ def generate_decomp_hash_table(
 
 
 def generate_hash_tables(
-    writer, nfd_map: DecompMap, nfkd_map: DecompMap, comp_map: CompMap
+    writer,
+    nfd_map: DecompMap,
+    nfkd_map: DecompMap,
+    comp_map: CompMap,
+    casefold_map: CasefoldMap,
 ) -> list[HeaderDef]:
     headers = []
     headers.extend(generate_decomp_hash_table(writer, nfd_map, "NFD"))
@@ -239,6 +243,44 @@ def generate_hash_tables(
         [
             HeaderDef.array("NORMDATA_NFC_SALT", "uint16_t", len(comp_salt)),
             HeaderDef.multi_array("NORMDATA_NFC_KV", "uint32_t", [len(comp_keys), 2]),
+        ]
+    )
+
+    # TODO: casefold hash table. All supplementary plane case fold mappings are common,
+    # so we don't need much information in the hash table
+    casefold_table = {}
+    for k, v in casefold_map.items():
+        if k <= 0xFFFF:
+            continue
+        assert len(v) == 1
+        casefold_table[k] = v[0]
+    casefold_salt, casefold_keys = minimal_perfect_hash(casefold_table)
+    writer.write(
+        f"\nconst uint16_t NORMDATA_CASEFOLD_SALT[{len(casefold_salt)}] = {{\n"
+    )
+    for salts in batched(casefold_salt, 14):
+        writer.write(" ")
+        for s in salts:
+            writer.write(f" 0x{s:04X},")
+        writer.write("\n")
+    writer.write("};\n")
+    writer.write(
+        f"\nconst uint32_t NORMDATA_CASEFOLD_KV[{len(casefold_keys)}][2] = {{\n"
+    )
+    for batch in batched(casefold_keys, 8):
+        writer.write(" ")
+        for k in batch:
+            casefold = casefold_table[k]
+            writer.write(f" {{0x{casefold:08X}, 0x{k:08X}}},")
+        writer.write("\n")
+    writer.write("};\n")
+
+    headers.extend(
+        [
+            HeaderDef.array("NORMDATA_CASEFOLD_SALT", "uint16_t", len(casefold_salt)),
+            HeaderDef.multi_array(
+                "NORMDATA_CASEFOLD_KV", "uint32_t", [len(casefold_keys), 2]
+            ),
         ]
     )
 
@@ -500,6 +542,7 @@ POSTAMBLE_H = """
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
+static const uint32_t NORMDATA_CASEFOLD_TABLE_SIZE = sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint64_t);
 
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -636,8 +679,8 @@ def load_casefold_map() -> CasefoldMap:
             c = int(parts[0], 16)
             kind = parts[1].strip()
             mappings = [int(x, 16) for x in parts[2].strip().split(" ")]
-            # Skip Turkic mappings for now
-            if kind == "T":
+            # Skip Turkic and simple mappings for now
+            if kind == "T" or kind == "S":
                 continue
             map[c] = mappings
 
@@ -827,7 +870,9 @@ def main() -> None:
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
         f.write(PREAMBLE)
-        headers.extend(generate_hash_tables(f, nfd_map, nfkd_map, comp_map))
+        headers.extend(
+            generate_hash_tables(f, nfd_map, nfkd_map, comp_map, casefold_map)
+        )
         headers.extend(generate_shuffle_tables(f))
         headers.append(
             generate_array(f, "NORMDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", utf8_nfd_data, 8)

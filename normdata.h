@@ -38,6 +38,8 @@ extern const uint16_t NORMDATA_NFKD_SALT[2251];
 extern const NormdataTableEntry NORMDATA_NFKD_KV[2251];
 extern const uint16_t NORMDATA_NFC_SALT[928];
 extern const uint32_t NORMDATA_NFC_KV[928][2];
+extern const uint16_t NORMDATA_CASEFOLD_SALT[282];
+extern const uint32_t NORMDATA_CASEFOLD_KV[282][2];
 extern const uint8_t NORMDATA_SHUFUTF8[145][16];
 extern const uint8_t NORMDATA_CODE_POINT_INDEX[4096][2];
 extern const uint8_t NORMDATA_SHUFUTF8_INDEX_12;
@@ -61,13 +63,14 @@ extern const uint8_t NORMDATA_CCC_TRIE_DATA[3319];
 extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[4096];
-extern const uint8_t NORMDATA_UTF8_CASEFOLD_DATA[323];
+extern const uint8_t NORMDATA_UTF8_CASEFOLD_DATA[471];
 extern const uint16_t NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF8_CASEFOLD_TRIE_DATA[2549];
 
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
+static const uint32_t NORMDATA_CASEFOLD_TABLE_SIZE = sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint64_t);
 
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

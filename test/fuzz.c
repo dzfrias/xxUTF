@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unicode/ucasemap.h>
 #include <unicode/ucnv.h>
 #include <unicode/unorm.h>
 #include <unicode/ustring.h>
@@ -224,6 +225,49 @@ static void print_code_points_utf8(const char *s, size_t len) {
   }
 }
 
+static bool compare_casefold_utf8(const char *input, size_t length,
+                                  bool verbose) {
+  UErrorCode status = U_ZERO_ERROR;
+  UCaseMap *csm = ucasemap_open(NULL, 0, &status);
+  if (U_FAILURE(status)) {
+    printf("error opening CaseMap: %s\n", u_errorName(status));
+    return false;
+  }
+  char icu_out[8192];
+  int32_t icu_out_length =
+      ucasemap_utf8FoldCase(csm, icu_out, 8192, input, length, &status);
+  char xxutf_out[8192];
+  size_t xxutf_out_length = xxutf_casefold_utf8(input, length, xxutf_out);
+  size_t pos;
+  if (!is_valid_utf8((const uint8_t *)xxutf_out, xxutf_out_length, &pos)) {
+    if (verbose) {
+      printf("casefolded output is invaild UTF-8, position %zu\n", pos);
+    }
+    return false;
+  }
+  icu_out[icu_out_length] = '\0';
+  xxutf_out[xxutf_out_length] = '\0';
+  if (!equal(xxutf_out, icu_out)) {
+    if (verbose) {
+      printf("Buffers (UTF-8, CF) not equal\n");
+      printf("   input: ");
+      print_code_points_utf8(input, length);
+      printf("\n");
+      printf("   xxutf: ");
+      print_code_points_utf8(xxutf_out, xxutf_out_length);
+      printf("\n");
+      printf("   icu4c: ");
+      print_code_points_utf8(icu_out, icu_out_length);
+      printf("\n");
+    }
+    return false;
+  }
+  if (verbose) {
+    printf("Both buffers (UTF-8, CF) equal!\n");
+  }
+  return true;
+}
+
 #define COMPARE_NORMALIZE_FUNCTION_UTF8(form, form_upper)                      \
   static bool compare_normalization_utf8_##form(const char *input,             \
                                                 size_t length, bool verbose) { \
@@ -423,10 +467,10 @@ int main() {
 #ifdef __AFL_FUZZ_TESTCASE_LEN
   unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
-  const char *normalization_form = getenv("XXUTF_FUZZ_NORMALIZATION_FORM");
+  const char *algorithm = getenv("XXUTF_FUZZ_ALGORITHM");
   const char *encoding = getenv("XXUTF_FUZZ_ENCODING");
-  if (normalization_form == NULL) {
-    normalization_form = "NFD";
+  if (algorithm == NULL) {
+    algorithm = "NFD";
   }
   if (encoding == NULL) {
     encoding = "UTF-8";
@@ -435,46 +479,48 @@ int main() {
   bool (*compare_func)(const char *, size_t, bool);
 
   if (strcmp(encoding, "UTF-8") == 0) {
-    if (strcmp(normalization_form, "NFD") == 0) {
+    if (strcmp(algorithm, "NFD") == 0) {
       compare_func = compare_normalization_utf8_nfd;
-    } else if (strcmp(normalization_form, "NFC") == 0) {
+    } else if (strcmp(algorithm, "NFC") == 0) {
       compare_func = compare_normalization_utf8_nfc;
-    } else if (strcmp(normalization_form, "NFKD") == 0) {
+    } else if (strcmp(algorithm, "NFKD") == 0) {
       compare_func = compare_normalization_utf8_nfkd;
-    } else if (strcmp(normalization_form, "NFKC") == 0) {
+    } else if (strcmp(algorithm, "NFKC") == 0) {
       compare_func = compare_normalization_utf8_nfkc;
+    } else if (strcmp(algorithm, "CF") == 0) {
+      compare_func = compare_casefold_utf8;
     } else {
-      printf("Invalid normalization form: %s\n", normalization_form);
+      printf("Unknown algorithm: %s\n", algorithm);
       abort();
     }
   } else if (strcmp(encoding, "UTF-16LE") == 0) {
-    if (strcmp(normalization_form, "NFD") == 0) {
+    if (strcmp(algorithm, "NFD") == 0) {
       compare_func = compare_normalization_utf16le_nfd;
-    } else if (strcmp(normalization_form, "NFKD") == 0) {
+    } else if (strcmp(algorithm, "NFKD") == 0) {
       compare_func = compare_normalization_utf16le_nfkd;
-    } else if (strcmp(normalization_form, "NFC") == 0) {
+    } else if (strcmp(algorithm, "NFC") == 0) {
       compare_func = compare_normalization_utf16le_nfc;
-    } else if (strcmp(normalization_form, "NFKC") == 0) {
+    } else if (strcmp(algorithm, "NFKC") == 0) {
       compare_func = compare_normalization_utf16le_nfkc;
     } else {
-      printf("Invalid normalization form: %s\n", normalization_form);
+      printf("Unknown algorithm: %s\n", algorithm);
       abort();
     }
   } else if (strcmp(encoding, "UTF-16BE") == 0) {
-    if (strcmp(normalization_form, "NFD") == 0) {
+    if (strcmp(algorithm, "NFD") == 0) {
       compare_func = compare_normalization_utf16be_nfd;
-    } else if (strcmp(normalization_form, "NFKD") == 0) {
+    } else if (strcmp(algorithm, "NFKD") == 0) {
       compare_func = compare_normalization_utf16be_nfkd;
-    } else if (strcmp(normalization_form, "NFC") == 0) {
+    } else if (strcmp(algorithm, "NFC") == 0) {
       compare_func = compare_normalization_utf16be_nfc;
-    } else if (strcmp(normalization_form, "NFKC") == 0) {
+    } else if (strcmp(algorithm, "NFKC") == 0) {
       compare_func = compare_normalization_utf16be_nfkc;
     } else {
-      printf("Invalid normalization form: %s\n", normalization_form);
+      printf("Unknown algorithm: %s\n", algorithm);
       abort();
     }
   } else {
-    printf("Invalid encoding form: %s\n", encoding);
+    printf("Unknown encoding: %s\n", encoding);
     abort();
   }
 
@@ -540,6 +586,9 @@ int main() {
       continue;
     }
     if (!compare_normalization_utf16be_nfkc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_casefold_utf8(buf, nread, true)) {
       continue;
     }
   }
