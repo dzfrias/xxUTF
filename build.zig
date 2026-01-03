@@ -199,23 +199,13 @@ const default_flags: []const []const u8 = &.{
     "-Werror",
 };
 
-const all_files: []const []const u8 = &.{
+const header_files: []const []const u8 = &.{
     "xxutf.h",
-    "xxutf.c",
     "normdata.h",
-    "normdata.c",
     "impl/scalar.h",
-    "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_common.h",
-    "impl/scalar/scalar_normalize_utf8.c",
-    "impl/scalar/scalar_normalize_utf16.c",
-    "impl/scalar/scalar_casefold_utf8.c",
     "impl/neon.h",
-    "impl/neon/neon_common.c",
     "impl/neon/neon_common.h",
-    "impl/neon/neon_normalize_utf8.c",
-    "impl/neon/neon_normalize_utf16.c",
-    "impl/neon/neon_casefold_utf8.c",
 };
 
 const default_sources: []const []const u8 = &.{
@@ -235,3 +225,4 @@ const neon_sources: []const []const u8 = &.{
 };
 
 const all_sources: []const []const u8 = default_sources ++ neon_sources;
+const all_files: []const []const u8 = all_sources ++ header_files;
