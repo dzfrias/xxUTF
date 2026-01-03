@@ -164,5 +164,10 @@ size_t xxutf_normalize_utf16be_nfkc(const char *input, size_t length,
 }
 
 size_t xxutf_casefold_utf8(const char *input, size_t length, char *out) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_casefold_utf8((const uint8_t *)input, length, (uint8_t *)out);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
   return scalar_casefold_utf8((const uint8_t *)input, length, (uint8_t *)out);
+#endif
 }

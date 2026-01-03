@@ -63,9 +63,9 @@ extern const uint8_t NORMDATA_CCC_TRIE_DATA[3319];
 extern const uint32_t NORMDATA_NFC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NFKC_BLOOM_FILTER[4096];
 extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[4096];
-extern const uint8_t NORMDATA_UTF8_CASEFOLD_DATA[471];
+extern const uint8_t NORMDATA_UTF8_CASEFOLD_DATA[3447];
 extern const uint16_t NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[1024];
-extern const uint32_t NORMDATA_UTF8_CASEFOLD_TRIE_DATA[2549];
+extern const uint32_t NORMDATA_UTF8_CASEFOLD_TRIE_DATA[2942];
 
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);

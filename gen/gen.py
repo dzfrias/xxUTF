@@ -687,10 +687,6 @@ def load_casefold_map() -> CasefoldMap:
     return map
 
 
-def to_uint24(x: int) -> int:
-    return x & ((1 << 24) - 1)
-
-
 def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[int]]:
     trie = Trie()
     data: list[int] = []
@@ -699,30 +695,15 @@ def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[in
             trie.set(x, 0)
             continue
         casefold = map[x]
-        if len(casefold) == 1:
-            # The case map should also be in the BMP
-            # TODO: value layout should be: 24 bits at top that is either a delta
-            # or an offset. One byte at bottom. Leading bit of the byte should
-            # indicate if it is complex. If it is complex, other 7 bits indicate
-            # length. This design allows simple deltas to be accessed via a signed
-            # shift right on a 32 bit vector.
-            assert casefold[0] <= 0xFFFF
-            delta = x - casefold[0]
-            # Top 24 bits used as the delta. If the entire 32-bit value is treated
-            # as a signed 32-bit integer, we get get the signed delta value by doing
-            # a right shift by 8.
-            trie.set(x, to_uint24(delta) << 8)
-        else:
-            offset = len(data)
-            # Lower 16 bits are used for the offset
-            assert offset <= 0xFFFF
-            for c in casefold:
-                data.extend(chr(c).encode(encoding))
-            length = len(data) - offset
-            assert length <= 0x7F
-            # Bit position 8 indicates that it is a complex mapping
-            value = (offset << 8) | (1 << 7) | length
-            trie.set(x, value)
+        offset = len(data)
+        # Lower 16 bits are used for the offset
+        assert offset <= 0xFFFF
+        for c in casefold:
+            data.extend(chr(c).encode(encoding))
+        length = len(data) - offset
+        assert length <= 0xFF
+        value = (offset << 8) | length
+        trie.set(x, value)
     trie.compact()
     return trie, data
 

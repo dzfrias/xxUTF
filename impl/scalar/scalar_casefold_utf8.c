@@ -16,16 +16,7 @@ static size_t scalar_casefold_character_utf8_bmp(uint16_t c, uint8_t *out) {
   if (value == 0) {
     return 0;
   }
-  // Check if we have a common case folding
-  if ((value & 0x80) == 0) {
-    int32_t delta = (int32_t)value >> 8;
-    int32_t mapping = (uint32_t)c - delta;
-    assert(mapping > 0);
-    assert(mapping <= 0xFFFF);
-    return scalar_write_code_point_utf8((uint32_t)mapping, out);
-  }
-  // In this case, we have a full case folding
-  uint8_t length = value & 0x7F;
+  uint8_t length = value & 0xFF;
   size_t offset = value >> 8;
   for (size_t k = 0; k < length; k++) {
     out[k] = NORMDATA_UTF8_CASEFOLD_DATA[offset + k];
