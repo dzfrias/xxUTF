@@ -80,6 +80,7 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
       vst1_u8(*out, vld1_u8(input));
       *out += size;
       input += size;
+      continue;
     }
     uint8_t length = value & 0xFF;
     const uint8_t *casefold_offset = &NORMDATA_UTF8_CASEFOLD_DATA[value >> 8];
