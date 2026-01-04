@@ -147,7 +147,7 @@ SCALAR_UTF16_HELPERS(be);
 
 #undef SCALAR_UTF16_HELPERS
 
-#define SCALAR_UTF16_IMPLEMENTATION(endianness, swap_endianness, decomp_form,       \
+#define SCALAR_UTF16_IMPLEMENTATION(endianness, is_big_endian, decomp_form,         \
                                     decomp_form_upper, comp_form,                   \
                                     comp_form_upper)                                \
   static size_t                                                                     \
@@ -193,7 +193,7 @@ SCALAR_UTF16_HELPERS(be);
     const uint8_t *bytes =                                                          \
         &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];          \
     for (size_t k = 0; k < length; k += 2) {                                        \
-      if (swap_endianness) {                                                        \
+      if (is_big_endian) {                                                          \
         out[0] = bytes[k + 1];                                                      \
         out[1] = bytes[k];                                                          \
       } else {                                                                      \
@@ -422,9 +422,9 @@ SCALAR_UTF16_HELPERS(be);
     return out - start;                                                             \
   }
 
-SCALAR_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC);
-SCALAR_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC);
-SCALAR_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC);
-SCALAR_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC);
+SCALAR_UTF16_IMPLEMENTATION(le, false, nfd, NFD, nfc, NFC);
+SCALAR_UTF16_IMPLEMENTATION(be, true, nfd, NFD, nfc, NFC);
+SCALAR_UTF16_IMPLEMENTATION(le, false, nfkd, NFKD, nfkc, NFKC);
+SCALAR_UTF16_IMPLEMENTATION(be, true, nfkd, NFKD, nfkc, NFKC);
 
 #undef SCALAR_UTF16_IMPLEMENTATION
