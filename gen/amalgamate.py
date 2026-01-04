@@ -43,15 +43,13 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
                     out.write(line)
             elif (var_match := var_re.match(line)) is not None:
                 name = var_match.group(2)
-                if not line.startswith("static") and not name.lower().startswith(
-                    "xxutf_"
-                ):
-                    if line.startswith("extern"):
-                        out.write(
-                            f"__attribute__((unused)) static {line[len("extern "):]}"
-                        )
-                    else:
+                if not name.lower().startswith("xxutf_"):
+                    if not line.startswith("static"):
+                        if line.startswith("extern"):
+                            line = line[len("extern "):]
                         out.write(f"__attribute__((unused)) static {line}")
+                    else:
+                        out.write(f"__attribute__((unused)) {line}")
                 else:
                     out.write(line)
             elif (add_match := add_re.match(line)) is not None:
