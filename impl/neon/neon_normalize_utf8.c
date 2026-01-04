@@ -523,63 +523,40 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
       return min;                                                                   \
     }                                                                               \
                                                                                     \
-    /* TODO: improve detecting bad ccc orderings Idea: like with decomp, put        \
-     *       every ccc > 0 into the bloom filter. Then we'll fall back to           \
-     *       scalar path a lot, but it might still be worth it. But we can use      \
-     *       even more information. If we use last_is_cc information, we can        \
-     *       make sure to only fall back when we have two contiguous combining      \
-     *       characters (can check with NEON using vpadd). But will have to         \
-     *       check if first of current and last_is_cc is set.                       \
-     */                                                                             \
-                                                                                    \
     uint8x16_t in = vld1q_u8(input);                                                \
     uint16_t sml_mask = mask & 0xFFF;                                               \
                                                                                     \
-    uint32x4_t code_points;                                                         \
+    uint16x4_t code_points;                                                         \
     size_t n_bytes;                                                                 \
                                                                                     \
     if (sml_mask == 0x924) {                                                        \
-      uint16x4_t chars = neon_parse_3_byte_utf8(in);                                \
-      code_points = vmovl_u16(chars);                                               \
+      code_points = neon_parse_3_byte_utf8(in);                                     \
       n_bytes = 12;                                                                 \
     } else if ((sml_mask & 0xFF) == 0xAA) {                                         \
-      uint16x4_t chars = neon_parse_2_byte_utf8(in);                                \
-      code_points = vmovl_u16(chars);                                               \
+      code_points = neon_parse_2_byte_utf8(in);                                     \
       n_bytes = 8;                                                                  \
     } else {                                                                        \
       uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];                         \
       n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];                             \
       if (idx < NORMDATA_SHUFUTF8_INDEX_12) {                                       \
-        uint16x4_t chars = neon_parse_4_12_utf8(in, idx);                           \
-        code_points = vmovl_u16(chars);                                             \
+        code_points = neon_parse_4_12_utf8(in, idx);                                \
       } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {                               \
-        uint16x4_t chars = neon_parse_4_123_utf8(in, idx);                          \
-        code_points = vmovl_u16(chars);                                             \
+        code_points = neon_parse_4_123_utf8(in, idx);                               \
       } else {                                                                      \
         assert(idx < NORMDATA_SHUFUTF8_INDEX_1234);                                 \
-        if (sml_mask == 0x888) {                                                    \
-          code_points = neon_parse_4_byte_utf8(in);                                 \
-        } else {                                                                    \
-          code_points = neon_parse_3_1234_utf8(in, idx);                            \
-        }                                                                           \
-        /* Set the last code point to 0 to make sure it doesn't accidentally        \
-         * get recognized by the bloom filter. */                                   \
-        code_points = vsetq_lane_u32(0, code_points, 3);                            \
+        return neon_fallback_utf8_##comp_form(input, input_base, length, out,       \
+                                              n_bytes);                             \
       }                                                                             \
     }                                                                               \
                                                                                     \
-    uint32x4_t bloom = neon_evaluate_bloom_##comp_form(code_points);                \
-    if (vaddvq_u32(bloom) == 0) {                                                   \
+    uint16x4_t values = neon_evaluate_trie_##comp_form(code_points);                \
+    if (vmaxv_u16(values) == 0) {                                                   \
       vst1q_u8(*out, in);                                                           \
       *out += n_bytes;                                                              \
       return n_bytes;                                                               \
     }                                                                               \
-    uint8_t first_relevant = neon_first_true(bloom);                                \
-    size_t copied = scalar_copy_code_points_utf8(input, *out, first_relevant);      \
-    *out += copied;                                                                 \
-    return copied + neon_fallback_utf8_##comp_form(input + copied, input_base,      \
-                                                   length, out,                     \
-                                                   n_bytes - copied);               \
+    return neon_fallback_utf8_##comp_form(input, input_base, length, out,           \
+                                          n_bytes);                                 \
   }                                                                                 \
                                                                                     \
   size_t neon_normalize_utf8_##decomp_form(const uint8_t *input,                    \

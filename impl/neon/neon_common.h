@@ -26,14 +26,16 @@ uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars);
 // lesat 64 bytes of space.
 void neon_memcpy_small(uint8_t *dst, const uint8_t *src);
 
-// Return the offset of the first 0xFFFFFFFF value in the given logical vector.
-uint8_t neon_first_true(uint32x4_t v);
-
 // Pass a code point vector through the NFC bloom filter, which will return a
 // vector of 0s and 0xFFFFFFFFs probabilistically indicating whether the
 // corresponding code point has an decomposition or is a combining character.
 uint32x4_t neon_evaluate_bloom_nfc(uint32x4_t input);
 uint32x4_t neon_evaluate_bloom_nfkc(uint32x4_t input);
+
+uint16x4_t neon_evaluate_trie_nfc(uint16x4_t input);
+uint16x4_t neon_evaluate_trie_nfkc(uint16x4_t input);
+uint16x8_t neon_evaluate_trie_compound_nfc(uint16x8_t input);
+uint16x8_t neon_evaluate_trie_compound_nfkc(uint16x8_t input);
 
 // Parse four three-byte UTF-8 code points into their 16-bit code point values.
 uint16x4_t neon_parse_3_byte_utf8(uint8x16_t in);

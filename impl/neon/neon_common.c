@@ -76,102 +76,59 @@ void neon_memcpy_small(uint8_t *dst, const uint8_t *src) {
   vst1q_u8(dst + 48, vld1q_u8(src + 48));
 }
 
-uint8_t neon_first_true(uint32x4_t v) {
-  uint16x8_t v16 = vreinterpretq_u16_u8(v);
-  uint8x8_t res = vshrn_n_u16(v16, 4);
-  uint64_t bitmask4 = vget_lane_u64(vreinterpret_u64_u8(res), 0);
-  return __builtin_ctzll(bitmask4) / 16;
-}
-
-// Extremely fast, low quality hash function
-static uint32x4_t neon_mul_shift_hash(uint32x4_t x) {
-  uint32x4_t mul = vmulq_n_u32(x, 2654435761);
-  uint32x4_t shift = vshrq_n_u32(mul, 16);
-  uint32x4_t y = vandq_u32(shift, vdupq_n_u32(65535));
-  return y;
-}
-
-// Moderate quality hash function
-static uint32x4_t neon_xorshift_hash(uint32x4_t x) {
-  x = veorq_u32(x, vshrq_n_u32(x, 13));
-  x = veorq_u32(x, vshlq_n_u32(x, 17));
-  x = veorq_u32(x, vshrq_n_u32(x, 5));
-  return x;
-}
-
-// High quality hash function based on the MurmurHash3 finalizer
-static uint32x4_t neon_xorshift_mul_hash(uint32x4_t x) {
-  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
-  x = vmulq_n_u32(veorq_u32(vshrq_n_u32(x, 16), x), 0x45D9F3B);
-  x = veorq_u32(vshrq_n_u32(x, 16), x);
-  return x;
-}
-
-static inline uint32x4_t neon_bloom_lookup_non_starters(uint32x4_t block_idx,
-                                                        uint32x4_t mask) {
-  uint32x4_t block = {
-      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 0)],
-      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 1)],
-      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 2)],
-      NORMDATA_NON_STARTERS_BLOOM_FILTER[vgetq_lane_u32(block_idx, 3)],
-  };
-  uint32x4_t result = vandq_u32(mask, block);
-  uint32x4_t result_eq = vceqq_u32(result, mask);
-  return result_eq;
-}
-
 #define NEON_COMMON_FUNCTIONS(comp_form, comp_form_upper)                      \
-  static uint32x4_t neon_bloom_lookup_##comp_form##_qc(uint32x4_t block_idx,   \
-                                                       uint32x4_t mask) {      \
-    uint32x4_t block = {                                                       \
-        NORMDATA_##comp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,    \
-                                                                 0)],          \
-        NORMDATA_##comp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,    \
-                                                                 1)],          \
-        NORMDATA_##comp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,    \
-                                                                 2)],          \
-        NORMDATA_##comp_form_upper##_BLOOM_FILTER[vgetq_lane_u32(block_idx,    \
-                                                                 3)],          \
+  uint16x4_t neon_evaluate_trie_##comp_form(uint16x4_t input) {                \
+    uint16x4_t index = vshr_n_u16(input, 6);                                   \
+    uint16x4_t block_index = {                                                 \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vget_lane_u16(index, 0)],      \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vget_lane_u16(index, 1)],      \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vget_lane_u16(index, 2)],      \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vget_lane_u16(index, 3)],      \
     };                                                                         \
-    uint32x4_t result = vandq_u32(mask, block);                                \
-    uint32x4_t result_eq = vceqq_u32(result, mask);                            \
-    return result_eq;                                                          \
+    uint16x4_t masked = vand_u16(input, vdup_n_u16(0x3F));                     \
+    uint16x4_t data_offset = vadd_u16(block_index, masked);                    \
+    uint16x4_t values = {                                                      \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vget_lane_u16(data_offset, 0)], \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vget_lane_u16(data_offset, 1)], \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vget_lane_u16(data_offset, 2)], \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vget_lane_u16(data_offset, 3)], \
+    };                                                                         \
+    return values;                                                             \
   }                                                                            \
                                                                                \
-  uint32x4_t neon_evaluate_bloom_##comp_form(uint32x4_t input) {               \
-    uint32x4_t h1 = neon_mul_shift_hash(input);                                \
-    uint32x4_t h2 = neon_xorshift_hash(input);                                 \
-    uint32x4_t h3 =                                                            \
-        neon_xorshift_mul_hash(veorq_u32(input, vdupq_n_u32(0xDEADBEEFUL)));   \
-    uint32x4_t h4 = neon_xorshift_mul_hash(input);                             \
-                                                                               \
-    const uint32_t COMP_BLOOM_SIZE =                                           \
-        sizeof(NORMDATA_##comp_form_upper##_BLOOM_FILTER) / sizeof(uint32_t);  \
-    const uint32_t NON_STARTERS_BLOOM_SIZE =                                   \
-        sizeof(NORMDATA_NON_STARTERS_BLOOM_FILTER) / sizeof(uint32_t);         \
-    /* h1 % BLOOM_SIZE */                                                      \
-    uint32x4_t comp_block_idx =                                                \
-        vandq_u32(h1, vdupq_n_u32(COMP_BLOOM_SIZE - 1));                       \
-    uint32x4_t non_starters_block_idx =                                        \
-        vandq_u32(h1, vdupq_n_u32(NON_STARTERS_BLOOM_SIZE - 1));               \
-    /* h2 % 32 */                                                              \
-    uint32x4_t shift1 = vandq_u32(h2, vdupq_n_u32(31));                        \
-    /* h3 % 32 */                                                              \
-    uint32x4_t shift2 = vandq_u32(h3, vdupq_n_u32(31));                        \
-    /* h4 % 32 */                                                              \
-    uint32x4_t shift3 = vandq_u32(h4, vdupq_n_u32(31));                        \
-                                                                               \
-    uint32x4_t mask = vshlq_u32(vdupq_n_u32(1), shift1);                       \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift2));                 \
-    mask = vorrq_u32(mask, vshlq_u32(vdupq_n_u32(1), shift3));                 \
-                                                                               \
-    /* NF(K)C QC and the non starters bloom filter use the same hashing scheme \
-     */                                                                        \
-    uint32x4_t qc = neon_bloom_lookup_##comp_form##_qc(comp_block_idx, mask);  \
-    uint32x4_t non_starters =                                                  \
-        neon_bloom_lookup_non_starters(non_starters_block_idx, mask);          \
-    uint32x4_t combined = vorrq_u32(qc, non_starters);                         \
-    return combined;                                                           \
+  uint16x8_t neon_evaluate_trie_compound_##comp_form(uint16x8_t input) {       \
+    uint16x8_t index = vshrq_n_u16(input, 6);                                  \
+    uint16x8_t block_index = {                                                 \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 0)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 1)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 2)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 3)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 4)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 5)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 6)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 7)],     \
+    };                                                                         \
+    uint16x8_t masked = vandq_u16(input, vdupq_n_u16(0x3F));                   \
+    uint16x8_t data_offset = vaddq_u16(block_index, masked);                   \
+    uint16x8_t values = {                                                      \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              0)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              1)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              2)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              3)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              4)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              5)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              6)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              7)],             \
+    };                                                                         \
+    return values;                                                             \
   }
 
 NEON_COMMON_FUNCTIONS(nfc, NFC);

@@ -283,6 +283,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint8_t **out, size_t length) {                                          \
     size_t offset = input - input_base;                                        \
     /* Get the region that we will NFC normalize */                            \
+    /* TODO: should this be +2 or +4 in case the first code point is a high    \
+     * surrogate? Write a specific test case for this */                       \
     size_t prev_starter =                                                      \
         scalar_rfind_starter_utf16##endianness(input_base, offset + 2);        \
     if (prev_starter == (size_t)-1) {                                          \
@@ -330,34 +332,26 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       }                                                                        \
       uint16x8_t surrogates_mask = neon_make_surrogates_mask(in);              \
       /* Check if we have no surrogate pairs */                                \
-      if (vaddvq_u32(surrogates_mask) == 0) {                                  \
-        uint16x4_t in1 = vget_low_u16(in);                                     \
-        uint16x4_t in2 = vget_high_u16(in);                                    \
-        uint32x4_t wide1 = vmovl_u16(in1);                                     \
-        uint32x4_t wide2 = vmovl_u16(in2);                                     \
-        uint32x4_t bloom1 = neon_evaluate_bloom_##comp_form(wide1);            \
-        uint32x4_t bloom2 = neon_evaluate_bloom_##comp_form(wide2);            \
-        bool irrelevant1 = vaddvq_u32(bloom1) == 0;                            \
-        bool irrelevant2 = vaddvq_u32(bloom2) == 0;                            \
-        if (irrelevant1 && irrelevant2) {                                      \
+      if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
+        uint16x8_t trie = neon_evaluate_trie_compound_##comp_form(in);         \
+        /* Skip if we have no relevant code points */                          \
+        if (vmaxvq_u32(trie) == 0) {                                           \
           vst1q_u8(*out_ptr, bytes);                                           \
           *out_ptr += 16;                                                      \
           p += 16;                                                             \
-        } else if (irrelevant1) {                                              \
+          continue;                                                            \
+        }                                                                      \
+        /* Try just the lower part of the 8 code points */                     \
+        uint16x4_t trie1 = vget_low_u16(trie);                                 \
+        if (vmaxv_u16(trie1) == 0) {                                           \
           uint8x8_t low_bytes = vget_low_u8(bytes);                            \
           vst1_u8(*out_ptr, low_bytes);                                        \
           *out_ptr += 8;                                                       \
           p += 8;                                                              \
         } else {                                                               \
-          uint8_t first_relevant = neon_first_true(bloom1);                    \
-          size_t copy_amount = first_relevant * 2;                             \
-          uint8x8_t low_bytes = vget_low_u8(bytes);                            \
-          vst1_u8(*out_ptr, low_bytes);                                        \
-          *out_ptr += copy_amount;                                             \
-          size_t normalized = neon_fallback_utf16##endianness##_##comp_form(   \
-              input + p + copy_amount, input, length, out_ptr,                 \
-              8 - copy_amount);                                                \
-          p += copy_amount + normalized;                                       \
+          /* Fall back to scalar */                                            \
+          p += neon_fallback_utf16##endianness##_##comp_form(                  \
+              input + p, input, length, out_ptr, 8);                           \
         }                                                                      \
       } else {                                                                 \
         /* With surrogate pairs, we fall back to the scalar implementation */  \

@@ -810,19 +810,19 @@ def main() -> None:
         hash_32bit_fast,
     ]
     nfc_bloom = BloomFilter(
-        131072,
+        32768,
         multiply_shift_hash,
         default_hash_scheme,
-        derived.nfc_qc,
+        [x for x in derived.nfc_qc if x > 0xFFFF],
     )
     nfkc_bloom = BloomFilter(
-        131072,
+        32768,
         multiply_shift_hash,
         default_hash_scheme,
-        derived.nfkc_qc,
+        [x for x in derived.nfkc_qc if x > 0xFFFF],
     )
     non_starters_bloom = BloomFilter(
-        131072,
+        32768,
         multiply_shift_hash,
         default_hash_scheme,
         non_starters,
@@ -847,6 +847,14 @@ def main() -> None:
             ccc_trie.set(x, 0)
     ccc_trie.compact()
     casefold_trie, casefold_data = create_casefold_trie(casefold_map, "UTF-8")
+    nfc_trie = Trie()
+    for x in range(0x10000):
+        nfc_trie.set(x, int(x in derived.nfc_qc or x in non_starters))
+    nfc_trie.compact()
+    nfkc_trie = Trie()
+    for x in range(0x10000):
+        nfkc_trie.set(x, int(x in derived.nfkc_qc or x in non_starters))
+    nfkc_trie.compact()
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
@@ -886,6 +894,8 @@ def main() -> None:
             generate_trie(f, "NORMDATA_UTF16_NFKD_TRIE", utf16_nfkd_trie, 16, 32)
         )
         headers.extend(generate_trie(f, "NORMDATA_CCC_TRIE", ccc_trie, 16, 8))
+        headers.extend(generate_trie(f, "NORMDATA_NFC_TRIE", nfc_trie, 16, 8))
+        headers.extend(generate_trie(f, "NORMDATA_NFKC_TRIE", nfkc_trie, 16, 8))
         headers.extend(generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom))
         headers.extend(
             generate_bloom_filter(f, "NORMDATA_NFKC_BLOOM_FILTER", nfkc_bloom)

@@ -67,8 +67,6 @@ size_t scalar_find_nfkc_irrelevant_starter_utf8(const uint8_t *input,
                                                 size_t length);
 size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
-size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
-                                    size_t amt);
 
 void scalar_write_uint16le(uint16_t x, uint8_t *out);
 void scalar_write_uint16be(uint16_t x, uint8_t *out);

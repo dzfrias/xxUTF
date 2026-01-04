@@ -122,11 +122,20 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
 }
 
 bool scalar_is_nfc_relevant(uint32_t code_point) {
+  if (code_point <= 0xFFFF) {
+    uint16_t shift = code_point >> 6;
+    uint16_t masked = code_point & 63;
+    uint16_t index = NORMDATA_NFC_TRIE_INDEX[shift];
+    uint8_t value = NORMDATA_NFC_TRIE_DATA[index + masked];
+    return value > 0;
+  }
   uint32_t h1 = scalar_multiply_shift_hash(code_point);
   uint32_t h2 = scalar_xorshift_hash(code_point);
   uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);
   uint32_t h4 = scalar_xorshift_mul_hash(code_point);
-  uint32_t block_idx = h1 % 4096;
+  const uint32_t COMP_BLOOM_SIZE =
+      sizeof(NORMDATA_NFC_BLOOM_FILTER) / sizeof(uint32_t);
+  uint32_t block_idx = h1 % COMP_BLOOM_SIZE;
   uint32_t shift1 = h2 % 32;
   uint32_t shift2 = h3 % 32;
   uint32_t shift3 = h4 % 32;
@@ -140,11 +149,20 @@ bool scalar_is_nfc_relevant(uint32_t code_point) {
 }
 
 bool scalar_is_nfkc_relevant(uint32_t code_point) {
+  if (code_point <= 0xFFFF) {
+    uint16_t shift = code_point >> 6;
+    uint16_t masked = code_point & 63;
+    uint16_t index = NORMDATA_NFKC_TRIE_INDEX[shift];
+    uint8_t value = NORMDATA_NFKC_TRIE_DATA[index + masked];
+    return value > 0;
+  }
   uint32_t h1 = scalar_multiply_shift_hash(code_point);
   uint32_t h2 = scalar_xorshift_hash(code_point);
   uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);
   uint32_t h4 = scalar_xorshift_mul_hash(code_point);
-  uint32_t block_idx = h1 % 4096;
+  const uint32_t COMP_BLOOM_SIZE =
+      sizeof(NORMDATA_NFKC_BLOOM_FILTER) / sizeof(uint32_t);
+  uint32_t block_idx = h1 % COMP_BLOOM_SIZE;
   uint32_t shift1 = h2 % 32;
   uint32_t shift2 = h3 % 32;
   uint32_t shift3 = h4 % 32;
@@ -236,19 +254,6 @@ uint32_t scalar_parse_code_point_utf8(const uint8_t *input, uint8_t *size) {
 
 bool scalar_is_leading_utf8_byte(uint8_t b) {
   return (b & 0b11000000) != 0b10000000;
-}
-
-size_t scalar_copy_code_points_utf8(const uint8_t *input, uint8_t *out,
-                                    size_t amt) {
-  uint8_t *start = out;
-  for (size_t i = 0; i < amt; i++) {
-    uint8_t size = NORMDATA_UTF8_SIZE[input[0]];
-    for (uint8_t j = 0; j < size; j++) {
-      *out++ = input[j];
-    }
-    input += size;
-  }
-  return out - start;
 }
 
 void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
