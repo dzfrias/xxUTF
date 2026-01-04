@@ -76,6 +76,18 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
     },
     .{ "xxutf_utf8_cf", xxutfCasefoldUtf8, .utf8 },
     .{ "icu_utf8_cf", icuCasefoldUtf8, .utf8 },
+    .{ "xxutf_utf16le_cf", xxutfCasefoldUtf16le, .utf16le },
+    .{
+        "icu_utf16le_cf",
+        IcuCaseFoldAnyEncoding(.utf16le).implementation,
+        .utf16le,
+    },
+    .{ "xxutf_utf16be_cf", xxutfCasefoldUtf16be, .utf16be },
+    .{
+        "icu_utf16be_cf",
+        IcuCaseFoldAnyEncoding(.utf16be).implementation,
+        .utf16be,
+    },
 };
 
 pub fn main() !void {
@@ -322,6 +334,16 @@ fn xxutfCasefoldUtf8(src: []const u8) void {
     _ = c.xxutf_casefold_utf8(src.ptr, src.len, &out);
 }
 
+fn xxutfCasefoldUtf16le(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.xxutf_casefold_utf16le(src.ptr, src.len, &out);
+}
+
+fn xxutfCasefoldUtf16be(src: []const u8) void {
+    var out: [100_000]u8 = undefined;
+    _ = c.xxutf_casefold_utf16be(src.ptr, src.len, &out);
+}
+
 fn icuCasefoldUtf8(src: []const u8) void {
     var status: c.UErrorCode = c.U_ZERO_ERROR;
     const csm = c.shim_ucasemap_open(null, 0, &status);
@@ -337,6 +359,53 @@ fn icuCasefoldUtf8(src: []const u8) void {
     );
     assert(status == c.U_ZERO_ERROR);
     c.shim_ucasemap_close(csm);
+}
+
+fn IcuCaseFoldAnyEncoding(comptime encoding: Encoding) type {
+    return struct {
+        fn implementation(src: []const u8) void {
+            var status: c.UErrorCode = c.U_ZERO_ERROR;
+            const conv = c.shim_ucnv_open(switch (encoding) {
+                .utf16le => "UTF-16LE",
+                .utf16be => "UTF-16BE",
+                .utf8 => "UTF-8",
+            }, &status);
+            assert(status == c.U_ZERO_ERROR);
+
+            var uchar_out: [16384]c.UChar = undefined;
+            const uchar_length = c.shim_ucnv_toUChars(
+                conv,
+                &uchar_out,
+                uchar_out.len,
+                src.ptr,
+                @intCast(src.len),
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            var folded_out: [16384]c.UChar = undefined;
+            const folded_length = c.shim_u_strFoldCase(
+                &uchar_out,
+                uchar_length,
+                &folded_out,
+                folded_out.len,
+                c.U_FOLD_CASE_DEFAULT,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+
+            var encoded_out: [16384]u8 = undefined;
+            _ = c.shim_ucnv_fromUChars(
+                conv,
+                &encoded_out,
+                encoded_out.len,
+                &folded_out,
+                folded_length,
+                &status,
+            );
+            assert(status == c.U_ZERO_ERROR);
+            c.shim_ucnv_close(conv);
+        }
+    };
 }
 
 fn IcuNormalizerUtf8(

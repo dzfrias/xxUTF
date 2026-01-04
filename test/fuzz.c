@@ -268,6 +268,102 @@ static bool compare_casefold_utf8(const char *input, size_t length,
   return true;
 }
 
+#define COMPARE_CASEFOLD_FUNCTION_UTF16(endianness, endianness_upper)          \
+  static bool compare_casefold_utf16##endianness(                              \
+      const char *input, size_t length, bool verbose) {                        \
+    UErrorCode status = U_ZERO_ERROR;                                          \
+    UChar source[8192];                                                        \
+    int32_t source_length;                                                     \
+    u_strFromUTF8(source, 8192, &source_length, input, length, &status);       \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    UChar result[8192];                                                        \
+    int32_t result_length = u_strFoldCase(result, 8192, source, source_length, \
+                                          U_FOLD_CASE_DEFAULT, &status);       \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error folding case: %s\n", u_errorName(status));                 \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    UConverter *conv = ucnv_open("UTF-16" #endianness_upper, &status);         \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error opening UTF-16 converter: %s\n", u_errorName(status));     \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    int32_t icu_out_length =                                                   \
+        ucnv_fromUChars(conv, NULL, 0, result, result_length, &status);        \
+    if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status)) {              \
+      printf("error calculating size: %s\n", u_errorName(status));             \
+      ucnv_close(conv);                                                        \
+      return 1;                                                                \
+    }                                                                          \
+    status = U_ZERO_ERROR;                                                     \
+                                                                               \
+    char icu_out[8192];                                                        \
+    ucnv_fromUChars(conv, icu_out, 8192, result, result_length, &status);      \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char utf16_bytes[8192];                                                    \
+    int32_t utf16_length = ucnv_fromUChars(conv, utf16_bytes, 8192, source,    \
+                                           source_length, &status);            \
+    if (U_FAILURE(status)) {                                                   \
+      printf("error converting to UTF-16: %s\n", u_errorName(status));         \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    char xxutf_out[8192];                                                      \
+    size_t xxutf_out_length = xxutf_casefold_utf16##endianness(                \
+        utf16_bytes, utf16_length, xxutf_out);                                 \
+    size_t pos;                                                                \
+    if (!is_valid_utf16##endianness((const uint8_t *)xxutf_out,                \
+                                    xxutf_out_length, &pos)) {                 \
+      if (verbose) {                                                           \
+        printf("normalized (%s, CF) output is invaild UTF-16, position %zu\n", \
+               "UTF-16" #endianness_upper, pos);                               \
+      }                                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
+    icu_out[icu_out_length] = '\0';                                            \
+    xxutf_out[xxutf_out_length] = '\0';                                        \
+                                                                               \
+    if (!equal(xxutf_out, icu_out)) {                                          \
+      if (verbose) {                                                           \
+        printf("Buffers (%s, CF) not equal\n", "UTF-16" #endianness_upper);    \
+        printf("   input: ");                                                  \
+        print_code_points_utf8(input, length);                                 \
+        printf("\n");                                                          \
+        printf("   xxutf: ");                                                  \
+        print_code_points_utf16##endianness(xxutf_out, xxutf_out_length);      \
+        printf("\n");                                                          \
+        printf("   icu4c: ");                                                  \
+        print_code_points_utf16##endianness(icu_out, icu_out_length);          \
+        printf("\n");                                                          \
+      }                                                                        \
+      ucnv_close(conv);                                                        \
+      return false;                                                            \
+    }                                                                          \
+    if (verbose) {                                                             \
+      printf("Both buffers (%s, CF) equal!\n", "UTF-16" #endianness_upper);    \
+    }                                                                          \
+    ucnv_close(conv);                                                          \
+    return true;                                                               \
+  }
+
+COMPARE_CASEFOLD_FUNCTION_UTF16(le, LE);
+COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
+
+#undef COMPARE_CASEFOLD_FUNCTION_UTF16
+
 #define COMPARE_NORMALIZE_FUNCTION_UTF8(form, form_upper)                      \
   static bool compare_normalization_utf8_##form(const char *input,             \
                                                 size_t length, bool verbose) { \
@@ -589,6 +685,12 @@ int main() {
       continue;
     }
     if (!compare_casefold_utf8(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_casefold_utf16le(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_casefold_utf16be(buf, nread, true)) {
       continue;
     }
   }

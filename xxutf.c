@@ -171,3 +171,13 @@ size_t xxutf_casefold_utf8(const char *input, size_t length, char *out) {
   return scalar_casefold_utf8((const uint8_t *)input, length, (uint8_t *)out);
 #endif
 }
+
+size_t xxutf_casefold_utf16le(const char *input, size_t length, char *out) {
+  return scalar_casefold_utf16le((const uint8_t *)input, length,
+                                 (uint8_t *)out);
+}
+
+size_t xxutf_casefold_utf16be(const char *input, size_t length, char *out) {
+  return scalar_casefold_utf16be((const uint8_t *)input, length,
+                                 (uint8_t *)out);
+}

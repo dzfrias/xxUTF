@@ -17,6 +17,9 @@ UChar *shim_u_strFromUTF8(UChar *dest, int32_t destCapacity,
 UChar *shim_u_strToUTF8(char *dest, int32_t destCapacity, int32_t *pDestLength,
                         const UChar *src, int32_t srcLength,
                         UErrorCode *pErrorCode);
+int32_t shim_u_strFoldCase(UChar *dest, int32_t destCapacity, const UChar *src,
+                           int32_t srcLength, int32_t options,
+                           UErrorCode *pErrorCode);
 
 const UNormalizer2 *shim_unorm2_getNFDInstance(UErrorCode *pErrorCode);
 const UNormalizer2 *shim_unorm2_getNFCInstance(UErrorCode *pErrorCode);

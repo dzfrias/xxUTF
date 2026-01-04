@@ -26,6 +26,8 @@ size_t xxutf_normalize_utf16be_nfkc(const char *input, size_t length,
                                     char *out);
 
 size_t xxutf_casefold_utf8(const char *input, size_t length, char *out);
+size_t xxutf_casefold_utf16le(const char *input, size_t length, char *out);
+size_t xxutf_casefold_utf16be(const char *input, size_t length, char *out);
 
 #ifdef __cplusplus
 }

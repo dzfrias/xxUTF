@@ -70,6 +70,9 @@ extern const uint32_t NORMDATA_NON_STARTERS_BLOOM_FILTER[1024];
 extern const uint8_t NORMDATA_UTF8_CASEFOLD_DATA[3447];
 extern const uint16_t NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[1024];
 extern const uint32_t NORMDATA_UTF8_CASEFOLD_TRIE_DATA[2942];
+extern const uint8_t NORMDATA_UTF16_CASEFOLD_DATA[2790];
+extern const uint16_t NORMDATA_UTF16_CASEFOLD_TRIE_INDEX[1024];
+extern const uint32_t NORMDATA_UTF16_CASEFOLD_TRIE_DATA[2942];
 
 static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
 static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);

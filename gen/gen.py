@@ -16,7 +16,7 @@ CasefoldMap = dict[int, list[int]]
 CompMap = dict[tuple[int, int], int]
 
 
-# Helper to recusively decompose a Unicode character `c`
+# Helper to recursively decompose a Unicode character `c`
 def expand(c: int, map: DecompMap) -> list[int]:
     expansion = []
     stack = [c]
@@ -846,7 +846,10 @@ def main() -> None:
         else:
             ccc_trie.set(x, 0)
     ccc_trie.compact()
-    casefold_trie, casefold_data = create_casefold_trie(casefold_map, "UTF-8")
+    casefold_utf8_trie, casefold_utf8_data = create_casefold_trie(casefold_map, "UTF-8")
+    casefold_utf16_trie, casefold_utf16_data = create_casefold_trie(
+        casefold_map, "UTF-16LE"
+    )
     nfc_trie = Trie()
     for x in range(0x10000):
         nfc_trie.set(x, int(x in derived.nfc_qc or x in non_starters))
@@ -906,10 +909,18 @@ def main() -> None:
             )
         )
         headers.append(
-            generate_array(f, "NORMDATA_UTF8_CASEFOLD_DATA", casefold_data, 8)
+            generate_array(f, "NORMDATA_UTF8_CASEFOLD_DATA", casefold_utf8_data, 8)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_trie, 16, 32)
+            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_utf8_trie, 16, 32)
+        )
+        headers.append(
+            generate_array(f, "NORMDATA_UTF16_CASEFOLD_DATA", casefold_utf16_data, 8)
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF16_CASEFOLD_TRIE", casefold_utf16_trie, 16, 32
+            )
         )
     with open("normdata.h", "w") as f:
         f.write(PREAMBLE_H)

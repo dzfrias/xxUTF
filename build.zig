@@ -215,6 +215,7 @@ const default_sources: []const []const u8 = &.{
     "impl/scalar/scalar_normalize_utf8.c",
     "impl/scalar/scalar_normalize_utf16.c",
     "impl/scalar/scalar_casefold_utf8.c",
+    "impl/scalar/scalar_casefold_utf16.c",
 };
 
 const neon_sources: []const []const u8 = &.{

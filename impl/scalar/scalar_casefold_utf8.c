@@ -1,7 +1,6 @@
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
 #include "normdata.h"
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

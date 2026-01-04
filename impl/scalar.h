@@ -23,6 +23,10 @@ size_t scalar_normalize_utf8_nfc(const uint8_t *input, size_t length,
 size_t scalar_normalize_utf8_nfkc(const uint8_t *input, size_t length,
                                   uint8_t *out);
 size_t scalar_casefold_utf8(const uint8_t *input, size_t length, uint8_t *out);
+size_t scalar_casefold_utf16le(const uint8_t *input, size_t length,
+                               uint8_t *out);
+size_t scalar_casefold_utf16be(const uint8_t *input, size_t length,
+                               uint8_t *out);
 
 // UTF-16
 size_t scalar_normalize_utf16le_nfd(const uint8_t *input, size_t length,
