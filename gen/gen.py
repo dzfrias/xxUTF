@@ -696,13 +696,13 @@ def create_casefold_trie(map: CasefoldMap, encoding: str) -> tuple[Trie, list[in
             continue
         casefold = map[x]
         offset = len(data)
-        # Lower 16 bits are used for the offset
-        assert offset <= 0xFFFF
+        # Lower 12 bits are used for the offset
+        assert offset <= 2**12 - 1
         for c in casefold:
             data.extend(chr(c).encode(encoding))
         length = len(data) - offset
-        assert length <= 0xFF
-        value = (offset << 8) | length
+        assert length <= 2**4 - 1
+        value = offset | (length << 12)
         trie.set(x, value)
     trie.compact()
     return trie, data
@@ -912,14 +912,14 @@ def main() -> None:
             generate_array(f, "NORMDATA_UTF8_CASEFOLD_DATA", casefold_utf8_data, 8)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_utf8_trie, 16, 32)
+            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_utf8_trie, 16, 16)
         )
         headers.append(
             generate_array(f, "NORMDATA_UTF16_CASEFOLD_DATA", casefold_utf16_data, 8)
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_CASEFOLD_TRIE", casefold_utf16_trie, 16, 32
+                f, "NORMDATA_UTF16_CASEFOLD_TRIE", casefold_utf16_trie, 16, 16
             )
         )
     with open("normdata.h", "w") as f:

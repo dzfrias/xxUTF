@@ -5,7 +5,6 @@
 #include "impl/scalar.h"
 #include "normdata.h"
 #include <arm_neon.h>
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -60,13 +59,13 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
   };
   uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));
   uint16x4_t data_offset = vadd_u16(block_index, masked);
-  uint32x4_t values = {
+  uint16x4_t values = {
       NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 0)],
       NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 1)],
       NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 2)],
       NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 3)],
   };
-  if (vmaxvq_u32(values) == 0) {
+  if (vmaxv_u16(values) == 0) {
     vst1q_u8(*out, in);
     *out += nbytes;
     return nbytes;
@@ -75,15 +74,16 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
   for (size_t i = 0; i < 4; i++) {
     uint8_t leading = input[0];
     uint8_t size = NORMDATA_UTF8_SIZE[leading];
-    uint32_t value = values[i];
+    uint16_t value = values[i];
     if (value == 0) {
       vst1_u8(*out, vld1_u8(input));
       *out += size;
       input += size;
       continue;
     }
-    uint8_t length = value & 0xFF;
-    const uint8_t *casefold_offset = &NORMDATA_UTF8_CASEFOLD_DATA[value >> 8];
+    uint8_t length = value >> 12;
+    const uint8_t *casefold_offset =
+        &NORMDATA_UTF8_CASEFOLD_DATA[value & 0xFFF];
     vst1_u8(*out, vld1_u8(casefold_offset));
     *out += length;
     input += size;

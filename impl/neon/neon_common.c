@@ -333,4 +333,10 @@ uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   return mask;
 }
 
+// Create a logical vector for high surrogates.
+uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in) {
+  return vandq_u16(vcleq_u16(in, vdupq_n_u16(0xDBFF)),
+                   vcgeq_u16(in, vdupq_n_u16(0xD800)));
+}
+
 // amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

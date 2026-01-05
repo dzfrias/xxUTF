@@ -53,4 +53,7 @@ uint32x4_t neon_parse_3_1234_utf8(uint8x16_t in, size_t shufutf8_idx);
 uint8x16_t neon_get_utf8_code_point_starts(uint8x16_t in);
 uint64_t neon_make_utf8_code_point_mask(const uint8_t *input);
 
+// Create a logical vector for high surrogates.
+uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in);
+
 #endif // XXUTF_NEON_COMMON_H

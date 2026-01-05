@@ -10,12 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Create a logical vector for high surrogates.
-static inline uint16x8_t neon_make_surrogates_mask(uint16x8_t in) {
-  return vandq_u16(vcleq_u16(in, vdupq_n_u16(0xDBFF)),
-                   vcgeq_u16(in, vdupq_n_u16(0xD800)));
-}
-
 #define NEON_UTF16_HELPERS(endianness, swap_endianness)                        \
   /* Copy the input vector into the output buffer. */                          \
   static void neon_skip_decomp_utf16##endianness(                              \
@@ -239,7 +233,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         p += 16;                                                               \
         continue;                                                              \
       }                                                                        \
-      uint16x8_t surrogates_mask = neon_make_surrogates_mask(in);              \
+      uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       /* Check if we have no surrogate pairs */                                \
       if (vaddvq_u32(surrogates_mask) == 0) {                                  \
         uint16x4_t in1 = vget_low_u16(in);                                     \
@@ -330,7 +324,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         p += 16;                                                               \
         continue;                                                              \
       }                                                                        \
-      uint16x8_t surrogates_mask = neon_make_surrogates_mask(in);              \
+      uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       /* Check if we have no surrogate pairs */                                \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
         uint16x8_t trie = neon_evaluate_trie_compound_##comp_form(in);         \

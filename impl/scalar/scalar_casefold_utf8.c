@@ -11,12 +11,12 @@ static size_t scalar_casefold_character_utf8_bmp(uint16_t c, uint8_t *out) {
   uint16_t shifted = c >> 6;
   uint16_t masked = c & 63;
   uint16_t index = NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[shifted];
-  uint32_t value = NORMDATA_UTF8_CASEFOLD_TRIE_DATA[index + masked];
+  uint16_t value = NORMDATA_UTF8_CASEFOLD_TRIE_DATA[index + masked];
   if (value == 0) {
     return 0;
   }
-  uint8_t length = value & 0xFF;
-  size_t offset = value >> 8;
+  uint8_t length = value >> 12;
+  size_t offset = value & 0xFFF;
   for (size_t k = 0; k < length; k++) {
     out[k] = NORMDATA_UTF8_CASEFOLD_DATA[offset + k];
   }
