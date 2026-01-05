@@ -31,8 +31,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define NEON_UTF16_IMPLEMENTATION(endianness, swap_endianness, decomp_form,    \
-                                  decomp_form_upper, comp_form,                \
+#define NEON_UTF16_IMPLEMENTATION(endianness, swap_endianness, is_big_endian,  \
+                                  decomp_form, decomp_form_upper, comp_form,   \
                                   comp_form_upper, large_decompositions)       \
   /* Decompose UTF-16 code points that have some number of precomposed Hangul  \
    * syllables in them, but no table-based decompositions. */                  \
@@ -89,14 +89,13 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       /* `length` is length in bytes, not code units */                        \
       assert(length % 2 == 0);                                                 \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
-      if (swap_endianness) {                                                   \
+      if (is_big_endian) {                                                     \
         decomp_bytes = vrev16q_u8(decomp_bytes);                               \
       }                                                                        \
       vst1q_u8(*out, decomp_bytes);                                            \
       if (large_decompositions && unlikely(length > 16)) {                     \
         for (size_t j = 16; j < length; j += 2) {                              \
-          /* TODO: wrong due to endianness bug caught before */                \
-          if (swap_endianness) {                                               \
+          if (is_big_endian) {                                                 \
             (*out)[j] = decomp_offset[j + 1];                                  \
             (*out)[j + 1] = decomp_offset[j];                                  \
           } else {                                                             \
@@ -133,13 +132,13 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint8_t length = value >> 24;                                            \
       assert(length % 2 == 0);                                                 \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
-      if (swap_endianness) {                                                   \
+      if (is_big_endian) {                                                     \
         decomp_bytes = vrev16q_u8(decomp_bytes);                               \
       }                                                                        \
       vst1q_u8(*out, decomp_bytes);                                            \
       if (large_decompositions && unlikely(length > 16)) {                     \
         for (size_t j = 16; j < length; j += 2) {                              \
-          if (swap_endianness) {                                               \
+          if (is_big_endian) {                                                 \
             (*out)[j] = decomp_offset[j + 1];                                  \
             (*out)[j + 1] = decomp_offset[j];                                  \
           } else {                                                             \
@@ -371,10 +370,14 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     return *out_ptr - start;                                                   \
   }
 
-NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC, false);
-NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC, true);
-NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfd, NFD, nfc, NFC, false);
-NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkd, NFKD, nfkc, NFKC, true);
+NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, false, nfd, NFD, nfc, NFC,
+                          false);
+NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, false, nfkd, NFKD, nfkc, NFKC,
+                          true);
+NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfd, NFD, nfc, NFC,
+                          false);
+NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfkd, NFKD, nfkc, NFKC,
+                          true);
 
 #undef NEON_UTF16_IMPLEMENTATION
 
