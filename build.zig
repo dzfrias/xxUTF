@@ -223,6 +223,7 @@ const neon_sources: []const []const u8 = &.{
     "impl/neon/neon_normalize_utf8.c",
     "impl/neon/neon_normalize_utf16.c",
     "impl/neon/neon_casefold_utf8.c",
+    "impl/neon/neon_casefold_utf16.c",
 };
 
 const all_sources: []const []const u8 = default_sources ++ neon_sources;

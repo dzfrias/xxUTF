@@ -30,5 +30,7 @@ size_t neon_normalize_utf16le_nfkc(const uint8_t *input, size_t length,
 size_t neon_normalize_utf16be_nfkc(const uint8_t *input, size_t length,
                                    uint8_t *out);
 size_t neon_casefold_utf8(const uint8_t *input, size_t length, uint8_t *out);
+size_t neon_casefold_utf16le(const uint8_t *input, size_t length, uint8_t *out);
+size_t neon_casefold_utf16be(const uint8_t *input, size_t length, uint8_t *out);
 
 #endif // XXUTF_NEON_H

@@ -95,6 +95,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       vst1q_u8(*out, decomp_bytes);                                            \
       if (large_decompositions && unlikely(length > 16)) {                     \
         for (size_t j = 16; j < length; j += 2) {                              \
+          /* TODO: wrong due to endianness bug caught before */                \
           if (swap_endianness) {                                               \
             (*out)[j] = decomp_offset[j + 1];                                  \
             (*out)[j + 1] = decomp_offset[j];                                  \
