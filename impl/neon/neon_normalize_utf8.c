@@ -156,8 +156,8 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
 
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_form, decomp_table_name,             \
-                                        comp_form, comp_table_name,                 \
+#define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_form, decomp_form_upper,             \
+                                        comp_form, comp_form_upper,                 \
                                         large_decompositions)                       \
   /* Decompose code points into their UTF-8 representations. `values` is a          \
    * vector corresponding to 4 16-bit code points who have been looked up in        \
@@ -191,7 +191,7 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
       }                                                                             \
                                                                                     \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS[value &          \
+          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &          \
                                                                    0xFFFF];         \
       uint8_t length = value >> 24;                                                 \
       vst1q_u8(*out, vld1q_u8(decomp_offset));                                      \
@@ -249,7 +249,7 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
         continue;                                                                   \
       }                                                                             \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS[value &          \
+          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &          \
                                                                    0xFFFF];         \
       /* The length value here corresponds to how many code points we should        \
        * copy from NORMDATA_UTF8_NF(K)D_TRIE_DECOMPOSITIONS. */                     \
@@ -277,25 +277,25 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
           uint8_t *last_ccc) {                                                      \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
     uint16x4_t block_index = {                                                      \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      0)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      1)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      2)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      3)],           \
     };                                                                              \
     uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
     uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
     uint32x4_t values = {                                                           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 0)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 1)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 2)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 3)],                                                       \
     };                                                                              \
     /* In this case, all of our code points have value 0, which means we can        \
@@ -332,25 +332,25 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
     uint16x4_t block_index = {                                                      \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      0)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      1)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      2)],           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[vget_lane_u16(index,         \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
                                                                      3)],           \
     };                                                                              \
     uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
     uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
     uint32x4_t values = {                                                           \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 0)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 1)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 2)],                                                       \
-        NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[vget_lane_u16(                \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
             data_offset, 3)],                                                       \
     };                                                                              \
     bool decomp_result = vmaxvq_u32(values) > 0;                                    \
@@ -513,12 +513,12 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
       uint16_t shifted = code_point >> 6;                                           \
       uint16_t masked = code_point & 0x3F;                                          \
       uint16_t index =                                                              \
-          NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[shifted];                  \
+          NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shifted];                  \
       uint32_t decomp_value =                                                       \
-          NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[index + masked];            \
+          NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];            \
       assert(decomp_value != 0);                                                    \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS                  \
+          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS                  \
               [decomp_value & 0xFFFF];                                              \
       uint8_t length = decomp_value >> 24;                                          \
       assert(length <= 8);                                                          \
