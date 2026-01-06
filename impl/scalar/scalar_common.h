@@ -47,6 +47,9 @@ uint32_t scalar_parse_code_point_utf8(const uint8_t *input, uint8_t *size);
 // Check if a given byte is the leading byte of a UTF-8 code point
 bool scalar_is_leading_utf8_byte(uint8_t b);
 void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
+size_t scalar_count_code_points_utf8(const uint8_t *buf, size_t length);
+size_t scalar_get_code_point_pos_reverse_utf8(const uint8_t *buf, size_t length,
+                                              size_t n);
 
 void scalar_write_uint16le(uint16_t x, uint8_t *out);
 void scalar_write_uint16be(uint16_t x, uint8_t *out);
@@ -71,5 +74,11 @@ uint32_t scalar_parse_code_point_utf16be(const uint8_t *input, uint8_t *size);
 void scalar_print_code_points_utf16le(const uint8_t *input, size_t length);
 // Parse a UTF-16BE encoded code point in reverse.
 void scalar_print_code_points_utf16be(const uint8_t *input, size_t length);
+size_t scalar_count_code_points_utf16le(const uint8_t *buf, size_t length);
+size_t scalar_count_code_points_utf16be(const uint8_t *buf, size_t length);
+size_t scalar_get_code_point_pos_reverse_utf16le(const uint8_t *buf,
+                                                 size_t length, size_t n);
+size_t scalar_get_code_point_pos_reverse_utf16be(const uint8_t *buf,
+                                                 size_t length, size_t n);
 
 #endif // XXUTF_SCALAR_COMMON_H

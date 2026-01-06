@@ -668,6 +668,40 @@ def create_decomp_trie(
     return trie, data
 
 
+def create_comp_trie(
+    qc: list[int],
+    decomp_map: DecompMap,
+    non_starters: list[int],
+    composables: list[int],
+) -> Trie:
+    trie = Trie()
+    for x in range(0x10000):
+        if x in qc or x in non_starters:
+            # This identifies a special but interesting class of characters that:
+            # 1. Do not compose with anything
+            # 2. Decompose into a single character
+            # 3. The decomposed character does not compose with anything
+            # Such characters are a subset of NF(K)C_QC that have nothing to
+            # do with composition at all (they're only relevance is that they
+            # can be decomposed). They get a special value in the trie so that
+            # a potential optimization is available: if we have an input x with
+            # code points with value 0 or this special 1 value (and no 2 values),
+            # we have NF(K)D(x) == NF(K)C(x).
+            if (
+                x not in composables
+                and len(decomp_map[x].decomps) == 1
+                and decomp_map[x].decomps[0] not in composables
+            ):
+                value = 1
+            else:
+                value = 2
+        else:
+            value = 0
+        trie.set(x, value)
+    trie.compact()
+    return trie
+
+
 def load_casefold_map() -> CasefoldMap:
     map: CasefoldMap = {}
 
@@ -765,11 +799,18 @@ def main() -> None:
     non_starters = [x for x, decomp in nfd_map.items() if decomp.ccc > 0]
 
     comp_map: CompMap = {}
+    # Tracks characters that compose
+    composables: list[int] = []
     for x, decomp in nfd_map.items():
         if x in derived.comp_exclusions or decomp.decomps[0] == x:
             continue
         assert len(decomp.decomps) == 2
+        composables.extend(decomp.decomps)
         comp_map[(decomp.decomps[0], decomp.decomps[1])] = x
+    # Add Hangul V Jamo
+    composables.extend(range(0x1161, 0x1176))
+    # Add Hangul T Jamo
+    composables.extend(range(0x11A8, 0x11C3))
 
     flatten_decomp_map(nfd_map)
     flatten_decomp_map(nfkd_map)
@@ -850,14 +891,8 @@ def main() -> None:
     casefold_utf16_trie, casefold_utf16_data = create_casefold_trie(
         casefold_map, "UTF-16LE"
     )
-    nfc_trie = Trie()
-    for x in range(0x10000):
-        nfc_trie.set(x, int(x in derived.nfc_qc or x in non_starters))
-    nfc_trie.compact()
-    nfkc_trie = Trie()
-    for x in range(0x10000):
-        nfkc_trie.set(x, int(x in derived.nfkc_qc or x in non_starters))
-    nfkc_trie.compact()
+    nfc_trie = create_comp_trie(derived.nfc_qc, nfd_map, non_starters, composables)
+    nfkc_trie = create_comp_trie(derived.nfkc_qc, nfkd_map, non_starters, composables)
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:

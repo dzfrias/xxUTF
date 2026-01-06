@@ -480,6 +480,66 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
     return n_bytes;                                                                 \
   }                                                                                 \
                                                                                     \
+  /* Write four BMP code points that have value 0 or 1 from the NF(K)C trie.        \
+   * This means that they do not compose with anything, so this function            \
+   * essentially performs NF(K)D on the given code points.                          \
+   */                                                                               \
+  static void neon_write_no_comp_utf8_##comp_form(                                  \
+      uint16x4_t values, uint16x4_t code_points, uint8_t **out,                     \
+      size_t out_length, const uint8_t *input, uint8_t *last_ccc) {                 \
+    uint8_t *start = *out;                                                          \
+                                                                                    \
+    for (size_t i = 0; i < 4; i++) {                                                \
+      uint8_t leading = input[0];                                                   \
+      if (leading <= 0x7F) {                                                        \
+        *(*out)++ = leading;                                                        \
+        input++;                                                                    \
+        *last_ccc = 0;                                                              \
+        continue;                                                                   \
+      }                                                                             \
+      uint16_t value = values[i];                                                   \
+      uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
+      /* Check if we can skip */                                                    \
+      if (value == 0) {                                                             \
+        vst1_u8(*out, vld1_u8(input));                                              \
+        *out += size;                                                               \
+        input += size;                                                              \
+        *last_ccc = 0;                                                              \
+        continue;                                                                   \
+      }                                                                             \
+      /* Decompose the code point like we would in NF(K)D */                        \
+      assert(value == 1);                                                           \
+      uint16_t code_point = code_points[i];                                         \
+      uint16_t shifted = code_point >> 6;                                           \
+      uint16_t masked = code_point & 0x3F;                                          \
+      uint16_t index =                                                              \
+          NORMDATA_UTF8_##decomp_table_name##_TRIE_INDEX[shifted];                  \
+      uint32_t decomp_value =                                                       \
+          NORMDATA_UTF8_##decomp_table_name##_TRIE_DATA[index + masked];            \
+      assert(decomp_value != 0);                                                    \
+      const uint8_t *decomp_offset =                                                \
+          &NORMDATA_UTF8_##decomp_table_name##_TRIE_DECOMPOSITIONS                  \
+              [decomp_value & 0xFFFF];                                              \
+      uint8_t length = decomp_value >> 24;                                          \
+      assert(length <= 8);                                                          \
+      /* Note that decomposing this character might at first seem to break the      \
+       * "important invariant" described in `neon_fallback_utf8_nf(k)c`, but        \
+       * this is actually not the case. Any NF(K)C trie value 1 code points         \
+       * are guaranteed to decompose into a single code point. So the byte          \
+       * difference might not be the same, but the code point difference is.        \
+       */                                                                           \
+      vst1_u8(*out, vld1_u8(decomp_offset));                                        \
+      *out += length;                                                               \
+                                                                                    \
+      uint8_t ccc = (decomp_value >> 16) & 0xFF;                                    \
+      if (ccc != 0 && *last_ccc > ccc) {                                            \
+        ccc = scalar_sort_characters_utf8(*out, out_length + (*out - start));       \
+      }                                                                             \
+      input += size;                                                                \
+      *last_ccc = ccc;                                                              \
+    }                                                                               \
+  }                                                                                 \
+                                                                                    \
   /* Fallback to scalar implementation when encountering an NFC relevant            \
    * character. Returns the number of characters of the input consumed, and         \
    * updates the output pointer to be in the correct place. */                      \
@@ -502,8 +562,16 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
       next_starter += offset + length;                                              \
     }                                                                               \
     size_t region_size = next_starter - prev_starter;                               \
-    /* This is the position we will write to */                                     \
-    uint8_t *prev_out = *out - (offset - prev_starter);                             \
+    size_t code_point_dist = scalar_count_code_points_utf8(                         \
+        input_base + prev_starter, offset - prev_starter);                          \
+    size_t prev_out_offset = scalar_get_code_point_pos_reverse_utf8(                \
+        *out, SIZE_MAX, code_point_dist);                                           \
+    /* This is the position we will write to. It is the same number of code         \
+     * points away that the tail of the input is from the previous starter          \
+     * code point. This property being true is an important invariant in the        \
+     * algorithm, because we need to know where the left boundary of the            \
+     * region we found is in the output buffer. */                                  \
+    uint8_t *prev_out = *out - prev_out_offset;                                     \
     size_t nwritten = scalar_normalize_utf8_##comp_form(                            \
         input_base + prev_starter, region_size, prev_out);                          \
     *out = prev_out + nwritten;                                                     \
@@ -512,14 +580,15 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
   }                                                                                 \
                                                                                     \
   static size_t neon_normalize_masked_utf8_##comp_form(                             \
-      const uint8_t *input, const uint8_t *input_base, size_t length,               \
-      uint64_t mask, uint8_t **out) {                                               \
+      const uint8_t *input, const uint8_t *input_base, size_t input_length,         \
+      uint64_t mask, uint8_t **out, size_t out_length, uint8_t *last_ccc) {         \
     int t1 = __builtin_ctzll(~mask);                                                \
     /* Eagerly skip ASCII, similar to NF(K)D */                                     \
     if (t1 > 2) {                                                                   \
       size_t min = t1 > 52 ? 52 : t1;                                               \
       neon_memcpy_small(*out, input);                                               \
       *out += min;                                                                  \
+      *last_ccc = 0;                                                                \
       return min;                                                                   \
     }                                                                               \
                                                                                     \
@@ -544,19 +613,36 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
         code_points = neon_parse_4_123_utf8(in, idx);                               \
       } else {                                                                      \
         assert(idx < NORMDATA_SHUFUTF8_INDEX_1234);                                 \
-        return neon_fallback_utf8_##comp_form(input, input_base, length, out,       \
-                                              n_bytes);                             \
+        *last_ccc = 0;                                                              \
+        return neon_fallback_utf8_##comp_form(input, input_base, input_length,      \
+                                              out, n_bytes);                        \
       }                                                                             \
     }                                                                               \
                                                                                     \
     uint16x4_t values = neon_evaluate_trie_##comp_form(code_points);                \
-    if (vmaxv_u16(values) == 0) {                                                   \
+    uint16_t max = vmaxv_u16(values);                                               \
+    /* No relevant characters */                                                    \
+    if (max == 0) {                                                                 \
       vst1q_u8(*out, in);                                                           \
       *out += n_bytes;                                                              \
+      *last_ccc = 0;                                                                \
       return n_bytes;                                                               \
     }                                                                               \
-    return neon_fallback_utf8_##comp_form(input, input_base, length, out,           \
-                                          n_bytes);                                 \
+    /* If the max value is 1, then we have only characters affected by NF(K)D,      \
+     * not anything actually to compose (the first step of NF(K)C is to run         \
+     * NF(K)D, and this garuantees that is the only thing we must do). This         \
+     * allows us to cut out a large portion of work, especially for                 \
+     * compatibility composition. */                                                \
+    if (max == 1) {                                                                 \
+      /* Special writing function that essentially runs NF(K)D on                   \
+       * `code_points`. This is the only place we use last_ccc information. */      \
+      neon_write_no_comp_utf8_##comp_form(values, code_points, out,                 \
+                                          out_length, input, last_ccc);             \
+      return n_bytes;                                                               \
+    }                                                                               \
+    *last_ccc = 0;                                                                  \
+    return neon_fallback_utf8_##comp_form(input, input_base, input_length,          \
+                                          out, n_bytes);                            \
   }                                                                                 \
                                                                                     \
   size_t neon_normalize_utf8_##decomp_form(const uint8_t *input,                    \
@@ -596,13 +682,15 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
     uint8_t *start = out;                                                           \
                                                                                     \
     const size_t SAFETY_MARGIN = 64;                                                \
+    uint8_t last_ccc = 0;                                                           \
     size_t p = 0;                                                                   \
     while (p + 64 + SAFETY_MARGIN <= length) {                                      \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);                    \
       size_t pmax = (p + 64) - 12;                                                  \
       while (p < pmax) {                                                            \
         size_t consumed = neon_normalize_masked_utf8_##comp_form(                   \
-            input + p, input, length, mask, out_ptr);                               \
+            input + p, input, length, mask, out_ptr, *out_ptr - start,              \
+            &last_ccc);                                                             \
         p += consumed;                                                              \
         mask >>= consumed;                                                          \
       }                                                                             \

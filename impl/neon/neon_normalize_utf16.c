@@ -271,6 +271,50 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     return *out_ptr - start;                                                   \
   }                                                                            \
                                                                                \
+  static void neon_write_no_comp_utf16##endianness##_##comp_form(              \
+      uint16x8_t values, uint16x8_t code_points, uint8_t **out,                \
+      size_t out_length, const uint8_t *input, uint8_t *last_ccc) {            \
+    uint8_t *start = *out;                                                     \
+                                                                               \
+    for (size_t i = 0; i < 8; i++) {                                           \
+      uint16_t value = values[i];                                              \
+      if (value == 0) {                                                        \
+        *(*out)++ = *input++;                                                  \
+        *(*out)++ = *input++;                                                  \
+        *last_ccc = 0;                                                         \
+        continue;                                                              \
+      }                                                                        \
+      assert(value == 1);                                                      \
+      uint16_t code_point = code_points[i];                                    \
+      uint16_t shifted = code_point >> 6;                                      \
+      uint16_t masked = code_point & 0x3F;                                     \
+      uint16_t index =                                                         \
+          NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shifted];            \
+      uint32_t decomp_value =                                                  \
+          NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];      \
+      assert(decomp_value != 0);                                               \
+      const uint8_t *decomp_offset =                                           \
+          &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS            \
+              [decomp_value & 0xFFFF];                                         \
+      uint8_t length = decomp_value >> 24;                                     \
+      assert(length <= 8);                                                     \
+      uint8x8_t decomp_bytes = vld1_u8(decomp_offset);                         \
+      if (is_big_endian) {                                                     \
+        decomp_bytes = vrev16_u8(decomp_bytes);                                \
+      }                                                                        \
+      vst1_u8(*out, decomp_bytes);                                             \
+      *out += length;                                                          \
+                                                                               \
+      uint8_t ccc = (decomp_value >> 16) & 0xFF;                               \
+      if (ccc != 0 && *last_ccc > ccc) {                                       \
+        ccc = scalar_sort_characters_utf16##endianness(                        \
+            *out, out_length + (*out - start));                                \
+      }                                                                        \
+      input += 2;                                                              \
+      *last_ccc = ccc;                                                         \
+    }                                                                          \
+  }                                                                            \
+                                                                               \
   /* TODO: this looks a lot like the UTF-8 version... use macro? */            \
   static size_t neon_fallback_utf16##endianness##_##comp_form(                 \
       const uint8_t *input, const uint8_t *input_base, size_t input_length,    \
@@ -293,8 +337,12 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       next_starter += offset + length;                                         \
     }                                                                          \
     size_t region_size = next_starter - prev_starter;                          \
-    /* This is the position we will write to */                                \
-    uint8_t *prev_out = *out - (offset - prev_starter);                        \
+    size_t code_point_dist = scalar_count_code_points_utf16##endianness(       \
+        input_base + prev_starter, offset - prev_starter);                     \
+    size_t prev_out_offset =                                                   \
+        scalar_get_code_point_pos_reverse_utf16##endianness(*out, SIZE_MAX,    \
+                                                            code_point_dist);  \
+    uint8_t *prev_out = *out - prev_out_offset;                                \
     size_t nwritten = scalar_normalize_utf16##endianness##_##comp_form(        \
         input_base + prev_starter, region_size, prev_out);                     \
     *out = prev_out + nwritten;                                                \
@@ -308,6 +356,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     uint8_t *start = out;                                                      \
                                                                                \
     const size_t SAFETY_MARGIN = 16;                                           \
+    uint8_t last_ccc = 0;                                                      \
     size_t p = 0;                                                              \
     while (p + SAFETY_MARGIN < length) {                                       \
       uint8x16_t bytes = vld1q_u8(input + p);                                  \
@@ -322,16 +371,25 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         vst1q_u8(*out_ptr, bytes);                                             \
         *out_ptr += 16;                                                        \
         p += 16;                                                               \
+        last_ccc = 0;                                                          \
         continue;                                                              \
       }                                                                        \
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       /* Check if we have no surrogate pairs */                                \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
         uint16x8_t trie = neon_evaluate_trie_compound_##comp_form(in);         \
+        uint16_t max = vmaxvq_u16(trie);                                       \
         /* Skip if we have no relevant code points */                          \
-        if (vmaxvq_u32(trie) == 0) {                                           \
+        if (max == 0) {                                                        \
           vst1q_u8(*out_ptr, bytes);                                           \
           *out_ptr += 16;                                                      \
+          p += 16;                                                             \
+          last_ccc = 0;                                                        \
+          continue;                                                            \
+        }                                                                      \
+        if (max == 1) {                                                        \
+          neon_write_no_comp_utf16##endianness##_##comp_form(                  \
+              trie, in, out_ptr, *out_ptr - start, input + p, &last_ccc);      \
           p += 16;                                                             \
           continue;                                                            \
         }                                                                      \
@@ -342,10 +400,12 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
           vst1_u8(*out_ptr, low_bytes);                                        \
           *out_ptr += 8;                                                       \
           p += 8;                                                              \
+          last_ccc = 0;                                                        \
         } else {                                                               \
           /* Fall back to scalar */                                            \
           p += neon_fallback_utf16##endianness##_##comp_form(                  \
               input + p, input, length, out_ptr, 8);                           \
+          last_ccc = 0;                                                        \
         }                                                                      \
       } else {                                                                 \
         /* With surrogate pairs, we fall back to the scalar implementation */  \
@@ -359,6 +419,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         size_t normalized = neon_fallback_utf16##endianness##_##comp_form(     \
             input + p, input, length, out_ptr, normalize_range);               \
         p += normalized;                                                       \
+        last_ccc = 0;                                                          \
       }                                                                        \
     }                                                                          \
                                                                                \

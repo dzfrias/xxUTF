@@ -71,6 +71,9 @@ size_t scalar_find_nfkc_irrelevant_starter_utf8(const uint8_t *input,
                                                 size_t length);
 size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
+size_t scalar_count_code_points_utf8(const uint8_t *buf, size_t length);
+size_t scalar_get_code_point_pos_reverse_utf8(const uint8_t *buf, size_t length,
+                                              size_t n);
 
 void scalar_write_uint16le(uint16_t x, uint8_t *out);
 void scalar_write_uint16be(uint16_t x, uint8_t *out);
@@ -90,5 +93,11 @@ size_t scalar_rfind_starter_utf16le(const uint8_t *input, size_t length);
 size_t scalar_rfind_starter_utf16be(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16le(const uint8_t *input, size_t length);
 void scalar_print_code_points_utf16be(const uint8_t *input, size_t length);
+size_t scalar_count_code_points_utf16le(const uint8_t *buf, size_t length);
+size_t scalar_count_code_points_utf16be(const uint8_t *buf, size_t length);
+size_t scalar_get_code_point_pos_reverse_utf16le(const uint8_t *buf,
+                                                 size_t length, size_t n);
+size_t scalar_get_code_point_pos_reverse_utf16be(const uint8_t *buf,
+                                                 size_t length, size_t n);
 
 #endif // XXUTF_SCALAR_H

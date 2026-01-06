@@ -267,6 +267,36 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length) {
   printf("\n");
 }
 
+size_t scalar_count_code_points_utf8(const uint8_t *buf, size_t length) {
+  size_t count = 0;
+  size_t p = 0;
+  while (p < length) {
+    p += NORMDATA_UTF8_SIZE[buf[p]];
+    count++;
+  }
+  return count;
+}
+
+size_t scalar_get_code_point_pos_reverse_utf8(const uint8_t *buf, size_t length,
+                                              size_t n) {
+  if (n == 0) {
+    return 0;
+  }
+  size_t count = n;
+  size_t p = 0;
+  while (p < length) {
+    while (!scalar_is_leading_utf8_byte(*((buf - p) - 1))) {
+      p++;
+    }
+    count--;
+    if (count == 0) {
+      return p + 1;
+    }
+    p++;
+  }
+  return -1;
+}
+
 void scalar_write_uint16le(uint16_t x, uint8_t *out) {
   out[0] = (uint8_t)(x & 0xFF);
   out[1] = (uint8_t)(x >> 8);
@@ -340,6 +370,40 @@ bool scalar_is_utf16_high_surrogate(uint16_t code_unit) {
       p += size;                                                               \
     }                                                                          \
     printf("\n");                                                              \
+  }                                                                            \
+                                                                               \
+  size_t scalar_count_code_points_utf16##endianness(const uint8_t *buf,        \
+                                                    size_t length) {           \
+    size_t count = 0;                                                          \
+    size_t p = 0;                                                              \
+    while (p < length) {                                                       \
+      uint16_t code_unit = scalar_read_uint16##endianness(buf + p);            \
+      p += scalar_is_utf16_high_surrogate(code_unit) ? 4 : 2;                  \
+      count++;                                                                 \
+    }                                                                          \
+    return count;                                                              \
+  }                                                                            \
+                                                                               \
+  size_t scalar_get_code_point_pos_reverse_utf16##endianness(                  \
+      const uint8_t *buf, size_t length, size_t n) {                           \
+    if (n == 0) {                                                              \
+      return 0;                                                                \
+    }                                                                          \
+    size_t count = n;                                                          \
+    size_t p = 0;                                                              \
+    while (p < length) {                                                       \
+      uint16_t code_unit = scalar_read_uint16##endianness(buf - p - 2);        \
+      if (scalar_is_utf16_low_surrogate(code_unit)) {                          \
+        p += 2;                                                                \
+        continue;                                                              \
+      }                                                                        \
+      count--;                                                                 \
+      if (count == 0) {                                                        \
+        return p + 2;                                                          \
+      }                                                                        \
+      p += 2;                                                                  \
+    }                                                                          \
+    return -1;                                                                 \
   }
 
 SCALAR_UTF16_HELPERS(le);
