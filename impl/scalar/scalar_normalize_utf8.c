@@ -416,6 +416,75 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     }                                                                               \
                                                                                     \
     return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
+  static uint8_t scalar_decomposition_length_utf8_##decomp_form##_bmp(              \
+      uint16_t code_point) {                                                        \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index =                                                                \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];               \
+    uint8_t value =                                                                 \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];       \
+    return value;                                                                   \
+  }                                                                                 \
+                                                                                    \
+  static uint8_t                                                                    \
+      scalar_decomposition_length_utf8_##decomp_form##_supplementary(               \
+          uint32_t code_point) {                                                    \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                  \
+    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                 \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt, NORMDATA_##decomp_form_upper##_TABLE_SIZE);               \
+    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];            \
+    if (kv.k == code_point) {                                                       \
+      uint8_t length = 0;                                                           \
+      uint32_t const *chars =                                                       \
+          &NORMDATA_##decomp_form_upper##_CHARS[kv.offset];                         \
+      for (size_t k = 0; k < kv.len; k++) {                                         \
+        length += scalar_code_point_size_utf8(chars[k]);                            \
+      }                                                                             \
+      return length;                                                                \
+    }                                                                               \
+    return 4;                                                                       \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_normalize_utf8_##decomp_form##_length(const uint8_t *input,         \
+                                                      size_t length) {              \
+    size_t out_length = 0;                                                          \
+    size_t p = 0;                                                                   \
+    while (p < length) {                                                            \
+      uint8_t leading = input[p];                                                   \
+                                                                                    \
+      if (leading < 0b10000000) {                                                   \
+        out_length++;                                                               \
+        p++;                                                                        \
+      } else if ((leading & 0b11100000) == 0b11000000) {                            \
+        uint16_t code_point =                                                       \
+            (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);              \
+        out_length +=                                                               \
+            scalar_decomposition_length_utf8_##decomp_form##_bmp(code_point);       \
+        p += 2;                                                                     \
+      } else if ((leading & 0b11110000) == 0b11100000) {                            \
+        uint16_t code_point = (leading & 0b00001111) << 12 |                        \
+                              (input[p + 1] & 0b00111111) << 6 |                    \
+                              (input[p + 2] & 0b00111111);                          \
+        out_length +=                                                               \
+            scalar_decomposition_length_utf8_##decomp_form##_bmp(code_point);       \
+        p += 3;                                                                     \
+      } else if ((leading & 0b11111000) == 0b11110000) {                            \
+        uint32_t code_point =                                                       \
+            (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |      \
+            (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);         \
+        out_length +=                                                               \
+            scalar_decomposition_length_utf8_##decomp_form##_supplementary(         \
+                code_point);                                                        \
+        p += 4;                                                                     \
+      }                                                                             \
+    }                                                                               \
+                                                                                    \
+    return out_length;                                                              \
   }
 
 SCALAR_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);

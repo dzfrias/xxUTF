@@ -245,6 +245,17 @@ static bool compare_casefold_utf8(const char *input, size_t length,
     }
     return false;
   }
+
+  size_t expected_xxutf_length = xxutf_casefold_utf8_length(input, length);
+  if (expected_xxutf_length != xxutf_out_length) {
+    if (verbose) {
+      printf("casefolded UTF-8 output does not have expected length, got "
+             "%zu, expected %zu\n",
+             xxutf_out_length, expected_xxutf_length);
+    }
+    return false;
+  }
+
   icu_out[icu_out_length] = '\0';
   xxutf_out[xxutf_out_length] = '\0';
   if (!equal(xxutf_out, icu_out)) {
@@ -333,6 +344,18 @@ static bool compare_casefold_utf8(const char *input, size_t length,
       return false;                                                            \
     }                                                                          \
                                                                                \
+    size_t expected_xxutf_length =                                             \
+        xxutf_casefold_utf16##endianness##_length(utf16_bytes, utf16_length);  \
+    if (expected_xxutf_length != xxutf_out_length) {                           \
+      if (verbose) {                                                           \
+        printf("casefolded %s output does not have expected length, got "      \
+               "%zu, expected %zu\n",                                          \
+               "UTF-16" #endianness_upper, xxutf_out_length,                   \
+               expected_xxutf_length);                                         \
+      }                                                                        \
+      return false;                                                            \
+    }                                                                          \
+                                                                               \
     icu_out[icu_out_length] = '\0';                                            \
     xxutf_out[xxutf_out_length] = '\0';                                        \
                                                                                \
@@ -364,7 +387,7 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
 
 #undef COMPARE_CASEFOLD_FUNCTION_UTF16
 
-#define COMPARE_NORMALIZE_FUNCTION_UTF8(form, form_upper)                      \
+#define COMPARE_NORMALIZE_FUNCTION_UTF8(form, form_upper, is_decomp)           \
   static bool compare_normalization_utf8_##form(const char *input,             \
                                                 size_t length, bool verbose) { \
     UErrorCode status = U_ZERO_ERROR;                                          \
@@ -411,6 +434,18 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
       }                                                                        \
       return false;                                                            \
     }                                                                          \
+    if (is_decomp) {                                                           \
+      size_t expected_xxutf_length =                                           \
+          xxutf_normalize_utf8_##form##_length(input, length);                 \
+      if (expected_xxutf_length != xxutf_out_length) {                         \
+        if (verbose) {                                                         \
+          printf("normalized (UTF-8, %s) output does not have expected "       \
+                 "length, got %zu, expected %zu\n",                            \
+                 #form_upper, xxutf_out_length, expected_xxutf_length);        \
+        }                                                                      \
+        return false;                                                          \
+      }                                                                        \
+    }                                                                          \
                                                                                \
     icu_out[icu_out_length] = '\0';                                            \
     xxutf_out[xxutf_out_length] = '\0';                                        \
@@ -436,15 +471,15 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
     return true;                                                               \
   }
 
-COMPARE_NORMALIZE_FUNCTION_UTF8(nfd, NFD);
-COMPARE_NORMALIZE_FUNCTION_UTF8(nfc, NFC);
-COMPARE_NORMALIZE_FUNCTION_UTF8(nfkd, NFKD);
-COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfd, NFD, true);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfc, NFC, false);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfkd, NFKD, true);
+COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
 
 #undef COMPARE_NORMALIZE_FUNCTION_UTF8
 
 #define COMPARE_NORMALIZE_FUNCTION_UTF16(form, form_upper, endianness,         \
-                                         endianness_upper)                     \
+                                         endianness_upper, is_decomp)          \
   static bool compare_normalization_utf16##endianness##_##form(                \
       const char *input, size_t length, bool verbose) {                        \
     UErrorCode status = U_ZERO_ERROR;                                          \
@@ -516,6 +551,22 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
       return false;                                                            \
     }                                                                          \
                                                                                \
+    if (is_decomp) {                                                           \
+      size_t expected_xxutf_length =                                           \
+          xxutf_normalize_utf16##endianness##_##form##_length(utf16_bytes,     \
+                                                              utf16_length);   \
+      if (expected_xxutf_length != xxutf_out_length) {                         \
+        if (verbose) {                                                         \
+          printf(                                                              \
+              "normalized (%s, %u) output does not have expected length, got " \
+              "%zu, expected %zu\n",                                           \
+              "UTF-16" #endianness_upper, #form_upper, xxutf_out_length,       \
+              expected_xxutf_length);                                          \
+        }                                                                      \
+        return false;                                                          \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
     icu_out[icu_out_length] = '\0';                                            \
     xxutf_out[xxutf_out_length] = '\0';                                        \
                                                                                \
@@ -544,14 +595,14 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC);
     return true;                                                               \
   }
 
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, le, LE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, be, BE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, le, LE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, be, BE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, le, LE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, be, BE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, le, LE);
-COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, be, BE);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, le, LE, true);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfd, NFD, be, BE, true);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, le, LE, true);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkd, NFKD, be, BE, true);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, le, LE, false);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfc, NFC, be, BE, false);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, le, LE, false);
+COMPARE_NORMALIZE_FUNCTION_UTF16(nfkc, NFKC, be, BE, false);
 
 #undef COMPARE_NORMALIZE_FUNCTION_UTF16
 

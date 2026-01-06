@@ -26,10 +26,17 @@ fn TestInfo(comptime col: ColumnType) type {
 }
 
 fn Failure(comptime col: ColumnType) type {
-    return struct {
-        expected: []const col.intType(),
-        input: []const col.intType(),
-        got: []const col.intType(),
+    return union(enum) {
+        contents_mismatch: struct {
+            expected: []const col.intType(),
+            input: []const col.intType(),
+            got: []const col.intType(),
+        },
+        lengths_mismatch: struct {
+            expected: usize,
+            input: []const col.intType(),
+            got: usize,
+        },
     };
 }
 
@@ -104,6 +111,7 @@ var out: [64]u8 align(2) = undefined;
 // Test if two normalization forms are equal.
 fn testEqualNormalized(
     comptime impl: fn ([*c]const u8, usize, [*c]u8) callconv(.c) usize,
+    comptime length_impl: ?fn ([*c]const u8, usize) callconv(.c) usize,
     comptime col: ColumnType,
     expected: []const col.intType(),
     input: []const col.intType(),
@@ -115,7 +123,21 @@ fn testEqualNormalized(
     const normalized = out[0..nwritten];
     if (!std.mem.eql(u8, expected_bytes, normalized)) {
         const normalized_cast = std.mem.bytesAsSlice(col.intType(), normalized);
-        return .{ .expected = expected, .input = input, .got = normalized_cast };
+        return .{ .contents_mismatch = .{
+            .expected = expected,
+            .input = input,
+            .got = normalized_cast,
+        } };
+    }
+    if (length_impl) |f| {
+        const expect_nwritten = f(input_bytes.ptr, input_bytes.len);
+        if (expect_nwritten != nwritten) {
+            return .{ .lengths_mismatch = .{
+                .expected = expect_nwritten,
+                .input = input,
+                .got = nwritten,
+            } };
+        }
     }
     return null;
 }
@@ -139,21 +161,26 @@ fn runTest(
                 .utf16le => c.xxutf_normalize_utf16le_nfd,
                 .utf16be => c.xxutf_normalize_utf16be_nfd,
             };
+            const length_impl = switch (col) {
+                .utf8 => c.xxutf_normalize_utf8_nfd_length,
+                .utf16le => c.xxutf_normalize_utf16le_nfd_length,
+                .utf16be => c.xxutf_normalize_utf16be_nfd_length,
+            };
 
             // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
             const expected = test_info.cols[2];
-            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[2])) |failure|
                 return failure;
 
             // c5 ==  toNFD(c4) ==  toNFD(c5)
             const alt_expected = test_info.cols[4];
-            if (testEqualNormalized(impl, col, alt_expected, test_info.cols[3])) |failure|
+            if (testEqualNormalized(impl, length_impl, col, alt_expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, alt_expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, alt_expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -167,18 +194,18 @@ fn runTest(
 
             // c2 ==  toNFC(c1) ==  toNFC(c2) ==  toNFC(c3)
             const expected = test_info.cols[1];
-            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, null, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[2])) |failure|
                 return failure;
 
             // c4 ==  toNFC(c4) ==  toNFC(c5)
             const alt_expected = test_info.cols[3];
-            if (testEqualNormalized(impl, col, alt_expected, test_info.cols[3])) |failure|
+            if (testEqualNormalized(impl, null, col, alt_expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, alt_expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, null, col, alt_expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -189,18 +216,23 @@ fn runTest(
                 .utf16le => c.xxutf_normalize_utf16le_nfkd,
                 .utf16be => c.xxutf_normalize_utf16be_nfkd,
             };
+            const length_impl = switch (col) {
+                .utf8 => c.xxutf_normalize_utf8_nfkd_length,
+                .utf16le => c.xxutf_normalize_utf16le_nfkd_length,
+                .utf16be => c.xxutf_normalize_utf16be_nfkd_length,
+            };
 
             // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
             const expected = test_info.cols[4];
-            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[2])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[3])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -214,15 +246,15 @@ fn runTest(
 
             const expected = test_info.cols[3];
             // c4 == toNFKC(c1) == toNFKC(c2) == toNFKC(c3) == toNFKC(c4) == toNFKC(c5)
-            if (testEqualNormalized(impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, null, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[2])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[3])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, col, expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, null, col, expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -287,12 +319,22 @@ fn writeHex(comptime col: ColumnType, writer: anytype, s: []const col.intType())
 }
 
 fn printFailure(comptime col: ColumnType, writer: *std.Io.Writer, failure: Failure(col)) !void {
-    try writer.writeAll("input:    ");
-    try writeHex(col, writer, failure.input);
-    try writer.writeAll("expected: ");
-    try writeHex(col, writer, failure.expected);
-    try writer.writeAll("got:      ");
-    try writeHex(col, writer, failure.got);
+    switch (failure) {
+        .contents_mismatch => |info| {
+            try writer.writeAll("input:    ");
+            try writeHex(col, writer, info.input);
+            try writer.writeAll("expected: ");
+            try writeHex(col, writer, info.expected);
+            try writer.writeAll("got:      ");
+            try writeHex(col, writer, info.got);
+        },
+        .lengths_mismatch => |info| {
+            try writer.writeAll("input:    ");
+            try writeHex(col, writer, info.input);
+            try writer.print("expected: {} (# bytes)\n", .{info.expected});
+            try writer.print("got:      {} (# bytes)\n", .{info.got});
+        },
+    }
 }
 
 pub fn main() !void {

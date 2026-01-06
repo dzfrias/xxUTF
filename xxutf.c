@@ -191,3 +191,31 @@ size_t xxutf_casefold_utf16be(const char *input, size_t length, char *out) {
                                  (uint8_t *)out);
 #endif
 }
+
+size_t xxutf_normalize_utf8_nfd_length(const char *input, size_t length) {
+  return scalar_normalize_utf8_nfd_length((const uint8_t *)input, length);
+}
+size_t xxutf_normalize_utf8_nfkd_length(const char *input, size_t length) {
+  return scalar_normalize_utf8_nfkd_length((const uint8_t *)input, length);
+}
+size_t xxutf_casefold_utf8_length(const char *input, size_t length) {
+  return scalar_casefold_utf8_length((const uint8_t *)input, length);
+}
+size_t xxutf_normalize_utf16le_nfd_length(const char *input, size_t length) {
+  return scalar_normalize_utf16le_nfd_length((const uint8_t *)input, length);
+}
+size_t xxutf_normalize_utf16le_nfkd_length(const char *input, size_t length) {
+  return scalar_normalize_utf16le_nfkd_length((const uint8_t *)input, length);
+}
+size_t xxutf_casefold_utf16le_length(const char *input, size_t length) {
+  return scalar_casefold_utf16le_length((const uint8_t *)input, length);
+}
+size_t xxutf_normalize_utf16be_nfd_length(const char *input, size_t length) {
+  return scalar_normalize_utf16be_nfd_length((const uint8_t *)input, length);
+}
+size_t xxutf_normalize_utf16be_nfkd_length(const char *input, size_t length) {
+  return scalar_normalize_utf16be_nfkd_length((const uint8_t *)input, length);
+}
+size_t xxutf_casefold_utf16be_length(const char *input, size_t length) {
+  return scalar_casefold_utf16be_length((const uint8_t *)input, length);
+}
