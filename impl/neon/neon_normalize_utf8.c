@@ -702,6 +702,87 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
     }                                                                               \
                                                                                     \
     return *out_ptr - start;                                                        \
+  }                                                                                 \
+                                                                                    \
+  static size_t neon_normalize_masked_utf8_##decomp_form##_length(                  \
+      const uint8_t *input, uint64_t mask, size_t *out_length) {                    \
+    int t1 = __builtin_ctzll(~mask);                                                \
+    if (t1 > 0) {                                                                   \
+      size_t min = t1 > 52 ? 52 : t1;                                               \
+      *out_length += min;                                                           \
+      return min;                                                                   \
+    }                                                                               \
+    uint16_t sml_mask = mask & 0xFFF;                                               \
+    uint16x4_t code_points;                                                         \
+    size_t n_bytes;                                                                 \
+    uint8x16_t in = vld1q_u8(input);                                                \
+    if (sml_mask == 0x924) {                                                        \
+      code_points = neon_parse_3_byte_utf8(in);                                     \
+      n_bytes = 12;                                                                 \
+    } else if ((sml_mask & 0xFF) == 0xAA) {                                         \
+      code_points = neon_parse_2_byte_utf8(in);                                     \
+      n_bytes = 8;                                                                  \
+    } else {                                                                        \
+      uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];                         \
+      n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];                             \
+      if (idx < NORMDATA_SHUFUTF8_INDEX_12) {                                       \
+        code_points = neon_parse_4_12_utf8(in, idx);                                \
+      } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {                               \
+        code_points = neon_parse_4_123_utf8(in, idx);                               \
+      } else {                                                                      \
+        assert(idx < NORMDATA_SHUFUTF8_INDEX_1234);                                 \
+        *out_length +=                                                              \
+            scalar_normalize_utf8_##decomp_form##_length(input, n_bytes);           \
+        return n_bytes;                                                             \
+      }                                                                             \
+    }                                                                               \
+    uint16x4_t index = vshr_n_u16(code_points, 6);                                  \
+    uint16x4_t block_index = {                                                      \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(        \
+            index, 0)],                                                             \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(        \
+            index, 1)],                                                             \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(        \
+            index, 2)],                                                             \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(        \
+            index, 3)],                                                             \
+    };                                                                              \
+    uint16x4_t masked = vand_u16(code_points, vdup_n_u16(0x3F));                    \
+    uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
+    uint16x4_t values = {                                                           \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(         \
+            data_offset, 0)],                                                       \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(         \
+            data_offset, 1)],                                                       \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(         \
+            data_offset, 2)],                                                       \
+        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(         \
+            data_offset, 3)],                                                       \
+    };                                                                              \
+    *out_length += vaddv_u16(values);                                               \
+    return n_bytes;                                                                 \
+  }                                                                                 \
+                                                                                    \
+  size_t neon_normalize_utf8_##decomp_form##_length(const uint8_t *input,           \
+                                                    size_t length) {                \
+    size_t out_length = 0;                                                          \
+    const size_t SAFETY_MARGIN = 64;                                                \
+    size_t p = 0;                                                                   \
+    while (p + 64 + SAFETY_MARGIN <= length) {                                      \
+      uint64_t mask = neon_make_utf8_code_point_mask(input + p);                    \
+      size_t pmax = (p + 64) - 12;                                                  \
+      while (p < pmax) {                                                            \
+        size_t consumed = neon_normalize_masked_utf8_##decomp_form##_length(        \
+            input + p, mask, &out_length);                                          \
+        p += consumed;                                                              \
+        mask >>= consumed;                                                          \
+      }                                                                             \
+    }                                                                               \
+    if (p < length) {                                                               \
+      out_length +=                                                                 \
+          scalar_normalize_utf8_##decomp_form##_length(input + p, length - p);      \
+    }                                                                               \
+    return out_length;                                                              \
   }
 
 NEON_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC, false);
