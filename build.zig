@@ -113,6 +113,28 @@ pub fn build(b: *std.Build) !void {
     const benchmark_install = b.addInstallArtifact(benchmark_exe, .{});
     benchmark_step.dependOn(&run_benchmark_exe.step);
     benchmark_step.dependOn(&benchmark_install.step);
+
+    const xxu = b.addExecutable(.{
+        .name = "xxu",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bin/xxu.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    xxu.linkLibrary(lib);
+    const flags_dep = b.dependency("flags", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    xxu.root_module.addImport("flags", flags_dep.module("flags"));
+    const run_xxu = b.addRunArtifact(xxu);
+    for (b.args orelse &.{}) |arg| {
+        run_xxu.addArg(arg);
+    }
+    const xxu_run_step = b.step("run", "Run xxu");
+    xxu_run_step.dependOn(&run_xxu.step);
+    b.installArtifact(xxu);
 }
 
 fn createLibrary(

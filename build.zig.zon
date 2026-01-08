@@ -1,0 +1,12 @@
+.{
+    .name = .xxUTF,
+    .version = "0.15.2",
+    .dependencies = .{
+        .flags = .{
+            .url = "git+https://github.com/joegm/flags#2d62be30ff33661a2a3c6743ac922a78302d78a0",
+            .hash = "flags-0.10.0-a_9h3pxvAAA6wPndlO7ktfrpZUmhQu1y8aDm0lTi5ATR",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x8a1444ce1c938ac1,
+}
