@@ -91,6 +91,7 @@ const Implementation = struct {
     encoding: ResolvedEncoding,
     impl: ImplementationFn,
     lengthImpl: ImplementationLengthFn,
+    lastStableImpl: ?ImplementationLengthFn,
 };
 const implementations: []const Implementation = &.{
     .{
@@ -98,54 +99,63 @@ const implementations: []const Implementation = &.{
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfd,
         .lengthImpl = c.xxutf_normalize_utf8_nfd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf8_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfkd,
         .lengthImpl = c.xxutf_normalize_utf8_nfkd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf8_nfkd,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf8,
         .impl = c.xxutf_casefold_utf8,
         .lengthImpl = c.xxutf_casefold_utf8_length,
+        .lastStableImpl = null,
     },
     .{
         .algorithm = .nfd,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfd,
         .lengthImpl = c.xxutf_normalize_utf16le_nfd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfkd,
         .lengthImpl = c.xxutf_normalize_utf16le_nfkd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfkd,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf16le,
         .impl = c.xxutf_casefold_utf16le,
         .lengthImpl = c.xxutf_casefold_utf16le_length,
+        .lastStableImpl = null,
     },
     .{
         .algorithm = .nfd,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfd,
         .lengthImpl = c.xxutf_normalize_utf16be_nfd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfkd,
         .lengthImpl = c.xxutf_normalize_utf16be_nfkd_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfkd,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf16be,
         .impl = c.xxutf_casefold_utf16be,
         .lengthImpl = c.xxutf_casefold_utf16be_length,
+        .lastStableImpl = null,
     },
 };
 
@@ -172,30 +182,49 @@ fn run(
     var out_buf = try allocator.alloc(u8, read_buf_size * 2);
     defer allocator.free(out_buf);
 
-    // We have 3 extra bytes that live at the start of the buffer. These are the "carry" bytes
-    // that we preserve partial UTF-8 or UTF-16 from previous reads.
-    var read_buf: [read_buf_size + 3]u8 = undefined;
-    // We always read `read_buf_size` bytes at this position
-    var nread = input.read(read_buf[3..]) catch return error.ReadFailed;
-    const resolved_encoding = try resolveEncoding(read_buf[3 .. nread + 3], encoding);
+    // We have `read_buf_size + 3` extra bytes that live at the start of the buffer. These are
+    // "carry" bytes that preserve two things:
+    // 1. Partial UTF-8 or UTF-16 from previous reads
+    // 2. (if performing normalization) All code points through the last stable code point under
+    //    that normalization form from the previous normalization result
+    // The first part is needed because of incomplete code points in UTF-8 and high surrogates in
+    // UTF-16. The second part is needed because normalization is not closed under concatenation.
+    // See: https://www.unicode.org/reports/tr15/#Concatenation
+    // Note that we could keep this carry information in a separate section of memory, and while
+    // although that would indeed make the logic simpler, we would then have to perform extra
+    // `memcpy` operations on large amounts of text.
+    var read_buf: [(read_buf_size * 2) + 3]u8 = undefined;
+    // Denotes where the carry section ends in `read_buf`
+    const carry_end = read_buf_size + 3;
+    // We have `read_buf_size` bytes after `carry_end`
+    var nread = input.read(read_buf[carry_end..]) catch return error.ReadFailed;
+    const resolved_encoding = try resolveEncoding(
+        read_buf[carry_end .. nread + carry_end],
+        encoding,
+    );
 
-    if (write_bom and !hasBOM(read_buf[3 .. nread + 3], resolved_encoding)) {
+    if (write_bom and
+        !hasBOM(read_buf[read_buf_size + 3 .. nread + read_buf_size + 3], resolved_encoding))
+    {
         writeBOM(&output_writer.interface, resolved_encoding) catch return error.WriteFailed;
     }
 
     var impl: *const ImplementationFn = undefined;
     var lengthImpl: *const ImplementationLengthFn = undefined;
+    var lastStableImpl: ?*const ImplementationLengthFn = undefined;
     inline for (implementations) |implementation| {
         if (algorithm == implementation.algorithm and resolved_encoding == implementation.encoding) {
             impl = implementation.impl;
             lengthImpl = implementation.lengthImpl;
+            lastStableImpl = if (implementation.lastStableImpl) |f| f else null;
         }
     }
 
+    // Keeps track of how many bytes (from partials/stable code points) have been carried
+    // over from the last iteration.
     var carried: usize = 0;
     while (nread > 0) {
-        assert(carried < 4);
-        const buf = read_buf[3 - carried .. nread + 3];
+        const buf = read_buf[carry_end - carried .. carry_end + nread];
         // Trim partial Unicode text. The trimmed bytes will be put at the start of the read
         // buffer at the end of this iteration.
         const trimmed = trimPartialUnicode(buf, resolved_encoding);
@@ -209,16 +238,37 @@ fn run(
             out_buf = try allocator.alloc(u8, out_length);
         }
         const nwritten = impl(trimmed.ptr, trimmed.len, out_buf.ptr);
-        // TODO: not technically correct: need "normalize second and append" functionality
-        //       to normalize across the boundary.
-        output_writer.interface.writeAll(out_buf[0..nwritten]) catch return error.WriteFailed;
-        const carry = buf[trimmed.len..];
-        carried = carry.len;
+        // When we have an algorithm that is not closed under string concatenation (such as the
+        // normalization algorithms), `last_stable` is the last stable code point for which we
+        // can use to concatenate this current outputted result and the next outputted result.
+        // We put the `last_stable` and the code points after it into the start of the `read_buf`
+        // so that they can be normalized with the next bytes we read from the input.
+        const last_stable = if (lastStableImpl) |f| f(out_buf.ptr, nwritten) else nwritten;
+        // Check if we got -1, meaning we found no stable code point in `out_buf`
+        if (last_stable == std.math.maxInt(usize)) {
+            return error.InvalidInput;
+        }
+        output_writer.interface.writeAll(out_buf[0..last_stable]) catch return error.WriteFailed;
+        const carry_stable = out_buf[last_stable..nwritten];
+        const carry_partial = buf[trimmed.len..];
+        assert(carry_partial.len < 4);
+        carried = carry_stable.len + carry_partial.len;
         // There is a tiny edge case where we have overlapping regions of memory, so use `memmove`
         // instead of `memcpy`.
-        @memmove(read_buf[(3 - carry.len)..3], carry);
-        nread = input.read(read_buf[3..]) catch return error.ReadFailed;
+        @memmove(read_buf[carry_end - carry_partial.len .. carry_end], carry_partial);
+        @memcpy(
+            read_buf[(carry_end - carry_partial.len) - carry_stable.len .. carry_end - carry_partial.len],
+            carry_stable,
+        );
+        nread = input.read(read_buf[carry_end..]) catch return error.ReadFailed;
     }
+    // Flush the leftover carry bytes
+    const leftover = read_buf[carry_end - carried .. carry_end];
+    if (!validateUnicode(leftover, resolved_encoding)) {
+        return error.InvalidInput;
+    }
+    output_writer.interface.writeAll(leftover) catch return error.WriteFailed;
+
     output_writer.interface.flush() catch return error.WriteFailed;
 }
 
