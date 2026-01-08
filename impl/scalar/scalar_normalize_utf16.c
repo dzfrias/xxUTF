@@ -205,6 +205,41 @@ SCALAR_UTF16_HELPERS(be);
     return out - start;                                                                    \
   }                                                                                        \
                                                                                            \
+  size_t scalar_find_first_stable_utf16##endianness##_##decomp_form(                       \
+      const uint8_t *input, size_t length) {                                               \
+    uint32_t p = 0;                                                                        \
+    while (p < length) {                                                                   \
+      uint8_t size;                                                                        \
+      uint32_t c =                                                                         \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);                     \
+      uint8_t ccc = scalar_lookup_ccc(c);                                                  \
+      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                            \
+        return p;                                                                          \
+      }                                                                                    \
+      p += size;                                                                           \
+    }                                                                                      \
+    return (size_t)-1;                                                                     \
+  }                                                                                        \
+                                                                                           \
+  size_t scalar_find_last_stable_utf16##endianness##_##decomp_form(                        \
+      const uint8_t *input, size_t length) {                                               \
+    size_t cutoff = length;                                                                \
+    while (cutoff > 0) {                                                                   \
+      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);                      \
+      if (cutoff == (size_t)-1) {                                                          \
+        return (size_t)-1;                                                                 \
+      }                                                                                    \
+      uint8_t size;                                                                        \
+      uint32_t c =                                                                         \
+          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);                \
+      uint8_t ccc = scalar_lookup_ccc(c);                                                  \
+      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                            \
+        return cutoff;                                                                     \
+      }                                                                                    \
+    }                                                                                      \
+    return (size_t)-1;                                                                     \
+  }                                                                                        \
+                                                                                           \
   size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(                \
       const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,                \
       uint8_t *last_ccc) {                                                                 \
@@ -258,7 +293,7 @@ SCALAR_UTF16_HELPERS(be);
         input, length, out, 0, &last_ccc);                                                 \
   }                                                                                        \
                                                                                            \
-  size_t scalar_find_##comp_form##_irrelevant_starter_utf16##endianness(                   \
+  size_t scalar_find_first_stable_utf16##endianness##_##comp_form(                         \
       const uint8_t *input, size_t length) {                                               \
     uint32_t p = 0;                                                                        \
     while (p < length) {                                                                   \
@@ -270,6 +305,25 @@ SCALAR_UTF16_HELPERS(be);
         return p;                                                                          \
       }                                                                                    \
       p += size;                                                                           \
+    }                                                                                      \
+    return (size_t)-1;                                                                     \
+  }                                                                                        \
+                                                                                           \
+  size_t scalar_find_last_stable_utf16##endianness##_##comp_form(                          \
+      const uint8_t *input, size_t length) {                                               \
+    size_t cutoff = length;                                                                \
+    while (cutoff > 0) {                                                                   \
+      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);                      \
+      if (cutoff == (size_t)-1) {                                                          \
+        return (size_t)-1;                                                                 \
+      }                                                                                    \
+      uint8_t size;                                                                        \
+      uint32_t c =                                                                         \
+          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);                \
+      uint8_t ccc = scalar_lookup_ccc(c);                                                  \
+      if (ccc == 0 && !scalar_is_##comp_form##_relevant(c)) {                              \
+        return cutoff;                                                                     \
+      }                                                                                    \
     }                                                                                      \
     return (size_t)-1;                                                                     \
   }                                                                                        \
@@ -320,7 +374,7 @@ SCALAR_UTF16_HELPERS(be);
       }                                                                                    \
                                                                                            \
       size_t next_irrelevant_starter_pos =                                                 \
-          scalar_find_##comp_form##_irrelevant_starter_utf16##endianness(                  \
+          scalar_find_first_stable_utf16##endianness##_##comp_form(                        \
               input + p + size, length - p - size);                                        \
       if (next_irrelevant_starter_pos == (size_t)-1) {                                     \
         next_irrelevant_starter_pos = length;                                              \

@@ -554,7 +554,7 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
     if (prev_starter == (size_t)-1) {                                               \
       prev_starter = 0;                                                             \
     }                                                                               \
-    size_t next_starter = scalar_find_##comp_form##_irrelevant_starter_utf8(        \
+    size_t next_starter = scalar_find_first_stable_utf8_##comp_form(                \
         input_base + offset + length, input_length - offset - length);              \
     if (next_starter == (size_t)-1) {                                               \
       next_starter = input_length;                                                  \

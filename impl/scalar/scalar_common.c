@@ -121,59 +121,57 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
   return x;
 }
 
-bool scalar_is_nfc_relevant(uint32_t code_point) {
-  if (code_point <= 0xFFFF) {
-    uint16_t shift = code_point >> 6;
-    uint16_t masked = code_point & 63;
-    uint16_t index = NORMDATA_NFC_TRIE_INDEX[shift];
-    uint8_t value = NORMDATA_NFC_TRIE_DATA[index + masked];
-    return value > 0;
+#define SCALAR_NORMALIZATION_HELPERS(decomp_form, decomp_form_upper,           \
+                                     comp_form, comp_form_upper)               \
+  bool scalar_is_##comp_form##_relevant(uint32_t code_point) {                 \
+    if (code_point <= 0xFFFF) {                                                \
+      uint16_t shift = code_point >> 6;                                        \
+      uint16_t masked = code_point & 63;                                       \
+      uint16_t index = NORMDATA_##comp_form_upper##_TRIE_INDEX[shift];         \
+      uint8_t value = NORMDATA_##comp_form_upper##_TRIE_DATA[index + masked];  \
+      return value > 0;                                                        \
+    }                                                                          \
+    uint32_t h1 = scalar_multiply_shift_hash(code_point);                      \
+    uint32_t h2 = scalar_xorshift_hash(code_point);                            \
+    uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);         \
+    uint32_t h4 = scalar_xorshift_mul_hash(code_point);                        \
+    const uint32_t COMP_BLOOM_SIZE =                                           \
+        sizeof(NORMDATA_##comp_form_upper##_BLOOM_FILTER) / sizeof(uint32_t);  \
+    uint32_t block_idx = h1 % COMP_BLOOM_SIZE;                                 \
+    uint32_t shift1 = h2 % 32;                                                 \
+    uint32_t shift2 = h3 % 32;                                                 \
+    uint32_t shift3 = h4 % 32;                                                 \
+    uint32_t mask = 0;                                                         \
+    mask |= 1u << shift1;                                                      \
+    mask |= 1u << shift2;                                                      \
+    mask |= 1u << shift3;                                                      \
+                                                                               \
+    uint32_t block = NORMDATA_##comp_form_upper##_BLOOM_FILTER[block_idx];     \
+    return (block & mask) == mask;                                             \
+  }                                                                            \
+                                                                               \
+  bool scalar_is_##decomp_form##_relevant(uint32_t code_point) {               \
+    if (code_point <= 0xFFFF) {                                                \
+      uint16_t shift = code_point >> 6;                                        \
+      uint16_t masked = code_point & 63;                                       \
+      uint16_t index = NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];  \
+      uint8_t value =                                                          \
+          NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];       \
+      return value > 0;                                                        \
+    }                                                                          \
+    uint32_t salt_hash = scalar_phash(                                         \
+        code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);             \
+    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];            \
+    uint32_t key_hash = scalar_phash(                                          \
+        code_point, salt, NORMDATA_##decomp_form_upper##_TABLE_SIZE);          \
+    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];       \
+    return kv.k == code_point;                                                 \
   }
-  uint32_t h1 = scalar_multiply_shift_hash(code_point);
-  uint32_t h2 = scalar_xorshift_hash(code_point);
-  uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);
-  uint32_t h4 = scalar_xorshift_mul_hash(code_point);
-  const uint32_t COMP_BLOOM_SIZE =
-      sizeof(NORMDATA_NFC_BLOOM_FILTER) / sizeof(uint32_t);
-  uint32_t block_idx = h1 % COMP_BLOOM_SIZE;
-  uint32_t shift1 = h2 % 32;
-  uint32_t shift2 = h3 % 32;
-  uint32_t shift3 = h4 % 32;
-  uint32_t mask = 0;
-  mask |= 1u << shift1;
-  mask |= 1u << shift2;
-  mask |= 1u << shift3;
 
-  uint32_t block = NORMDATA_NFC_BLOOM_FILTER[block_idx];
-  return (block & mask) == mask;
-}
+SCALAR_NORMALIZATION_HELPERS(nfd, NFD, nfc, NFC);
+SCALAR_NORMALIZATION_HELPERS(nfkd, NFKD, nfkc, NFKC);
 
-bool scalar_is_nfkc_relevant(uint32_t code_point) {
-  if (code_point <= 0xFFFF) {
-    uint16_t shift = code_point >> 6;
-    uint16_t masked = code_point & 63;
-    uint16_t index = NORMDATA_NFKC_TRIE_INDEX[shift];
-    uint8_t value = NORMDATA_NFKC_TRIE_DATA[index + masked];
-    return value > 0;
-  }
-  uint32_t h1 = scalar_multiply_shift_hash(code_point);
-  uint32_t h2 = scalar_xorshift_hash(code_point);
-  uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);
-  uint32_t h4 = scalar_xorshift_mul_hash(code_point);
-  const uint32_t COMP_BLOOM_SIZE =
-      sizeof(NORMDATA_NFKC_BLOOM_FILTER) / sizeof(uint32_t);
-  uint32_t block_idx = h1 % COMP_BLOOM_SIZE;
-  uint32_t shift1 = h2 % 32;
-  uint32_t shift2 = h3 % 32;
-  uint32_t shift3 = h4 % 32;
-  uint32_t mask = 0;
-  mask |= 1u << shift1;
-  mask |= 1u << shift2;
-  mask |= 1u << shift3;
-
-  uint32_t block = NORMDATA_NFKC_BLOOM_FILTER[block_idx];
-  return (block & mask) == mask;
-}
+#undef SCALAR_NORMALIZATION_HELPERS
 
 // Shift the bytes in a byte buffer to the right by a certain amount.
 void scalar_shift_right(uint8_t *buf, size_t length, size_t amt) {

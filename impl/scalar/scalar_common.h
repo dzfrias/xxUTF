@@ -30,6 +30,8 @@ uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2);
 
 bool scalar_is_nfc_relevant(uint32_t code_point);
 bool scalar_is_nfkc_relevant(uint32_t code_point);
+bool scalar_is_nfd_relevant(uint32_t code_point);
+bool scalar_is_nfkd_relevant(uint32_t code_point);
 
 // Shift the bytes in a byte buffer to the right by a certain amount.
 void scalar_shift_right(uint8_t *buf, size_t length, size_t amt);

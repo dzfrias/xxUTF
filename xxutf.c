@@ -264,3 +264,76 @@ size_t xxutf_casefold_utf16be_length(const char *input, size_t length) {
   return scalar_casefold_utf16be_length((const uint8_t *)input, length);
 #endif
 }
+
+size_t xxutf_find_last_stable_utf8_nfd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf8_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf8_nfd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf8_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16le_nfd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16le_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16le_nfd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16le_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16be_nfd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16be_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16be_nfd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16be_nfd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf8_nfkd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf8_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf8_nfkd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf8_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16le_nfkd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16le_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16le_nfkd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16le_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16be_nfkd(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16be_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16be_nfkd(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16be_nfkd((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf8_nfc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf8_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf8_nfc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf8_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16le_nfc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16le_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16le_nfc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16le_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16be_nfc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16be_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16be_nfc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16be_nfc((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf8_nfkc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf8_nfkc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf8_nfkc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf8_nfkc((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16le_nfkc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16le_nfkc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16le_nfkc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16le_nfkc((const uint8_t *)input, length);
+}
+size_t xxutf_find_last_stable_utf16be_nfkc(const char *input, size_t length) {
+  return scalar_find_last_stable_utf16be_nfkc((const uint8_t *)input, length);
+}
+size_t xxutf_find_first_stable_utf16be_nfkc(const char *input, size_t length) {
+  return scalar_find_first_stable_utf16be_nfkc((const uint8_t *)input, length);
+}

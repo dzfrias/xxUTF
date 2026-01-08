@@ -45,6 +45,31 @@ size_t xxutf_normalize_utf16be_nfc_length(const char *input, size_t length);
 size_t xxutf_normalize_utf16be_nfkc_length(const char *input, size_t length);
 size_t xxutf_casefold_utf16be_length(const char *input, size_t length);
 
+size_t xxutf_find_last_stable_utf8_nfd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf8_nfd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16le_nfd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16le_nfd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16be_nfd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16be_nfd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf8_nfkd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf8_nfkd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16le_nfkd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16le_nfkd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16be_nfkd(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16be_nfkd(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf8_nfc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf8_nfc(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16le_nfc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16le_nfc(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16be_nfc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16be_nfc(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf8_nfkc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf8_nfkc(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16le_nfkc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16le_nfkc(const char *input, size_t length);
+size_t xxutf_find_last_stable_utf16be_nfkc(const char *input, size_t length);
+size_t xxutf_find_first_stable_utf16be_nfkc(const char *input, size_t length);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

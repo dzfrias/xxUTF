@@ -329,7 +329,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       prev_starter = 0;                                                        \
     }                                                                          \
     size_t next_starter =                                                      \
-        scalar_find_##comp_form##_irrelevant_starter_utf16##endianness(        \
+        scalar_find_first_stable_utf16##endianness##_##comp_form(              \
             input_base + offset + length, input_length - offset - length);     \
     if (next_starter == (size_t)-1) {                                          \
       next_starter = input_length;                                             \
