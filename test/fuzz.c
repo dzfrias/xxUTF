@@ -434,17 +434,16 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
       }                                                                        \
       return false;                                                            \
     }                                                                          \
-    if (is_decomp) {                                                           \
-      size_t expected_xxutf_length =                                           \
-          xxutf_normalize_utf8_##form##_length(input, length);                 \
-      if (expected_xxutf_length != xxutf_out_length) {                         \
-        if (verbose) {                                                         \
-          printf("normalized (UTF-8, %s) output does not have expected "       \
-                 "length, got %zu, expected %zu\n",                            \
-                 #form_upper, xxutf_out_length, expected_xxutf_length);        \
-        }                                                                      \
-        return false;                                                          \
+    size_t expected_xxutf_length =                                             \
+        xxutf_normalize_utf8_##form##_length(input, length);                   \
+    if (expected_xxutf_length < xxutf_out_length ||                            \
+        (is_decomp && expected_xxutf_length != xxutf_out_length)) {            \
+      if (verbose) {                                                           \
+        printf("normalized (UTF-8, %s) output does not have expected "         \
+               "length, got %zu, expected %zu\n",                              \
+               #form_upper, xxutf_out_length, expected_xxutf_length);          \
       }                                                                        \
+      return false;                                                            \
     }                                                                          \
                                                                                \
     icu_out[icu_out_length] = '\0';                                            \
@@ -551,20 +550,19 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    if (is_decomp) {                                                           \
-      size_t expected_xxutf_length =                                           \
-          xxutf_normalize_utf16##endianness##_##form##_length(utf16_bytes,     \
-                                                              utf16_length);   \
-      if (expected_xxutf_length != xxutf_out_length) {                         \
-        if (verbose) {                                                         \
-          printf(                                                              \
-              "normalized (%s, %u) output does not have expected length, got " \
-              "%zu, expected %zu\n",                                           \
-              "UTF-16" #endianness_upper, #form_upper, xxutf_out_length,       \
-              expected_xxutf_length);                                          \
-        }                                                                      \
-        return false;                                                          \
+    size_t expected_xxutf_length =                                             \
+        xxutf_normalize_utf16##endianness##_##form##_length(utf16_bytes,       \
+                                                            utf16_length);     \
+    if (expected_xxutf_length < xxutf_out_length ||                            \
+        (is_decomp && expected_xxutf_length != xxutf_out_length)) {            \
+      if (verbose) {                                                           \
+        printf(                                                                \
+            "normalized (%s, %s) output does not have expected length, got "   \
+            "%zu, expected %zu\n",                                             \
+            "UTF-16" #endianness_upper, #form_upper, xxutf_out_length,         \
+            expected_xxutf_length);                                            \
       }                                                                        \
+      return false;                                                            \
     }                                                                          \
                                                                                \
     icu_out[icu_out_length] = '\0';                                            \

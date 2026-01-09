@@ -31,14 +31,8 @@ size_t scalar_casefold_utf16be(const uint8_t *input, size_t length,
 size_t scalar_normalize_utf8_nfd_length(const uint8_t *input, size_t length);
 size_t scalar_normalize_utf8_nfkd_length(const uint8_t *input, size_t length);
 size_t scalar_casefold_utf8_length(const uint8_t *input, size_t length);
-size_t scalar_normalize_utf16le_nfd_length(const uint8_t *input, size_t length);
-size_t scalar_normalize_utf16le_nfkd_length(const uint8_t *input,
-                                            size_t length);
-size_t scalar_casefold_utf16le_length(const uint8_t *input, size_t length);
-size_t scalar_normalize_utf16be_nfd_length(const uint8_t *input, size_t length);
-size_t scalar_normalize_utf16be_nfkd_length(const uint8_t *input,
-                                            size_t length);
-size_t scalar_casefold_utf16be_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf8_nfc_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf8_nfkc_length(const uint8_t *input, size_t length);
 
 // UTF-16
 size_t scalar_normalize_utf16le_nfd(const uint8_t *input, size_t length,
@@ -73,6 +67,21 @@ size_t scalar_normalize_utf16be_nfc(const uint8_t *input, size_t length,
                                     uint8_t *out);
 size_t scalar_normalize_utf16be_nfkc(const uint8_t *input, size_t length,
                                      uint8_t *out);
+
+size_t scalar_normalize_utf16le_nfd_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf16le_nfkd_length(const uint8_t *input,
+                                            size_t length);
+size_t scalar_normalize_utf16le_nfc_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf16le_nfkc_length(const uint8_t *input,
+                                            size_t length);
+size_t scalar_casefold_utf16le_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf16be_nfd_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf16be_nfkd_length(const uint8_t *input,
+                                            size_t length);
+size_t scalar_normalize_utf16be_nfc_length(const uint8_t *input, size_t length);
+size_t scalar_normalize_utf16be_nfkc_length(const uint8_t *input,
+                                            size_t length);
+size_t scalar_casefold_utf16be_length(const uint8_t *input, size_t length);
 
 // Helper functions
 uint8_t scalar_sort_characters_utf8(uint8_t *out, size_t length);

@@ -208,6 +208,22 @@ size_t xxutf_normalize_utf8_nfkd_length(const char *input, size_t length) {
   return scalar_normalize_utf8_nfkd_length((const uint8_t *)input, length);
 #endif
 }
+size_t xxutf_normalize_utf8_nfc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf8_nfc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf8_nfc_length((const uint8_t *)input, length);
+#endif
+}
+size_t xxutf_normalize_utf8_nfkc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf8_nfkc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf8_nfkc_length((const uint8_t *)input, length);
+#endif
+}
 size_t xxutf_casefold_utf8_length(const char *input, size_t length) {
 #if XXUTF_IMPLEMENTATION_NEON
   return neon_casefold_utf8_length((const uint8_t *)input, length);
@@ -232,6 +248,22 @@ size_t xxutf_normalize_utf16le_nfkd_length(const char *input, size_t length) {
   return scalar_normalize_utf16le_nfkd_length((const uint8_t *)input, length);
 #endif
 }
+size_t xxutf_normalize_utf16le_nfc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf16le_nfc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf16le_nfc_length((const uint8_t *)input, length);
+#endif
+}
+size_t xxutf_normalize_utf16le_nfkc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf16le_nfkc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf16le_nfkc_length((const uint8_t *)input, length);
+#endif
+}
 size_t xxutf_casefold_utf16le_length(const char *input, size_t length) {
 #if XXUTF_IMPLEMENTATION_NEON
   return neon_casefold_utf16le_length((const uint8_t *)input, length);
@@ -254,6 +286,22 @@ size_t xxutf_normalize_utf16be_nfkd_length(const char *input, size_t length) {
 #endif
 #if !XXUTF_IMPLEMENTATION_NEON
   return scalar_normalize_utf16be_nfkd_length((const uint8_t *)input, length);
+#endif
+}
+size_t xxutf_normalize_utf16be_nfc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf16be_nfc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf16be_nfc_length((const uint8_t *)input, length);
+#endif
+}
+size_t xxutf_normalize_utf16be_nfkc_length(const char *input, size_t length) {
+#if XXUTF_IMPLEMENTATION_NEON
+  return neon_normalize_utf16be_nfkc_length((const uint8_t *)input, length);
+#endif
+#if !XXUTF_IMPLEMENTATION_NEON
+  return scalar_normalize_utf16be_nfkc_length((const uint8_t *)input, length);
 #endif
 }
 size_t xxutf_casefold_utf16be_length(const char *input, size_t length) {

@@ -500,44 +500,66 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     return 4;                                                                       \
   }                                                                                 \
                                                                                     \
-  size_t scalar_normalize_utf8_##decomp_form##_length(const uint8_t *input,         \
-                                                      size_t length) {              \
-    size_t out_length = 0;                                                          \
-    size_t p = 0;                                                                   \
-    while (p < length) {                                                            \
-      uint8_t leading = input[p];                                                   \
-                                                                                    \
-      if (leading < 0b10000000) {                                                   \
-        out_length++;                                                               \
-        p++;                                                                        \
-      } else if ((leading & 0b11100000) == 0b11000000) {                            \
-        uint16_t code_point =                                                       \
-            (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);              \
-        out_length +=                                                               \
-            scalar_decomposition_length_utf8_##decomp_form##_bmp(code_point);       \
-        p += 2;                                                                     \
-      } else if ((leading & 0b11110000) == 0b11100000) {                            \
-        uint16_t code_point = (leading & 0b00001111) << 12 |                        \
-                              (input[p + 1] & 0b00111111) << 6 |                    \
-                              (input[p + 2] & 0b00111111);                          \
-        out_length +=                                                               \
-            scalar_decomposition_length_utf8_##decomp_form##_bmp(code_point);       \
-        p += 3;                                                                     \
-      } else if ((leading & 0b11111000) == 0b11110000) {                            \
-        uint32_t code_point =                                                       \
-            (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |      \
-            (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);         \
-        out_length +=                                                               \
-            scalar_decomposition_length_utf8_##decomp_form##_supplementary(         \
-                code_point);                                                        \
-        p += 4;                                                                     \
-      }                                                                             \
-    }                                                                               \
-                                                                                    \
-    return out_length;                                                              \
+  static uint8_t scalar_decomposition_length_utf8_##comp_form##_bmp(                \
+      uint16_t code_point) {                                                        \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index =                                                                \
+        NORMDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                 \
+    uint8_t value =                                                                 \
+        NORMDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];         \
+    return value;                                                                   \
   }
 
 SCALAR_DEFINE_NORMALIZE_FUNCTIONS(nfd, NFD, nfc, NFC);
 SCALAR_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC);
 
 #undef SCALAR_DEFINE_NORMALIZE_FUNCTIONS
+
+#define SCALAR_NORMALIZE_LENGTH_FUNCTION(form, bmp_function,                   \
+                                         supplementary_function)               \
+  size_t scalar_normalize_utf8_##form##_length(const uint8_t *input,           \
+                                               size_t length) {                \
+    size_t out_length = 0;                                                     \
+    size_t p = 0;                                                              \
+    while (p < length) {                                                       \
+      uint8_t leading = input[p];                                              \
+      if (leading < 0b10000000) {                                              \
+        out_length++;                                                          \
+        p++;                                                                   \
+      } else if ((leading & 0b11100000) == 0b11000000) {                       \
+        uint16_t code_point =                                                  \
+            (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);         \
+        out_length += bmp_function(code_point);                                \
+        p += 2;                                                                \
+      } else if ((leading & 0b11110000) == 0b11100000) {                       \
+        uint16_t code_point = (leading & 0b00001111) << 12 |                   \
+                              (input[p + 1] & 0b00111111) << 6 |               \
+                              (input[p + 2] & 0b00111111);                     \
+        out_length += bmp_function(code_point);                                \
+        p += 3;                                                                \
+      } else if ((leading & 0b11111000) == 0b11110000) {                       \
+        uint32_t code_point =                                                  \
+            (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 | \
+            (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);    \
+        out_length += supplementary_function(code_point);                      \
+        p += 4;                                                                \
+      }                                                                        \
+    }                                                                          \
+    return out_length;                                                         \
+  }
+
+SCALAR_NORMALIZE_LENGTH_FUNCTION(
+    nfd, scalar_decomposition_length_utf8_nfd_bmp,
+    scalar_decomposition_length_utf8_nfd_supplementary);
+SCALAR_NORMALIZE_LENGTH_FUNCTION(
+    nfkd, scalar_decomposition_length_utf8_nfkd_bmp,
+    scalar_decomposition_length_utf8_nfkd_supplementary);
+SCALAR_NORMALIZE_LENGTH_FUNCTION(
+    nfc, scalar_decomposition_length_utf8_nfc_bmp,
+    scalar_decomposition_length_utf8_nfd_supplementary);
+SCALAR_NORMALIZE_LENGTH_FUNCTION(
+    nfkc, scalar_decomposition_length_utf8_nfkc_bmp,
+    scalar_decomposition_length_utf8_nfkd_supplementary);
+
+#undef SCALAR_NORMALIZE_LENGTH_FUNCTION

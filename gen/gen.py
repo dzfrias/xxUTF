@@ -739,6 +739,23 @@ def create_comp_trie(
     return trie
 
 
+def create_comp_length_trie(
+    qc: list[int], decomp_map: DecompMap, encoding: str
+) -> Trie:
+    trie = Trie()
+    for x in range(0x10000):
+        if x in qc and x in decomp_map:
+            length = sum(len(chr(c).encode(encoding)) for c in decomp_map[x].decomps)
+            trie.set(x, length)
+        else:
+            try:
+                trie.set(x, len(chr(x).encode(encoding)))
+            except UnicodeEncodeError:
+                pass
+    trie.compact()
+    return trie
+
+
 def load_casefold_map() -> CasefoldMap:
     map: CasefoldMap = {}
 
@@ -956,6 +973,12 @@ def main() -> None:
     utf16_nfd_length_trie = create_decomp_length_trie(nfd_map, "UTF-16LE")
     utf16_nfkd_length_trie = create_decomp_length_trie(nfkd_map, "UTF-16LE")
     utf16_casefold_length_trie = create_casefold_length_trie(casefold_map, "UTF-16LE")
+    utf8_nfc_length_trie = create_comp_length_trie(derived.nfc_qc, nfd_map, "UTF-8")
+    utf8_nfkc_length_trie = create_comp_length_trie(derived.nfkc_qc, nfkd_map, "UTF-8")
+    utf16_nfc_length_trie = create_comp_length_trie(derived.nfc_qc, nfd_map, "UTF-16LE")
+    utf16_nfkc_length_trie = create_comp_length_trie(
+        derived.nfkc_qc, nfkd_map, "UTF-16LE"
+    )
 
     headers: list[HeaderDef] = []
     with open("normdata.c", "w") as f:
@@ -1056,6 +1079,26 @@ def main() -> None:
                 utf16_casefold_length_trie,
                 16,
                 8,
+            )
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF8_NFC_LENGTH_TRIE", utf8_nfc_length_trie, 16, 8
+            )
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF8_NFKC_LENGTH_TRIE", utf8_nfkc_length_trie, 16, 8
+            )
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF16_NFC_LENGTH_TRIE", utf16_nfc_length_trie, 16, 8
+            )
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF16_NFKC_LENGTH_TRIE", utf16_nfkc_length_trie, 16, 8
             )
         )
     with open("normdata.h", "w") as f:
