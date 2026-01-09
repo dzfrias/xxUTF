@@ -109,6 +109,20 @@ const implementations: []const Implementation = &.{
         .lastStableImpl = c.xxutf_find_last_stable_utf8_nfkd,
     },
     .{
+        .algorithm = .nfc,
+        .encoding = .utf8,
+        .impl = c.xxutf_normalize_utf8_nfc,
+        .lengthImpl = c.xxutf_normalize_utf8_nfc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf8_nfc,
+    },
+    .{
+        .algorithm = .nfkc,
+        .encoding = .utf8,
+        .impl = c.xxutf_normalize_utf8_nfkc,
+        .lengthImpl = c.xxutf_normalize_utf8_nfkc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf8_nfkc,
+    },
+    .{
         .algorithm = .casefold,
         .encoding = .utf8,
         .impl = c.xxutf_casefold_utf8,
@@ -130,6 +144,20 @@ const implementations: []const Implementation = &.{
         .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfkd,
     },
     .{
+        .algorithm = .nfc,
+        .encoding = .utf16le,
+        .impl = c.xxutf_normalize_utf16le_nfc,
+        .lengthImpl = c.xxutf_normalize_utf16le_nfc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfc,
+    },
+    .{
+        .algorithm = .nfkc,
+        .encoding = .utf16le,
+        .impl = c.xxutf_normalize_utf16le_nfkc,
+        .lengthImpl = c.xxutf_normalize_utf16le_nfkc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfkc,
+    },
+    .{
         .algorithm = .casefold,
         .encoding = .utf16le,
         .impl = c.xxutf_casefold_utf16le,
@@ -149,6 +177,20 @@ const implementations: []const Implementation = &.{
         .impl = c.xxutf_normalize_utf16be_nfkd,
         .lengthImpl = c.xxutf_normalize_utf16be_nfkd_length,
         .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfkd,
+    },
+    .{
+        .algorithm = .nfc,
+        .encoding = .utf16be,
+        .impl = c.xxutf_normalize_utf16be_nfc,
+        .lengthImpl = c.xxutf_normalize_utf16be_nfc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfc,
+    },
+    .{
+        .algorithm = .nfkc,
+        .encoding = .utf16be,
+        .impl = c.xxutf_normalize_utf16be_nfkc,
+        .lengthImpl = c.xxutf_normalize_utf16be_nfkc_length,
+        .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfkc,
     },
     .{
         .algorithm = .casefold,
