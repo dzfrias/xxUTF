@@ -157,7 +157,7 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
       uint16_t index = NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];  \
       uint8_t value =                                                          \
           NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];       \
-      return value > 0;                                                        \
+      return value > 3;                                                        \
     }                                                                          \
     uint32_t salt_hash = scalar_phash(                                         \
         code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);             \

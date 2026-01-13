@@ -318,11 +318,11 @@ def has_code_points_up_to_size(sizes: list[int], size: int, n: int) -> bool:
     return max(sizes[:n]) <= size
 
 
-def build_shuf(sizes: tuple[int, ...]) -> list[int]:
+def build_shuf(sizes: tuple[int, ...], size12: int) -> list[int]:
     answer = [0] * 16
     pos = 0
-    if max(sizes) <= 2 and len(sizes) == 4:
-        for i in range(4):
+    if max(sizes) <= 2 and len(sizes) == size12:
+        for i in range(size12):
             if sizes[i] == 1:
                 answer[i * 2] = pos
                 answer[i * 2 + 1] = 0xFF
@@ -348,14 +348,14 @@ def build_shuf(sizes: tuple[int, ...]) -> list[int]:
     return answer
 
 
-def generate_shuffle_tables(writer) -> list[HeaderDef]:
+def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
     case12_set: set[tuple[int, ...]] = set()
     case123_set: set[tuple[int, ...]] = set()
     case1234_set: set[tuple[int, ...]] = set()
     for x in range(1 << 12):
         sizes = compute_code_point_size(x)
-        if has_code_points_up_to_size(sizes, size=2, n=4):
-            case12_set.add(tuple(sizes[:4]))
+        if has_code_points_up_to_size(sizes, size=2, n=size12):
+            case12_set.add(tuple(sizes[:size12]))
         elif has_code_points_up_to_size(sizes, size=3, n=4):
             case123_set.add(tuple(sizes[:4]))
         elif has_code_points_up_to_size(sizes, size=4, n=3):
@@ -365,8 +365,8 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
     case1234 = sorted(case1234_set)
     cases = case12 + case123 + case1234
 
-    all_shuf = [build_shuf(z) for z in cases]
-    writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8[{len(cases)}][16] = {{\n")
+    all_shuf = [build_shuf(z, size12) for z in cases]
+    writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}[{len(cases)}][16] = {{\n")
     for shuf in all_shuf:
         writer.write(f"  {{{", ".join(map(str, shuf))}}},\n")
     writer.write("};\n")
@@ -375,9 +375,9 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
     arrg = []
     for x in range(1 << 12):
         sizes = compute_code_point_size(x)
-        if has_code_points_up_to_size(sizes, size=2, n=4):
-            idx = index[tuple(sizes[:4])]
-            arrg.append((idx, sum(sizes[:4])))
+        if has_code_points_up_to_size(sizes, size=2, n=size12):
+            idx = index[tuple(sizes[:size12])]
+            arrg.append((idx, sum(sizes[:size12])))
         elif has_code_points_up_to_size(sizes, size=3, n=4):
             idx = index[tuple(sizes[:4])]
             arrg.append((idx, sum(sizes[:4])))
@@ -387,7 +387,9 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
         else:
             arrg.append((len(all_shuf), 12))
 
-    writer.write(f"\nconst uint8_t NORMDATA_CODE_POINT_INDEX[{len(arrg)}][2] = {{\n")
+    writer.write(
+        f"\nconst uint8_t NORMDATA_CODE_POINT_INDEX{suffix}[{len(arrg)}][2] = {{\n"
+    )
     for row in batched(arrg, 8):
         writer.write(" ")
         for a in row:
@@ -395,11 +397,33 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
         writer.write("\n")
     writer.write("};\n")
 
-    writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8_INDEX_12 = {len(case12)};\n")
     writer.write(
-        f"const uint8_t NORMDATA_SHUFUTF8_INDEX_123 = {len(case12) + len(case123)};\n"
+        f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12 = {len(case12)};\n"
     )
-    writer.write(f"const uint8_t NORMDATA_SHUFUTF8_INDEX_1234 = {len(cases)};\n")
+    writer.write(
+        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_123 = {len(case12) + len(case123)};\n"
+    )
+    writer.write(
+        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_1234 = {len(cases)};\n"
+    )
+
+    return [
+        HeaderDef.multi_array(
+            f"NORMDATA_SHUFUTF8{suffix}", "uint8_t", [len(cases), 16]
+        ),
+        HeaderDef.multi_array(
+            f"NORMDATA_CODE_POINT_INDEX{suffix}", "uint8_t", [len(arrg), 2]
+        ),
+        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_12", "uint8_t"),
+        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_123", "uint8_t"),
+        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_1234", "uint8_t"),
+    ]
+
+
+def generate_shuffle_tables(writer) -> list[HeaderDef]:
+    headers = []
+    headers.extend(generate_shufutf8(writer, size12=4, suffix=""))
+    headers.extend(generate_shufutf8(writer, size12=6, suffix="_WIDE"))
 
     writer.write(f"\nconst NormdataHangulShuf NORMDATA_HANGUL_SHUF[16] = {{\n")
     for x in range(1 << 4):
@@ -417,15 +441,9 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
         tbl.extend([255] * (24 - len(tbl)))
         writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
     writer.write("};\n")
+    headers.append(HeaderDef.array("NORMDATA_HANGUL_SHUF", "NormdataHangulShuf", 16))
 
-    return [
-        HeaderDef.multi_array("NORMDATA_SHUFUTF8", "uint8_t", [len(cases), 16]),
-        HeaderDef.multi_array("NORMDATA_CODE_POINT_INDEX", "uint8_t", [len(arrg), 2]),
-        HeaderDef("NORMDATA_SHUFUTF8_INDEX_12", "uint8_t"),
-        HeaderDef("NORMDATA_SHUFUTF8_INDEX_123", "uint8_t"),
-        HeaderDef("NORMDATA_SHUFUTF8_INDEX_1234", "uint8_t"),
-        HeaderDef.array("NORMDATA_HANGUL_SHUF", "NormdataHangulShuf", 16),
-    ]
+    return headers
 
 
 def xorshift_hash(x: int, seed: int = 0) -> int:
@@ -652,10 +670,14 @@ def create_decomp_trie(
     decomp_map: DecompMap, encoding: str, decomp_bound: int
 ) -> tuple[Trie, list[int]]:
     trie = Trie()
-    data: list[int] = []
+    data: list[int] = [0]
     for x in range(0x10000):
+        try:
+            size = len(chr(x).encode(encoding))
+        except UnicodeEncodeError:
+            continue
         if x not in decomp_map:
-            trie.set(x, 0)
+            trie.set(x, size)
             continue
         decomp = decomp_map[x]
         offset = len(data)
@@ -669,14 +691,75 @@ def create_decomp_trie(
             last_ccc = decomp_map[decomp.decomps[-1]].ccc
         else:
             last_ccc = 0
-        # Upper 8 bits for the length of the decomposition, middle 8 bits for
-        # the combining class, and lower 16 bits for the offset
-        # Note that the combining class is the ccc of the last character in the
-        # decomposition of `x`, not the actual combining class of `x`.
-        value = (length << 24) | (last_ccc << 16) | offset
+        starter = decomp_map[x].ccc == 0
+        is_complex = False
+        decomp_delta = length - len(chr(x).encode(encoding))
+        if decomp_delta < 0 or decomp_delta > 0b111 or decomp_delta + size > 8:
+            decomp_delta = 0
+            is_complex = True
+        value = (
+            (int(is_complex) << 31)
+            | (decomp_delta << 26)
+            | (last_ccc << 18)
+            | (offset << 2)
+            | size
+        )
         trie.set(x, value)
     trie.compact()
     return trie, data
+
+
+def create_decomp_trie_2(
+    decomp_map: DecompMap, encoding: str, decomp_bound: int
+) -> tuple[Trie, Trie, list[int]]:
+    trie = Trie()
+    decomp_trie = Trie()
+    data: list[int] = [0]
+    for x in range(0x10000):
+        try:
+            size = len(chr(x).encode(encoding))
+        except UnicodeEncodeError:
+            continue
+        if x not in decomp_map:
+            trie.set(x, size)
+            continue
+        decomp = decomp_map[x]
+        offset = len(data)
+        # We use the lower 16 bits for the offset into the data table
+        assert offset <= 0xFFFF
+        for c in decomp.decomps:
+            data.extend(chr(c).encode(encoding))
+        length = len(data) - offset
+        assert length <= decomp_bound
+        if decomp.decomps[-1] in decomp_map:
+            last_ccc = decomp_map[decomp.decomps[-1]].ccc
+            ccc_vals = [
+                decomp_map.get(a, DecompValue([], 0)).ccc for a in decomp.decomps
+            ]
+            if (
+                len(ccc_vals) > 1
+                and any(ccc < last_ccc and ccc != 0 for ccc in ccc_vals)
+                and ccc_vals[0] != 0
+            ):
+                # TODO: these code points are causing major problems for us.
+                #       Not sure what the plan is to fix this. There are only
+                #       a select few code points with this behavior, though,
+                #       which is rather unfortunate.
+                print(x, ccc_vals)
+        else:
+            last_ccc = 0
+        starter = decomp_map[x].ccc == 0
+        decomp_delta = length - len(chr(x).encode(encoding))
+        if decomp_delta < 0 or decomp_delta > 0b111 or decomp_delta + size > 8:
+            assert decomp_bound <= 0b1111111
+            value = (1 << 15) | (length << 8) | last_ccc
+        else:
+            value = (decomp_delta << 10) | (last_ccc << 2) | size
+        trie.set(x, value)
+        decomp_trie.set(x, offset)
+    trie.compact()
+    decomp_trie.compact()
+    return trie, decomp_trie, data
 
 
 def create_decomp_length_trie(decomp_map: DecompMap, encoding: str) -> Trie:
@@ -942,8 +1025,10 @@ def main() -> None:
         default_hash_scheme,
         non_starters,
     )
-    utf8_nfd_trie, utf8_nfd_data = create_decomp_trie(nfd_map, "UTF-8", decomp_bound=16)
-    utf8_nfkd_trie, utf8_nfkd_data = create_decomp_trie(
+    utf8_nfd_trie, utf8_nfd_data_trie, utf8_nfd_data = create_decomp_trie_2(
+        nfd_map, "UTF-8", decomp_bound=16
+    )
+    utf8_nfkd_trie, utf8_nfkd_data_trie, utf8_nfkd_data = create_decomp_trie_2(
         nfkd_map, "UTF-8", decomp_bound=48
     )
     utf16_nfd_trie, utf16_nfd_data = create_decomp_trie(
@@ -996,10 +1081,18 @@ def main() -> None:
             )
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 32)
+            generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 16)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 32)
+            generate_trie(f, "NORMDATA_UTF8_NFD_DATA_TRIE", utf8_nfd_data_trie, 16, 16)
+        )
+        headers.extend(
+            generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 16)
+        )
+        headers.extend(
+            generate_trie(
+                f, "NORMDATA_UTF8_NFKD_DATA_TRIE", utf8_nfkd_data_trie, 16, 16
+            )
         )
         headers.append(
             generate_array(

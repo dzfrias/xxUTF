@@ -99,6 +99,7 @@ void scalar_print_code_points_utf8(const uint8_t *input, size_t length);
 size_t scalar_count_code_points_utf8(const uint8_t *buf, size_t length);
 size_t scalar_get_code_point_pos_reverse_utf8(const uint8_t *buf, size_t length,
                                               size_t n);
+uint32_t scalar_parse_code_point_utf8(const uint8_t *input, uint8_t *size);
 
 void scalar_write_uint16le(uint16_t x, uint8_t *out);
 void scalar_write_uint16be(uint16_t x, uint8_t *out);

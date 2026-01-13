@@ -171,11 +171,26 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
     uint16_t index = NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];         \
-    uint32_t value =                                                                \
+    uint16_t value =                                                                \
         NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];              \
-    *ccc = (value >> 16) & 0xFF;                                                    \
-    uint8_t length = (value >> 24) & 0xFF;                                          \
-    uint16_t offset = value & 0xFFFF;                                               \
+    if (value <= 3) {                                                               \
+      return 0;                                                                     \
+    }                                                                               \
+    uint8_t length;                                                                 \
+    if ((value & 0x8000U) > 0) {                                                    \
+      length = (value >> 8) & 0x7F;                                                 \
+      *ccc = value & 0xFF;                                                          \
+    } else {                                                                        \
+      uint8_t delta = (value >> 10) & 0b111;                                        \
+      uint8_t size = value & 0b11;                                                  \
+      length = size + delta;                                                        \
+      *ccc = (value >> 2) & 0xFF;                                                   \
+    }                                                                               \
+    uint16_t data_index =                                                           \
+        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                 \
+    uint16_t offset =                                                               \
+        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +             \
+                                                           masked];                 \
     const uint8_t *bytes =                                                          \
         &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k++) {                                           \
