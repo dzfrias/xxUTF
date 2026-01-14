@@ -10,11 +10,9 @@
 // Macro to define a print function for an arbitrarily-shaped NEON vector.
 #define NEON_PRINT_FUNC(type, child_type, store_func)                          \
   __attribute__((unused)) void neon_print_##type(const char *name, type vec) { \
-    child_type values[sizeof(type) / sizeof(child_type)];                      \
-    store_func(values, vec);                                                   \
     printf("%s: ", name);                                                      \
-    for (uint8_t i = 0; i < sizeof(values) / sizeof(child_type); i++) {        \
-      printf("%04x ", values[i]);                                              \
+    for (uint8_t i = 0; i < sizeof(vec) / sizeof(child_type); i++) {           \
+      printf("%04x ", vec[i]);                                                 \
     }                                                                          \
     printf("\n");                                                              \
   }
@@ -25,6 +23,12 @@ NEON_PRINT_FUNC(uint16x8_t, uint16_t, vst1q_u16);
 NEON_PRINT_FUNC(uint16x4_t, uint16_t, vst1_u16);
 NEON_PRINT_FUNC(uint32x4_t, uint32_t, vst1q_u32);
 NEON_PRINT_FUNC(uint32x2_t, uint32_t, vst1_u32);
+NEON_PRINT_FUNC(int8x16_t, int8_t, vst1q_u8);
+NEON_PRINT_FUNC(int8x8_t, int8_t, vst1_s8);
+NEON_PRINT_FUNC(int16x8_t, int16_t, vst1q_s16);
+NEON_PRINT_FUNC(int16x4_t, int16_t, vst1_s16);
+NEON_PRINT_FUNC(int32x4_t, int32_t, vst1q_s32);
+NEON_PRINT_FUNC(int32x2_t, int32_t, vst1_s32);
 
 #undef NEON_PRINT_FUNC
 

@@ -703,9 +703,9 @@ int main() {
     // if (!compare_normalization_utf8_nfc(buf, nread, true)) {
     //   continue;
     // }
-    // if (!compare_normalization_utf8_nfkd(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_normalization_utf8_nfkd(buf, nread, true)) {
+      continue;
+    }
     // if (!compare_normalization_utf8_nfkc(buf, nread, true)) {
     //   continue;
     // }

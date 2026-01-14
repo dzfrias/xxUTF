@@ -750,13 +750,16 @@ def create_decomp_trie_2(
             last_ccc = 0
         starter = decomp_map[x].ccc == 0
         decomp_delta = length - len(chr(x).encode(encoding))
-        if decomp_delta < 0 or decomp_delta > 0b111 or decomp_delta + size > 8:
-            assert decomp_bound <= 0b1111111
-            value = (1 << 15) | (length << 8) | last_ccc
-        else:
-            value = (decomp_delta << 10) | (last_ccc << 2) | size
+        final_decomp = min(decomp_delta, 15)
+        assert abs(final_decomp) <= 15
+        value = (
+            ((final_decomp & 0x1F) << 11)
+            | (int(length > 0) << 10)
+            | (last_ccc << 2)
+            | size
+        )
         trie.set(x, value)
-        decomp_trie.set(x, offset)
+        decomp_trie.set(x, (length << 16) | offset)
     trie.compact()
     decomp_trie.compact()
     return trie, decomp_trie, data
@@ -1084,14 +1087,14 @@ def main() -> None:
             generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 16)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFD_DATA_TRIE", utf8_nfd_data_trie, 16, 16)
+            generate_trie(f, "NORMDATA_UTF8_NFD_DATA_TRIE", utf8_nfd_data_trie, 16, 32)
         )
         headers.extend(
             generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 16)
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF8_NFKD_DATA_TRIE", utf8_nfkd_data_trie, 16, 16
+                f, "NORMDATA_UTF8_NFKD_DATA_TRIE", utf8_nfkd_data_trie, 16, 32
             )
         )
         headers.append(

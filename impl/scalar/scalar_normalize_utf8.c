@@ -176,21 +176,14 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     if (value <= 3) {                                                               \
       return 0;                                                                     \
     }                                                                               \
-    uint8_t length;                                                                 \
-    if ((value & 0x8000U) > 0) {                                                    \
-      length = (value >> 8) & 0x7F;                                                 \
-      *ccc = value & 0xFF;                                                          \
-    } else {                                                                        \
-      uint8_t delta = (value >> 10) & 0b111;                                        \
-      uint8_t size = value & 0b11;                                                  \
-      length = size + delta;                                                        \
-      *ccc = (value >> 2) & 0xFF;                                                   \
-    }                                                                               \
+    *ccc = (value >> 2) & 0xFF;                                                     \
     uint16_t data_index =                                                           \
         NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                 \
-    uint16_t offset =                                                               \
+    uint32_t data =                                                                 \
         NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +             \
                                                            masked];                 \
+    uint16_t offset = data & 0xFFFF;                                                \
+    uint8_t length = data >> 16;                                                    \
     const uint8_t *bytes =                                                          \
         &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k++) {                                           \

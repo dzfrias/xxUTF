@@ -11,6 +11,12 @@ void neon_print_uint16x8_t(const char *name, uint16x8_t vec);
 void neon_print_uint16x4_t(const char *name, uint16x4_t vec);
 void neon_print_uint32x4_t(const char *name, uint32x4_t vec);
 void neon_print_uint32x2_t(const char *name, uint32x2_t vec);
+void neon_print_int8x16_t(const char *name, int8x16_t vec);
+void neon_print_int8x8_t(const char *name, int8x8_t vec);
+void neon_print_int16x8_t(const char *name, int16x8_t vec);
+void neon_print_int16x4_t(const char *name, int16x4_t vec);
+void neon_print_int32x4_t(const char *name, int32x4_t vec);
+void neon_print_int32x2_t(const char *name, int32x2_t vec);
 
 // Check if a code point vector contains Hangul syllables. The result is a
 // vector of 0s and 0xFFFFFFFFs, where 0 means the code point is not a Hangul

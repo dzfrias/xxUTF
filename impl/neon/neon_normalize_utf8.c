@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // Create an 8-bit movemask from a 16x4 vector.
 static uint8_t neon_movemask_u16(uint16x4_t v) {
@@ -266,6 +267,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       size_t out_length, const uint8_t *input, uint8_t *last_ccc) {                 \
     uint8_t *start = *out;                                                          \
                                                                                     \
+    /* TODO: we could make this faster by removing this parameter and inlining      \
+     *       it instead... */                                                       \
     for (size_t i = 0; i < n_chars; i++) {                                          \
       uint8_t leading = input[0];                                                   \
       if (leading <= 0x7F) {                                                        \
@@ -286,24 +289,19 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
         continue;                                                                   \
       }                                                                             \
                                                                                     \
-      uint8_t length;                                                               \
       /* `ccc` represents the combining class of the last character in the          \
        * decomposition of the character we're on, not the actual ccc value of       \
        * the character. */                                                          \
-      uint8_t ccc;                                                                  \
-      if (unlikely((value & 0x8000U) > 0)) {                                        \
-        length = (value >> 8) & 0x7F;                                               \
-        ccc = value & 0xFF;                                                         \
-      } else {                                                                      \
-        length = (value & 0b11) + ((value >> 10) & 0b111);                          \
-        ccc = (value >> 2) & 0xFF;                                                  \
-      }                                                                             \
+      uint8_t ccc = (value >> 2) & 0xFF;                                            \
                                                                                     \
       uint16_t data_index =                                                         \
           NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];       \
-      uint16_t offset =                                                             \
+      /* TODO: widen to 32 bits so we can include true length */                    \
+      uint32_t data =                                                               \
           NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +           \
                                                              (chars[i] & 63)];      \
+      uint16_t offset = data & 0xFFFF;                                              \
+      uint8_t length = data >> 16;                                                  \
                                                                                     \
       const uint8_t *decomp_offset =                                                \
           &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];         \
@@ -337,14 +335,14 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
    * syllables AND that they are all starter characters. */                         \
   __attribute__((always_inline)) static inline void                                 \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
-          uint8x16_t in, uint16x8_t chars, uint16x8_t delta,                        \
-          uint16x8_t values, uint8_t *out,                                          \
-          __attribute__((unused)) size_t out_length, uint8_t *last_ccc) {           \
+          uint8x16_t in, uint16x8_t chars, int16x8_t delta, uint16x8_t values,      \
+          uint8_t *out, __attribute__((unused)) size_t out_length,                  \
+          uint8_t *last_ccc) {                                                      \
     /* UTF-8 lengths of each code point in the input */                             \
     uint16x8_t length = vandq_u16(values, vdupq_n_u16(0b11));                       \
     uint16x8_t length_psum = neon_prefix_sum_uint16x8(length);                      \
-    uint8x16_t shift = vdupq_n_u8(0);                                               \
-    uint8x16_t iota = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};       \
+    int8x16_t shift = vdupq_n_u8(0);                                                \
+    int8x16_t iota = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};        \
     /* Each 8 byte block corresponds to one decomposition in the input. It is       \
      * only possible to have a maximum of six code points. */                       \
     uint8_t tbls[6 * 8];                                                            \
@@ -359,7 +357,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     /* We could use a prefix sum involving `delta` to compute displacement as       \
      * a vector, but going scalar here is better because the loop below             \
      * usually executes only one or two times. */                                   \
-    uint8_t displacement = 0;                                                       \
+    int8_t displacement = 0;                                                        \
     /* Iterate through 1 bits of `bitmask8` */                                      \
     /* TODO: I'd like a way to create the `shift` vector with less                  \
      *       instructions per decomposable code point  */                           \
@@ -367,27 +365,31 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       /* We have 7 redundant bits per useful 1 bit  (that were masked out           \
        * earlier but still exist), so divide them out here */                       \
       uint32_t i = __builtin_ctzll(bitmask8) >> 3;                                  \
-      uint8_t dlt = delta[i];                                                       \
+      int8_t dlt = delta[i];                                                        \
+      int8_t size = length[i];                                                      \
       /* The end of each code point before displacement */                          \
-      uint8_t end = length_psum[i];                                                 \
+      int8_t end = length_psum[i];                                                  \
+      assert(end > 0);                                                              \
       /* The start of each code point after displacement */                         \
-      uint8_t dlt_start = (length_psum[i] - length[i]) + displacement;              \
+      int8_t dlt_start = (int8_t)(length_psum[i] - size) + displacement;            \
+      assert(dlt_start >= 0);                                                       \
       /* To decompose the code point at `i`, we need to shift the bytes in the      \
        * buffer by the amount the original code point expands during                \
        * decomposition. This mask tells us which bytes to shift. */                 \
       uint8x16_t shift_mask =                                                       \
-          vcgeq_u8(iota, vdupq_n_u8(dlt_start > end ? dlt_start : end));            \
+          vcgeq_s8(iota, vdupq_n_s8(dlt_start + size + dlt));                       \
       uint8x16_t upper_mask =                                                       \
-          vcltq_u8(iota, vdupq_n_u8(end + displacement + dlt));                     \
-      uint8x16_t lower_mask = vcgeq_u8(iota, vdupq_n_u8(dlt_start));                \
+          vcltq_s8(iota, vdupq_n_s8(end + displacement + dlt));                     \
+      uint8x16_t lower_mask = vcgeq_s8(iota, vdupq_n_s8(dlt_start));                \
       uint8x16_t decomp_mask = vandq_u8(upper_mask, lower_mask);                    \
       /* Shift by `dlt` */                                                          \
-      uint8x16_t contrib = vandq_u8(shift_mask, vdupq_n_u8(dlt));                   \
+      int8x16_t contrib = vandq_s8(shift_mask, vdupq_n_s8(dlt));                    \
+      int8_t offset_diff = -((int16_t)((j + 2) * 8) - dlt_start);                   \
       /* Performing `iota - tbl_offset` should get us an index into the             \
        * appropriate section of `tbls`, given by the formula. */                    \
-      uint8x16_t tbl_offset = vdupq_n_u8(256 - ((j + 2) * 8 - dlt_start));          \
+      int8x16_t tbl_offset = vdupq_n_s8(offset_diff);                               \
       /* For our decomposition, select from `tbl_offset`, not the shift. */         \
-      shift = vbslq_u8(decomp_mask, tbl_offset, vaddq_u8(shift, contrib));          \
+      shift = vbslq_s8(decomp_mask, tbl_offset, vaddq_s8(shift, contrib));          \
       uint16_t code_point = chars[i];                                               \
       /* Pre-load the decomposition into the appropriate sub-table */               \
       uint16_t data_index =                                                         \
@@ -403,7 +405,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     }                                                                               \
     uint8x16x4_t tbl = {in, vld1q_u8(&tbls[0]), vld1q_u8(&tbls[16]),                \
                         vld1q_u8(&tbls[32])};                                       \
-    uint8x16_t index = vsubq_u8(iota, shift);                                       \
+    uint8x16_t index = vreinterpretq_u8_s8(vsubq_s8(iota, shift));                  \
     uint8x16_t decomposed = vqtbl4q_u8(tbl, index);                                 \
     vst1q_u8(out, decomposed);                                                      \
                                                                                     \
@@ -483,16 +485,16 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       *out += n_bytes;                                                              \
       return;                                                                       \
     }                                                                               \
-    uint16x8_t complex_mask = vandq_u16(values, vdupq_n_u16(0x8000U));              \
-    uint16x8_t delta = vandq_u16(vshrq_n_u16(values, 10), vdupq_n_u16(0b111));      \
-    uint16_t total = n_bytes + vaddvq_u16(delta);                                   \
+    int16x8_t delta = vshrq_n_s16(vreinterpretq_s16_u16(values), 11);               \
+    int16_t total = (int16_t)n_bytes + vaddvq_s16(delta);                           \
+    assert(total > 0);                                                              \
     /* There are two conditions in which we would enter the slow path:              \
      * 1. We have a "complex" code point                                            \
      * 2. The total number of bytes we need to write the decomposition of the       \
      *    input bytes would be greater than 16.                                     \
      * Both of these conditions are rather uncommon, though.                        \
      */                                                                             \
-    if (likely(vmaxvq_u16(complex_mask) == 0 && total <= 16)) {                     \
+    if (likely(total <= 16)) {                                                      \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
           in, chars, delta, values, *out, out_length, last_ccc);                    \
       *out += total;                                                                \
@@ -543,17 +545,16 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       *out += n_bytes;                                                              \
       return;                                                                       \
     }                                                                               \
-    uint16x4_t complex_mask = vand_u16(values, vdup_n_u16(0x8000U));                \
-    uint16x4_t delta = vand_u16(vshr_n_u16(values, 10), vdup_n_u16(0b111));         \
-    uint32_t dlt = vaddv_u16(delta);                                                \
-    bool complex_result = vmaxv_u16(complex_mask) > 0;                              \
-    if (!complex_result && !hangul_result && n_bytes + dlt <= 16) {                 \
+    int16x4_t delta = vshr_n_s16(vreinterpret_s16_u16(values), 11);                 \
+    int16_t total = (int16_t)n_bytes + vaddv_s16(delta);                            \
+    assert(total > 0);                                                              \
+    if (!hangul_result && total <= 16) {                                            \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
-          vcombine_u16(delta, vdup_n_u16(0)),                                       \
+          vcombine_s16(delta, vdup_n_u16(0)),                                       \
           vcombine_u16(values, vdup_n_u16(0)), *out, out_length, last_ccc);         \
-      *out += n_bytes + dlt;                                                        \
-    } else if (complex_result && !hangul_result) {                                  \
+      *out += total;                                                                \
+    } else if (!hangul_result) {                                                    \
       neon_write_non_hangul_utf8_##decomp_form##_fallback(                          \
           vcombine_u16(values, vdup_n_u16(0)),                                      \
           vcombine_u16(chars, vdup_n_u16(0)), 4, out, out_length, input,            \
