@@ -9,7 +9,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 // Create an 8-bit movemask from a 16x4 vector.
 static uint8_t neon_movemask_u16(uint16x4_t v) {
@@ -337,8 +336,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
   __attribute__((always_inline)) static inline void                                 \
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
           uint8x16_t in, uint16x8_t chars, int16x8_t delta, uint16x8_t values,      \
-          uint8_t *out, __attribute__((unused)) size_t out_length,                  \
-          uint8_t *last_ccc) {                                                      \
+          uint8_t *out) {                                                           \
     /* UTF-8 lengths of each code point in the input */                             \
     uint16x8_t length = vandq_u16(values, vdupq_n_u16(0b11));                       \
     uint16x8_t length_psum = neon_prefix_sum_uint16x8(length);                      \
@@ -409,30 +407,6 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     uint8x16_t index = vreinterpretq_u8_s8(vsubq_s8(iota, shift));                  \
     uint8x16_t decomposed = vqtbl4q_u8(tbl, index);                                 \
     vst1q_u8(out, decomposed);                                                      \
-                                                                                    \
-    uint16x8_t ccc_values =                                                         \
-        vandq_u16(vshrq_n_u16(values, 2), vdupq_n_u16(0xFF));                       \
-    uint16x8_t shifted_ccc = vextq_u16(vdupq_n_u16(*last_ccc), ccc_values, 7);      \
-    uint16x8_t starters = vceqq_u16(ccc_values, vdupq_n_u16(0));                    \
-    /* We can use the special ccc value 255 for starters */                         \
-    uint16x8_t ccc_fixup = vbslq_u16(starters, vdupq_n_u16(255), ccc_values);       \
-    uint16x8_t ccc_lt = vcltq_u16(ccc_fixup, shifted_ccc);                          \
-    /* Check if the combining characters are out of order */                        \
-    if (unlikely(vmaxvq_u16(ccc_lt) > 0)) {                                         \
-      uint16x8_t out_position =                                                     \
-          neon_prefix_sum_uint16x8(vaddq_u16(length, delta));                       \
-      uint64_t unordered_bitmask8 =                                                 \
-          neon_bitmask4(vreinterpretq_u8_u16(ccc_lt)) & 0x8080808080808080ULL;      \
-      for (; unordered_bitmask8 > 0;                                                \
-           unordered_bitmask8 &= unordered_bitmask8 - 1) {                          \
-        uint32_t i = __builtin_ctzll(unordered_bitmask8) >> 3;                      \
-        /* TODO: make this correct without being slow */                            \
-        (void)scalar_sort_characters_utf8(out + out_position[i], 0);                \
-      }                                                                             \
-    }                                                                               \
-    /* TODO: not correct because we can have a variable number of code points       \
-     *       now. */                                                                \
-    *last_ccc = vgetq_lane_u16(ccc_values, 7);                                      \
   }                                                                                 \
                                                                                     \
   /* Decompose input code points, assuming they are not precomposed Hangul          \
@@ -490,14 +464,22 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     int16_t total = (int16_t)n_bytes + vaddvq_s16(delta);                           \
     assert(total > 0);                                                              \
     /* There are two conditions in which we would enter the slow path:              \
-     * 1. We have a "complex" code point                                            \
-     * 2. The total number of bytes we need to write the decomposition of the       \
+     * 1. The total number of bytes we need to write the decomposition of the       \
      *    input bytes would be greater than 16.                                     \
+     * 2. We've detected that combining characters are out-of-order                 \
      * Both of these conditions are rather uncommon, though.                        \
      */                                                                             \
-    if (likely(total <= 16)) {                                                      \
-      neon_write_non_hangul_starters_utf8_##decomp_form(                            \
-          in, chars, delta, values, *out, out_length, last_ccc);                    \
+    uint16x8_t ccc_values =                                                         \
+        vandq_u16(vshrq_n_u16(values, 2), vdupq_n_u16(0xFF));                       \
+    uint16x8_t shifted_ccc = vextq_u16(vdupq_n_u16(*last_ccc), ccc_values, 7);      \
+    uint16x8_t starters = vceqq_u16(ccc_values, vdupq_n_u16(0));                    \
+    /* We can use the special ccc value 255 for starters */                         \
+    uint16x8_t ccc_fixup = vbslq_u16(starters, vdupq_n_u16(255), ccc_values);       \
+    uint16x8_t ccc_lt = vcltq_u16(ccc_fixup, shifted_ccc);                          \
+    if (likely(total <= 16 && vmaxvq_u16(ccc_lt) == 0)) {                           \
+      *last_ccc = vgetq_lane_u16(ccc_values, 5);                                    \
+      neon_write_non_hangul_starters_utf8_##decomp_form(in, chars, delta,           \
+                                                        values, *out);              \
       *out += total;                                                                \
     } else {                                                                        \
       neon_write_non_hangul_utf8_##decomp_form##_fallback(                          \
@@ -553,7 +535,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       neon_write_non_hangul_starters_utf8_##decomp_form(                            \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
           vcombine_s16(delta, vdup_n_u16(0)),                                       \
-          vcombine_u16(values, vdup_n_u16(0)), *out, out_length, last_ccc);         \
+          vcombine_u16(values, vdup_n_u16(0)), *out);                               \
       *out += total;                                                                \
     } else if (!hangul_result) {                                                    \
       neon_write_non_hangul_utf8_##decomp_form##_fallback(                          \
