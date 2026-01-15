@@ -754,6 +754,12 @@ def create_decomp_trie_2(
             ):
                 first_ccc = ccc_vals[0]
                 final_decomp = 15
+        # Delta decomposition can only be done with relatively small decomp
+        # lengths (<= 8). A `final_decomp` value of 15 indicates that the
+        # code point definitely cannot be delta decomposed, and thus the
+        # `decomp_trie` trie should be used to get length information.
+        if length > 8:
+            final_decomp = 15
         value = (
             ((final_decomp & 0x1F) << 11)
             | (int(length > 0) << 10)

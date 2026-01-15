@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // Create an 8-bit movemask from a 16x4 vector.
 static uint8_t neon_movemask_u16(uint16x4_t v) {
@@ -392,11 +393,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint16_t data_index =                                                         \
           NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[code_point >>         \
                                                               6];                   \
-      uint16_t offset = NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA          \
+      uint32_t value = NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA           \
           [data_index + (code_point & 63)];                                         \
       vst1_u8(&tbls[j * 8],                                                         \
               vld1_u8(&NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS      \
-                          [offset]));                                               \
+                          [value & 0xFFFF]));                                       \
       j++;                                                                          \
       displacement += dlt;                                                          \
     }                                                                               \
@@ -537,7 +538,15 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     int16x4_t delta = vshr_n_s16(vreinterpret_s16_u16(values), 11);                 \
     int16_t total = (int16_t)n_bytes + vaddv_s16(delta);                            \
     assert(total > 0);                                                              \
-    if (!hangul_result && total <= 16) {                                            \
+    uint16x4_t ccc_values = vand_u16(vshr_n_u16(values, 2), vdup_n_u16(0xFF));      \
+    uint16x4_t shifted_ccc = vext_u16(vdup_n_u16(*last_ccc), ccc_values, 3);        \
+    uint16x4_t starters = vceq_u16(ccc_values, vdup_n_u16(0));                      \
+    /* We can use the special ccc value 255 for starters */                         \
+    uint16x4_t ccc_fixup = vbsl_u16(starters, vdup_n_u16(255), ccc_values);         \
+    uint16x4_t ccc_lt = vclt_u16(ccc_fixup, shifted_ccc);                           \
+    if (!hangul_result && total <= 16 && vmaxv_u16(ccc_lt) == 0) {                  \
+      *last_ccc = vget_lane_u16(ccc_values, 3);                                     \
+      /* TODO: narrow version of function, see if it makes things faster */         \
       neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
           vcombine_s16(delta, vdup_n_u16(0)),                                       \
