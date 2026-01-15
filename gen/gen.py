@@ -179,10 +179,17 @@ def generate_decomp_hash_table(
         writer.write(" ")
         for k in batch:
             decomp = supplementary_map[k]
-            if decomp.decomps[-1] in decomp_map:
-                last_ccc = decomp_map[decomp.decomps[-1]].ccc
-            else:
-                last_ccc = 0
+            ccc_vals = [
+                decomp_map.get(a, DecompValue([], 0)).ccc for a in decomp.decomps
+            ]
+            last_ccc = ccc_vals[-1]
+            if (
+                len(decomp.decomps) > 1
+                and any(ccc < last_ccc and ccc != 0 for ccc in ccc_vals)
+                and ccc_vals[0] != 0
+            ):
+                print("Detected complex ccc decomposition!")
+                sys.exit(1)
             ccc = supplementary_map[k].ccc
             writer.write(
                 f" {{{lengths[k]}, {ccc}, {last_ccc}, 0x{offsets[k]:03X}, 0x{k:05X}}},"
@@ -731,6 +738,10 @@ def create_decomp_trie_2(
             data.extend(chr(c).encode(encoding))
         length = len(data) - offset
         assert length <= decomp_bound
+        decomp_delta = length - len(chr(x).encode(encoding))
+        final_decomp = min(decomp_delta, 15)
+        first_ccc = 0
+        last_ccc = 0
         if decomp.decomps[-1] in decomp_map:
             last_ccc = decomp_map[decomp.decomps[-1]].ccc
             ccc_vals = [
@@ -741,17 +752,8 @@ def create_decomp_trie_2(
                 and any(ccc < last_ccc and ccc != 0 for ccc in ccc_vals)
                 and ccc_vals[0] != 0
             ):
-                # TODO: these code points are causing major problems for us.
-                #       Not sure what the plan is to fix this. There are only
-                #       a select few code points with this behavior, though,
-                #       which is rather unfortunate.
-                print(x, ccc_vals)
-        else:
-            last_ccc = 0
-        starter = decomp_map[x].ccc == 0
-        decomp_delta = length - len(chr(x).encode(encoding))
-        final_decomp = min(decomp_delta, 15)
-        assert abs(final_decomp) <= 15
+                first_ccc = ccc_vals[0]
+                final_decomp = 15
         value = (
             ((final_decomp & 0x1F) << 11)
             | (int(length > 0) << 10)
@@ -759,7 +761,7 @@ def create_decomp_trie_2(
             | size
         )
         trie.set(x, value)
-        decomp_trie.set(x, (length << 16) | offset)
+        decomp_trie.set(x, (first_ccc << 24) | (length << 16) | offset)
     trie.compact()
     decomp_trie.compact()
     return trie, decomp_trie, data

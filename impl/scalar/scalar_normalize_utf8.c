@@ -143,7 +143,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
    *                                                                                \
    * Note that this does not handle Hangul code points. */                          \
   static size_t scalar_decompose_utf8_##decomp_form##_supplementary(                \
-      uint32_t code_point, uint8_t *out, uint8_t *ccc) {                            \
+      uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {        \
     uint8_t *start = out;                                                           \
     uint32_t salt_hash = scalar_phash(                                              \
         code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                  \
@@ -161,12 +161,15 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     } else {                                                                        \
       *ccc = 0;                                                                     \
     }                                                                               \
+    /* `first_ccc` doesn't exist for supplementary code points in the Unicode       \
+     * character database. */                                                       \
+    *first_ccc = 0;                                                                 \
                                                                                     \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
   static size_t scalar_decompose_utf8_##decomp_form##_bmp(                          \
-      uint32_t code_point, uint8_t *out, uint8_t *ccc) {                            \
+      uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {        \
     uint8_t *start = out;                                                           \
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
@@ -183,12 +186,13 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
         NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +             \
                                                            masked];                 \
     uint16_t offset = data & 0xFFFF;                                                \
-    uint8_t length = data >> 16;                                                    \
+    uint8_t length = (data >> 16) & 0xFF;                                           \
     const uint8_t *bytes =                                                          \
         &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k++) {                                           \
       *out++ = bytes[k];                                                            \
     }                                                                               \
+    *first_ccc = data >> 24;                                                        \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
@@ -235,6 +239,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     while (p < length) {                                                            \
       uint8_t leading = input[p];                                                   \
                                                                                     \
+      uint8_t first_ccc = 0;                                                        \
       uint8_t ccc = 0;                                                              \
       if (leading < 0b10000000) { /* ASCII, no need to do a lookup */               \
         *out++ = leading;                                                           \
@@ -242,8 +247,8 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
       } else if ((leading & 0b11100000) == 0b11000000) {                            \
         uint32_t code_point =                                                       \
             (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);              \
-        size_t nwritten =                                                           \
-            scalar_decompose_utf8_##decomp_form##_bmp(code_point, out, &ccc);       \
+        size_t nwritten = scalar_decompose_utf8_##decomp_form##_bmp(                \
+            code_point, out, &first_ccc, &ccc);                                     \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \
@@ -259,7 +264,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
           out += scalar_decompose_hangul_utf8(code_point, out);                     \
         } else {                                                                    \
           size_t nwritten = scalar_decompose_utf8_##decomp_form##_bmp(              \
-              code_point, out, &ccc);                                               \
+              code_point, out, &first_ccc, &ccc);                                   \
           if (nwritten == 0) {                                                      \
             *out++ = leading;                                                       \
             *out++ = input[p + 1];                                                  \
@@ -274,7 +279,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
             (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |      \
             (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);         \
         size_t nwritten = scalar_decompose_utf8_##decomp_form##_supplementary(      \
-            code_point, out, &ccc);                                                 \
+            code_point, out, &first_ccc, &ccc);                                     \
         if (nwritten == 0) {                                                        \
           *out++ = leading;                                                         \
           *out++ = input[p + 1];                                                    \
@@ -286,7 +291,8 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
         p += 4;                                                                     \
       }                                                                             \
                                                                                     \
-      if (ccc != 0 && *last_ccc > ccc) {                                            \
+      uint8_t cmp_ccc = first_ccc > 0 ? first_ccc : ccc;                            \
+      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                                    \
         ccc = scalar_sort_characters_utf8(out, (out - start) + out_offset);         \
       }                                                                             \
       *last_ccc = ccc;                                                              \

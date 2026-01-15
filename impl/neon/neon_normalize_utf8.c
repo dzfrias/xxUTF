@@ -296,12 +296,12 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
                                                                                     \
       uint16_t data_index =                                                         \
           NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];       \
-      /* TODO: widen to 32 bits so we can include true length */                    \
       uint32_t data =                                                               \
           NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +           \
                                                              (chars[i] & 63)];      \
       uint16_t offset = data & 0xFFFF;                                              \
-      uint8_t length = data >> 16;                                                  \
+      uint8_t length = (data >> 16) & 0xFF;                                         \
+      uint8_t first_ccc = data >> 24;                                               \
                                                                                     \
       const uint8_t *decomp_offset =                                                \
           &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];         \
@@ -319,7 +319,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       }                                                                             \
       *out += length;                                                               \
                                                                                     \
-      if (ccc != 0 && *last_ccc > ccc) {                                            \
+      uint8_t cmp_ccc = first_ccc > 0 ? first_ccc : ccc;                            \
+      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                                    \
         ccc = scalar_sort_characters_utf8(*out, out_length + (*out - start));       \
       }                                                                             \
       input += size;                                                                \
