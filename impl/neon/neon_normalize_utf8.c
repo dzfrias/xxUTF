@@ -345,7 +345,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
      * only possible to have a maximum of six code points. */                       \
     uint8_t tbls[6 * 8];                                                            \
     /* Mask for all values with decompositions */                                   \
-    uint16x8_t decomps = vcgtq_u16(values, vdupq_n_u16(0b11));                      \
+    uint16x8_t decomps = vcgtq_u16(values, vdupq_n_u16(0x3FF));                     \
     /* We can iterate through this bitmask to get the positions of all code         \
      * points we should decompose */                                                \
     uint64_t bitmask8 =                                                             \

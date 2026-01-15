@@ -762,7 +762,7 @@ def create_decomp_trie_2(
             final_decomp = 15
         value = (
             ((final_decomp & 0x1F) << 11)
-            | (int(length > 0) << 10)
+            | (int(decomp.decomps[0] != x) << 10)
             | (last_ccc << 2)
             | size
         )
