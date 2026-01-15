@@ -255,9 +255,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
 #define NEON_DEFINE_NORMALIZE_FUNCTIONS(decomp_form, decomp_form_upper,             \
                                         comp_form, comp_form_upper,                 \
                                         large_decompositions)                       \
-  /* Decompose code points into their UTF-8 representations. `values` is a          \
-   * vector corresponding to 4 16-bit code points who have been looked up in        \
-   * the NF(K)D Trie.                                                               \
+  /* Decompose up to eight code points into their UTF-8 representations.            \
    *                                                                                \
    * This function assumes that the input code points are not Hangul                \
    * syllables. */                                                                  \
@@ -327,14 +325,14 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     }                                                                               \
   }                                                                                 \
                                                                                     \
-  /* Decompose code points into their UTF-8 representations. `values` is a          \
-   * vector corresponding to 4 16-bit code points who have been looked up in        \
-   * the NF(K)D Trie.                                                               \
+  /* Decompose code points into their UTF-8 representations.                        \
    *                                                                                \
    * This function assumes that the input code points are not Hangul                \
-   * syllables AND that they are all starter characters. */                         \
+   * syllables and that they are "simple". In particular, this means the total      \
+   * decomposition of the (up to) six `chars` code points cannot exceed 16          \
+   * bytes in size. Also, no combining characters can be out of order. */           \
   __attribute__((always_inline)) static inline void                                 \
-      neon_write_non_hangul_starters_utf8_##decomp_form(                            \
+      neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           uint8x16_t in, uint16x8_t chars, int16x8_t delta, uint16x8_t values,      \
           uint8_t *out) {                                                           \
     /* UTF-8 lengths of each code point in the input */                             \
@@ -370,7 +368,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       int8_t end = length_psum[i];                                                  \
       assert(end > 0);                                                              \
       /* The start of each code point after displacement */                         \
-      int8_t dlt_start = (int8_t)(length_psum[i] - size) + displacement;            \
+      int8_t dlt_start = (end - size) + displacement;                               \
       assert(dlt_start >= 0);                                                       \
       /* To decompose the code point at `i`, we need to shift the bytes in the      \
        * buffer by the amount the original code point expands during                \
@@ -410,9 +408,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
   }                                                                                 \
                                                                                     \
   /* Decompose input code points, assuming they are not precomposed Hangul          \
-   * syllables. `in` is a vector of the raw input bytes, and `n_bytes` is the       \
-   * number of bytes that the six `chars` code points occupy within the 16          \
-   * byte `in` vector. */                                                           \
+   * syllables. `n_bytes` is the number of bytes that the six `chars` code          \
+   * points occupy within the 16 byte `in` vector. */                               \
   static inline void neon_decompose_non_hangul_utf8_##decomp_form(                  \
       uint8x16_t in, uint16x8_t chars, size_t n_bytes, const uint8_t *input,        \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
@@ -463,12 +460,6 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     int16x8_t delta = vshrq_n_s16(vreinterpretq_s16_u16(values), 11);               \
     int16_t total = (int16_t)n_bytes + vaddvq_s16(delta);                           \
     assert(total > 0);                                                              \
-    /* There are two conditions in which we would enter the slow path:              \
-     * 1. The total number of bytes we need to write the decomposition of the       \
-     *    input bytes would be greater than 16.                                     \
-     * 2. We've detected that combining characters are out-of-order                 \
-     * Both of these conditions are rather uncommon, though.                        \
-     */                                                                             \
     uint16x8_t ccc_values =                                                         \
         vandq_u16(vshrq_n_u16(values, 2), vdupq_n_u16(0xFF));                       \
     uint16x8_t shifted_ccc = vextq_u16(vdupq_n_u16(*last_ccc), ccc_values, 7);      \
@@ -476,10 +467,21 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     /* We can use the special ccc value 255 for starters */                         \
     uint16x8_t ccc_fixup = vbslq_u16(starters, vdupq_n_u16(255), ccc_values);       \
     uint16x8_t ccc_lt = vcltq_u16(ccc_fixup, shifted_ccc);                          \
+    /* There are two conditions in which we would enter the slow path:              \
+     *                                                                              \
+     * 1. The total number of bytes we need to write the decomposition of the       \
+     *    input bytes would be greater than 16.                                     \
+     * 2. We've detected that combining characters are out-of-order (note that      \
+     *    it is possible to use `ccc_lt` to sort characters in an "optimized"       \
+     *    manner. But this led to a performance hit, likely because we would        \
+     *    have to spill more onto the stack).                                       \
+     *                                                                              \
+     * Both of these conditions are rather uncommon, though.                        \
+     */                                                                             \
     if (likely(total <= 16 && vmaxvq_u16(ccc_lt) == 0)) {                           \
       *last_ccc = vgetq_lane_u16(ccc_values, 5);                                    \
-      neon_write_non_hangul_starters_utf8_##decomp_form(in, chars, delta,           \
-                                                        values, *out);              \
+      neon_write_non_hangul_simple_utf8_##decomp_form(in, chars, delta,             \
+                                                      values, *out);                \
       *out += total;                                                                \
     } else {                                                                        \
       neon_write_non_hangul_utf8_##decomp_form##_fallback(                          \
@@ -488,10 +490,14 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
   }                                                                                 \
                                                                                     \
   /* Generalized decomposition for a 16-byte input vector of UTF-8 code             \
-   * points. The parsed code points are passed in as a 4x32-bit vector of code      \
-   * points, and the `n_bytes` parameter indicates how many bytes of the input      \
-   * vector are used for the `chars` parameter. The `input` parameter is the        \
-   * original pointer to UTF-8 bytes. */                                            \
+   * points. The `chars` parameter is a 4x16-bit vector of BMP code points,         \
+   * and the `n_bytes` parameter indicates how many bytes of the input vector       \
+   * are used for the `chars` parameter. The `input` parameter is the original      \
+   * pointer to UTF-8 bytes.                                                        \
+   *                                                                                \
+   * The code points here may or may not be Hangul. A faster variant of this        \
+   * function is available if Hangul cannot be present.                             \
+   * */                                                                             \
   static inline void neon_decompose_utf8_##decomp_form(                             \
       uint8x16_t in, uint16x4_t chars, size_t n_bytes, const uint8_t *input,        \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
@@ -532,7 +538,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     int16_t total = (int16_t)n_bytes + vaddv_s16(delta);                            \
     assert(total > 0);                                                              \
     if (!hangul_result && total <= 16) {                                            \
-      neon_write_non_hangul_starters_utf8_##decomp_form(                            \
+      neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
           vcombine_s16(delta, vdup_n_u16(0)),                                       \
           vcombine_u16(values, vdup_n_u16(0)), *out);                               \
