@@ -411,9 +411,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
   /* Decompose input code points, assuming they are not precomposed Hangul          \
    * syllables. `n_bytes` is the number of bytes that the six `chars` code          \
    * points occupy within the 16 byte `in` vector. */                               \
-  static inline void neon_decompose_non_hangul_utf8_##decomp_form(                  \
-      uint8x16_t in, uint16x8_t chars, size_t n_bytes, const uint8_t *input,        \
-      uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
+  __attribute__((always_inline)) static inline void                                 \
+      neon_decompose_non_hangul_utf8_##decomp_form(                                 \
+          uint8x16_t in, uint16x8_t chars, size_t n_bytes,                          \
+          const uint8_t *input, uint8_t **out, size_t out_length,                   \
+          uint8_t *last_ccc) {                                                      \
     uint16x8_t index = vshrq_n_u16(chars, 6);                                       \
     uint16x8_t block_index = {                                                      \
         NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
@@ -499,9 +501,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
    * The code points here may or may not be Hangul. A faster variant of this        \
    * function is available if Hangul cannot be present.                             \
    * */                                                                             \
-  static inline void neon_decompose_utf8_##decomp_form(                             \
-      uint8x16_t in, uint16x4_t chars, size_t n_bytes, const uint8_t *input,        \
-      uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
+  __attribute__((always_inline)) static inline void                                 \
+      neon_decompose_utf8_##decomp_form(uint8x16_t in, uint16x4_t chars,            \
+                                        size_t n_bytes, const uint8_t *input,       \
+                                        uint8_t **out, size_t out_length,           \
+                                        uint8_t *last_ccc) {                        \
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                               \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t index = vshr_n_u16(chars, 6);                                        \
@@ -546,7 +550,6 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     uint16x4_t ccc_lt = vclt_u16(ccc_fixup, shifted_ccc);                           \
     if (!hangul_result && total <= 16 && vmaxv_u16(ccc_lt) == 0) {                  \
       *last_ccc = vget_lane_u16(ccc_values, 3);                                     \
-      /* TODO: narrow version of function, see if it makes things faster */         \
       neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
           vcombine_s16(delta, vdup_n_u16(0)),                                       \
