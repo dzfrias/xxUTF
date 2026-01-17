@@ -356,21 +356,26 @@ def build_shuf(sizes: tuple[int, ...], size12: int) -> list[int]:
 
 
 def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
+    case12_small_set: set[tuple[int, ...]] = set()
     case12_set: set[tuple[int, ...]] = set()
     case123_set: set[tuple[int, ...]] = set()
     case1234_set: set[tuple[int, ...]] = set()
     for x in range(1 << 12):
         sizes = compute_code_point_size(x)
         if has_code_points_up_to_size(sizes, size=2, n=size12):
-            case12_set.add(tuple(sizes[:size12]))
+            if sum(sizes[:size12]) <= 8:
+                case12_small_set.add(tuple(sizes[:size12]))
+            else:
+                case12_set.add(tuple(sizes[:size12]))
         elif has_code_points_up_to_size(sizes, size=3, n=4):
             case123_set.add(tuple(sizes[:4]))
         elif has_code_points_up_to_size(sizes, size=4, n=3):
             case1234_set.add(tuple(sizes[:3]))
+    case12_small = sorted(case12_small_set)
     case12 = sorted(case12_set)
     case123 = sorted(case123_set)
     case1234 = sorted(case1234_set)
-    cases = case12 + case123 + case1234
+    cases = case12_small + case12 + case123 + case1234
 
     all_shuf = [build_shuf(z, size12) for z in cases]
     writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}[{len(cases)}][16] = {{\n")
@@ -405,10 +410,13 @@ def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
     writer.write("};\n")
 
     writer.write(
-        f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12 = {len(case12)};\n"
+        f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12_SMALL = {len(case12_small)};\n"
     )
     writer.write(
-        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_123 = {len(case12) + len(case123)};\n"
+        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12 = {len(case12_small) + len(case12)};\n"
+    )
+    writer.write(
+        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_123 = {len(case12_small) + len(case12) + len(case123)};\n"
     )
     writer.write(
         f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_1234 = {len(cases)};\n"
@@ -421,6 +429,7 @@ def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
         HeaderDef.multi_array(
             f"NORMDATA_CODE_POINT_INDEX{suffix}", "uint8_t", [len(arrg), 2]
         ),
+        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_12_SMALL", "uint8_t"),
         HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_12", "uint8_t"),
         HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_123", "uint8_t"),
         HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_1234", "uint8_t"),
@@ -729,6 +738,7 @@ def create_decomp_trie_2(
             continue
         if x not in decomp_map:
             trie.set(x, size)
+            decomp_trie.set(x, 0)
             continue
         decomp = decomp_map[x]
         offset = len(data)
@@ -753,6 +763,7 @@ def create_decomp_trie_2(
                 and ccc_vals[0] != 0
             ):
                 first_ccc = ccc_vals[0]
+                assert last_ccc - first_ccc in range(0, 8)
                 final_decomp = 15
         # Delta decomposition can only be done with relatively small decomp
         # lengths (<= 8). A `final_decomp` value of 15 indicates that the
@@ -767,7 +778,13 @@ def create_decomp_trie_2(
             | size
         )
         trie.set(x, value)
-        decomp_trie.set(x, (first_ccc << 24) | (length << 16) | offset)
+        assert length <= 0x3F
+        assert offset <= 0x7FFF
+        ccc_delta = 0 if first_ccc == 0 else last_ccc - first_ccc
+        decomp_trie.set(
+            x,
+            (ccc_delta << 29) | (last_ccc << 21) | (length << 15) | offset,
+        )
     trie.compact()
     decomp_trie.compact()
     return trie, decomp_trie, data

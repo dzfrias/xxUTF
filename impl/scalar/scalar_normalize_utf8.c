@@ -173,26 +173,23 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint8_t *start = out;                                                           \
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
-    uint16_t index = NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];         \
-    uint16_t value =                                                                \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];              \
-    if (value <= 3) {                                                               \
+    uint16_t index =                                                                \
+        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                 \
+    uint32_t value =                                                                \
+        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];         \
+    if (value == 0) {                                                               \
       return 0;                                                                     \
     }                                                                               \
-    *ccc = (value >> 2) & 0xFF;                                                     \
-    uint16_t data_index =                                                           \
-        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                 \
-    uint32_t data =                                                                 \
-        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +             \
-                                                           masked];                 \
-    uint16_t offset = data & 0xFFFF;                                                \
-    uint8_t length = (data >> 16) & 0xFF;                                           \
+    *ccc = (value >> 21) & 0xFF;                                                    \
+    uint16_t offset = value & 0x7FFF;                                               \
+    uint8_t length = (value >> 15) & 0x3F;                                          \
     const uint8_t *bytes =                                                          \
         &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k++) {                                           \
       *out++ = bytes[k];                                                            \
     }                                                                               \
-    *first_ccc = data >> 24;                                                        \
+    uint8_t ccc_delta = value >> 29;                                                \
+    *first_ccc = ccc_delta == 0 ? 0 : *ccc - ccc_delta;                             \
     return out - start;                                                             \
   }                                                                                 \
                                                                                     \
