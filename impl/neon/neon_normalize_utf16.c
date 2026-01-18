@@ -1,11 +1,11 @@
 // amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
+#include "common_defs.h"
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
 #include "normdata.h"
 #include <arm_neon.h>
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,9 +27,6 @@ NEON_UTF16_HELPERS(le, XXUTF_BIG_ENDIAN);
 NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
 
 #undef NEON_UTF16_HELPERS
-
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NEON_UTF16_IMPLEMENTATION(endianness, swap_endianness, is_big_endian,  \
                                   decomp_form, decomp_form_upper, comp_form,   \
@@ -87,13 +84,13 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
                                                                     0xFFFF];   \
       uint8_t length = value >> 24;                                            \
       /* `length` is length in bytes, not code units */                        \
-      assert(length % 2 == 0);                                                 \
+      XXUTF_ASSERT(length % 2 == 0);                                           \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
       if (is_big_endian) {                                                     \
         decomp_bytes = vrev16q_u8(decomp_bytes);                               \
       }                                                                        \
       vst1q_u8(*out, decomp_bytes);                                            \
-      if (large_decompositions && unlikely(length > 16)) {                     \
+      if (large_decompositions && XXUTF_UNLIKELY(length > 16)) {               \
         for (size_t j = 16; j < length; j += 2) {                              \
           if (is_big_endian) {                                                 \
             (*out)[j] = decomp_offset[j + 1];                                  \
@@ -130,13 +127,13 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
                                                                     0xFFFF];   \
       uint8_t length = value >> 24;                                            \
-      assert(length % 2 == 0);                                                 \
+      XXUTF_ASSERT(length % 2 == 0);                                           \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
       if (is_big_endian) {                                                     \
         decomp_bytes = vrev16q_u8(decomp_bytes);                               \
       }                                                                        \
       vst1q_u8(*out, decomp_bytes);                                            \
-      if (large_decompositions && unlikely(length > 16)) {                     \
+      if (large_decompositions && XXUTF_UNLIKELY(length > 16)) {               \
         for (size_t j = 16; j < length; j += 2) {                              \
           if (is_big_endian) {                                                 \
             (*out)[j] = decomp_offset[j + 1];                                  \
@@ -284,7 +281,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         *last_ccc = 0;                                                         \
         continue;                                                              \
       }                                                                        \
-      assert(value == 1);                                                      \
+      XXUTF_ASSERT(value == 1);                                                \
       uint16_t code_point = code_points[i];                                    \
       uint16_t shifted = code_point >> 6;                                      \
       uint16_t masked = code_point & 0x3F;                                     \
@@ -292,12 +289,12 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
           NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shifted];            \
       uint32_t decomp_value =                                                  \
           NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];      \
-      assert(decomp_value != 0);                                               \
+      XXUTF_ASSERT(decomp_value != 0);                                         \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS            \
               [decomp_value & 0xFFFF];                                         \
       uint8_t length = decomp_value >> 24;                                     \
-      assert(length <= 8);                                                     \
+      XXUTF_ASSERT(length <= 8);                                               \
       uint8x8_t decomp_bytes = vld1_u8(decomp_offset);                         \
       if (is_big_endian) {                                                     \
         decomp_bytes = vrev16_u8(decomp_bytes);                                \

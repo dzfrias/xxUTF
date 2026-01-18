@@ -231,6 +231,7 @@ const default_flags: []const []const u8 = &.{
 const header_files: []const []const u8 = &.{
     "xxutf.h",
     "normdata.h",
+    "common_defs.h",
     "impl/scalar.h",
     "impl/scalar/scalar_common.h",
     "impl/neon.h",

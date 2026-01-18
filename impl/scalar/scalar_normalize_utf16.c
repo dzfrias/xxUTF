@@ -1,7 +1,7 @@
+#include "common_defs.h"
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
 #include "normdata.h"
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -188,7 +188,7 @@ SCALAR_UTF16_HELPERS(be);
     }                                                                                \
     *ccc = (value >> 16) & 0xFF;                                                     \
     uint8_t length = (value >> 24) & 0xFF;                                           \
-    assert(length % 2 == 0);                                                         \
+    XXUTF_ASSERT(length % 2 == 0);                                                   \
     uint16_t offset = value & 0xFFFF;                                                \
     const uint8_t *bytes =                                                           \
         &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
@@ -260,7 +260,7 @@ SCALAR_UTF16_HELPERS(be);
           nwritten = scalar_decompose_utf16##endianness##_##decomp_form##_bmp(       \
               code_point, out, &ccc);                                                \
         } else {                                                                     \
-          assert(size == 4);                                                         \
+          XXUTF_ASSERT(size == 4);                                                   \
           nwritten =                                                                 \
               scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(    \
                   code_point, out, &ccc);                                            \
@@ -414,7 +414,7 @@ SCALAR_UTF16_HELPERS(be);
         /* TODO: we can cache this */                                                \
         size_t starter_pos = scalar_rfind_starter_utf16##endianness(                 \
             normalized_out, normalized_pos);                                         \
-        assert(starter_pos != normalized_pos);                                       \
+        XXUTF_ASSERT(starter_pos != normalized_pos);                                 \
         /* Skip if we don't have a starter before this */                            \
         if (starter_pos == (size_t)-1) {                                             \
           normalized_pos += normalized_size;                                         \
@@ -446,7 +446,7 @@ SCALAR_UTF16_HELPERS(be);
           continue;                                                                  \
         }                                                                            \
         uint8_t composed_size = scalar_code_point_size_utf16(composed);              \
-        assert(composed_size >= starter_size);                                       \
+        XXUTF_ASSERT(composed_size >= starter_size);                                 \
                                                                                      \
         /* Shift left to delete the combining character */                           \
         scalar_shift_left(normalized_out + normalized_pos,                           \
@@ -541,7 +541,7 @@ SCALAR_UTF16_IMPLEMENTATION(be, true, nfkd, NFKD, nfkc, NFKC);
       if (size == 2) {                                                         \
         out_length += bmp_function(code_point);                                \
       } else {                                                                 \
-        assert(size == 4);                                                     \
+        XXUTF_ASSERT(size == 4);                                               \
         out_length += supplementary_function(code_point);                      \
       }                                                                        \
       p += size;                                                               \

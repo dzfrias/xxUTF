@@ -1,7 +1,7 @@
+#include "common_defs.h"
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
 #include "normdata.h"
-#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -417,7 +417,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
         /* TODO: we can cache this */                                               \
         size_t starter_pos =                                                        \
             scalar_rfind_starter_utf8(normalized_out, normalized_pos);              \
-        assert(starter_pos != normalized_pos);                                      \
+        XXUTF_ASSERT(starter_pos != normalized_pos);                                \
         /* Skip if we don't have a starter before this */                           \
         if (starter_pos == (size_t)-1) {                                            \
           normalized_pos += normalized_size;                                        \
@@ -449,7 +449,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
           continue;                                                                 \
         }                                                                           \
         uint8_t composed_size = scalar_code_point_size_utf8(composed);              \
-        assert(composed_size >= starter_size);                                      \
+        XXUTF_ASSERT(composed_size >= starter_size);                                \
                                                                                     \
         /* Shift left to delete the combining character */                          \
         scalar_shift_left(normalized_out + normalized_pos,                          \
