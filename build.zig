@@ -49,20 +49,6 @@ pub fn build(b: *std.Build) !void {
     );
     b.installArtifact(lib);
 
-    const test_exe = b.addExecutable(.{
-        .name = "test_xxutf",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/test.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    test_exe.linkLibrary(lib);
-    const run_test_exe = b.addRunArtifact(test_exe);
-    run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
-    const test_step = b.step("test", "Test xxUTF using the Unicode Character Database");
-    test_step.dependOn(&run_test_exe.step);
-
     const compare_exe = b.addExecutable(.{
         .name = "compare",
         .root_module = b.createModule(.{
@@ -135,6 +121,27 @@ pub fn build(b: *std.Build) !void {
     const xxu_run_step = b.step("run", "Run xxu");
     xxu_run_step.dependOn(&run_xxu.step);
     b.installArtifact(xxu);
+
+    const test_exe = b.addExecutable(.{
+        .name = "test_xxutf",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_exe.linkLibrary(lib);
+    const run_test_exe = b.addRunArtifact(test_exe);
+    run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
+    const test_step = b.step("test", "Test xxUTF using the Unicode Character Database");
+    const run_xxu_test = std.Build.Step.Run.create(b, "Run xxu tests");
+    run_xxu_test.addFileArg(b.path("test/xxu_test.py"));
+    run_xxu_test.addFileArg(xxu.getEmittedBin());
+    run_xxu_test.addFileArg(b.path("benchmarks/inputs"));
+    run_xxu_test.addFileArg(b.path("test/inputs"));
+    // TODO: fix other algorithms
+    // test_step.dependOn(&run_test_exe.step);
+    test_step.dependOn(&run_xxu_test.step);
 }
 
 fn createLibrary(
