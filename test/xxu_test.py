@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-ALGORITHMS = ["nfd", "nfkd"]
+ALGORITHMS = ["nfd", "nfkd", "nfc", "nfkc"]
 
 
 def compare(xxu_bin, algorithm, name, contents):
@@ -13,14 +13,16 @@ def compare(xxu_bin, algorithm, name, contents):
         [xxu_bin, "-x", algorithm], capture_output=True, input=contents
     )
     if xxu_result.returncode != 0:
-        print(f"got exit code {xxu_result.returncode} for input {name}")
+        print(
+            f"got exit code {xxu_result.returncode} for input {name} (algorithm: {algorithm})"
+        )
         sys.exit(1)
     uconv_result = subprocess.run(
         ["uconv", "-x", f"any-{algorithm}"], capture_output=True, input=contents
     )
     assert uconv_result.returncode == 0
     if xxu_result.stdout != uconv_result.stdout:
-        print(f"got output mismatch for input {name}")
+        print(f"got output mismatch for input {name} (algorithm: {algorithm})")
         sys.exit(1)
 
 

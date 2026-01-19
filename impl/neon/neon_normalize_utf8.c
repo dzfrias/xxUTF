@@ -753,14 +753,14 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint16_t shifted = code_point >> 6;                                           \
       uint16_t masked = code_point & 0x3F;                                          \
       uint16_t index =                                                              \
-          NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shifted];                  \
+          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shifted];             \
       uint32_t decomp_value =                                                       \
-          NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];            \
+          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];       \
       XXUTF_ASSERT(decomp_value != 0);                                              \
       const uint8_t *decomp_offset =                                                \
           &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS                  \
-              [decomp_value & 0xFFFF];                                              \
-      uint8_t length = decomp_value >> 24;                                          \
+              [decomp_value & 0x7FFF];                                              \
+      uint8_t length = (decomp_value >> 15) & 0x3F;                                 \
       XXUTF_ASSERT(length <= 8);                                                    \
       /* Note that decomposing this character might at first seem to break the      \
        * "important invariant" described in `neon_fallback_utf8_nf(k)c`, but        \
@@ -771,8 +771,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       vst1_u8(*out, vld1_u8(decomp_offset));                                        \
       *out += length;                                                               \
                                                                                     \
-      uint8_t ccc = (decomp_value >> 16) & 0xFF;                                    \
-      if (ccc != 0 && *last_ccc > ccc) {                                            \
+      uint8_t ccc = (decomp_value >> 21) & 0xFF;                                    \
+      if (XXUTF_UNLIKELY(ccc != 0 && *last_ccc > ccc)) {                            \
         ccc = scalar_sort_characters_utf8(*out, out_length + (*out - start));       \
       }                                                                             \
       input += size;                                                                \
