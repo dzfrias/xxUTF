@@ -133,6 +133,39 @@ void neon_memcpy_small(uint8_t *dst, const uint8_t *src) {
                                                               7)],             \
     };                                                                         \
     return values;                                                             \
+  }                                                                            \
+                                                                               \
+  uint16x8_t neon_evaluate_trie_##comp_form##_wide(uint16x8_t input) {         \
+    uint16x8_t index = vshrq_n_u16(input, 6);                                  \
+    uint16x8_t block_index = {                                                 \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 0)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 1)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 2)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 3)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 4)],     \
+        NORMDATA_##comp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index, 5)],     \
+        0,                                                                     \
+        0,                                                                     \
+    };                                                                         \
+    uint16x8_t masked = vandq_u16(input, vdupq_n_u16(0x3F));                   \
+    uint16x8_t data_offset = vaddq_u16(block_index, masked);                   \
+    uint16x8_t values = {                                                      \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              0)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              1)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              2)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              3)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              4)],             \
+        NORMDATA_##comp_form_upper##_TRIE_DATA[vgetq_lane_u16(data_offset,     \
+                                                              5)],             \
+        0,                                                                     \
+        0,                                                                     \
+    };                                                                         \
+    return values;                                                             \
   }
 
 NEON_COMMON_FUNCTIONS(nfc, NFC);

@@ -725,11 +725,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
    * essentially performs NF(K)D on the given code points.                          \
    */                                                                               \
   static void neon_write_no_comp_utf8_##comp_form(                                  \
-      uint16x4_t values, uint16x4_t code_points, uint8_t **out,                     \
+      uint16x8_t values, uint16x8_t code_points, size_t nchars, uint8_t **out,      \
       size_t out_length, const uint8_t *input, uint8_t *last_ccc) {                 \
     uint8_t *start = *out;                                                          \
                                                                                     \
-    for (size_t i = 0; i < 4; i++) {                                                \
+    for (size_t i = 0; i < nchars; i++) {                                           \
       uint8_t leading = input[0];                                                   \
       if (leading <= 0x7F) {                                                        \
         *(*out)++ = leading;                                                        \
@@ -780,9 +780,6 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     }                                                                               \
   }                                                                                 \
                                                                                     \
-  /* Fallback to scalar implementation when encountering an NFC relevant            \
-   * character. Returns the number of characters of the input consumed, and         \
-   * updates the output pointer to be in the correct place. */                      \
   static size_t neon_fallback_utf8_##comp_form(                                     \
       const uint8_t *input, const uint8_t *input_base, size_t input_length,         \
       uint8_t **out, size_t length) {                                               \
@@ -819,46 +816,10 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     return next_starter - offset;                                                   \
   }                                                                                 \
                                                                                     \
-  static size_t neon_normalize_masked_utf8_##comp_form(                             \
-      const uint8_t *input, const uint8_t *input_base, size_t input_length,         \
-      uint64_t mask, uint8_t **out, size_t out_length, uint8_t *last_ccc) {         \
-    int t1 = __builtin_ctzll(~mask);                                                \
-    /* Eagerly skip ASCII, similar to NF(K)D */                                     \
-    if (t1 > 2) {                                                                   \
-      size_t min = t1 > 52 ? 52 : t1;                                               \
-      neon_memcpy_small(*out, input);                                               \
-      *out += min;                                                                  \
-      *last_ccc = 0;                                                                \
-      return min;                                                                   \
-    }                                                                               \
-                                                                                    \
-    uint8x16_t in = vld1q_u8(input);                                                \
-    uint16_t sml_mask = mask & 0xFFF;                                               \
-                                                                                    \
-    uint16x4_t code_points;                                                         \
-    size_t n_bytes;                                                                 \
-                                                                                    \
-    if (sml_mask == 0x924) {                                                        \
-      code_points = neon_parse_3_byte_utf8(in);                                     \
-      n_bytes = 12;                                                                 \
-    } else if ((sml_mask & 0xFF) == 0xAA) {                                         \
-      code_points = neon_parse_2_byte_utf8(in);                                     \
-      n_bytes = 8;                                                                  \
-    } else {                                                                        \
-      uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];                         \
-      n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];                             \
-      if (idx < NORMDATA_SHUFUTF8_INDEX_12) {                                       \
-        code_points = neon_parse_4_12_utf8(in, idx);                                \
-      } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {                               \
-        code_points = neon_parse_4_123_utf8(in, idx);                               \
-      } else {                                                                      \
-        XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_INDEX_1234);                           \
-        *last_ccc = 0;                                                              \
-        return neon_fallback_utf8_##comp_form(input, input_base, input_length,      \
-                                              out, n_bytes);                        \
-      }                                                                             \
-    }                                                                               \
-                                                                                    \
+  static inline size_t neon_normalize_code_points_utf8_##comp_form(                 \
+      uint8x16_t in, uint16x4_t code_points, const uint8_t *input,                  \
+      const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
+      uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
     uint16x4_t values = neon_evaluate_trie_##comp_form(code_points);                \
     uint16_t max = vmaxv_u16(values);                                               \
     /* No relevant characters */                                                    \
@@ -876,10 +837,84 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     if (max == 1) {                                                                 \
       /* Special writing function that essentially runs NF(K)D on                   \
        * `code_points`. This is the only place we use last_ccc information. */      \
-      neon_write_no_comp_utf8_##comp_form(values, code_points, out,                 \
+      neon_write_no_comp_utf8_##comp_form(                                          \
+          vcombine_u16(values, vdup_n_u16(0)),                                      \
+          vcombine_u16(code_points, vdup_n_u16(0)), 4, out, out_length, input,      \
+          last_ccc);                                                                \
+      return n_bytes;                                                               \
+    }                                                                               \
+    *last_ccc = 0;                                                                  \
+    return neon_fallback_utf8_##comp_form(input, input_base, input_length,          \
+                                          out, n_bytes);                            \
+  }                                                                                 \
+                                                                                    \
+  static inline size_t neon_normalize_code_points_utf8_##comp_form##_wide(          \
+      uint8x16_t in, uint16x8_t code_points, const uint8_t *input,                  \
+      const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
+      uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
+    uint16x8_t values = neon_evaluate_trie_##comp_form##_wide(code_points);         \
+    uint16_t max = vmaxvq_u16(values);                                              \
+    if (max == 0) {                                                                 \
+      vst1q_u8(*out, in);                                                           \
+      *out += n_bytes;                                                              \
+      *last_ccc = 0;                                                                \
+      return n_bytes;                                                               \
+    }                                                                               \
+    if (max == 1) {                                                                 \
+      neon_write_no_comp_utf8_##comp_form(values, code_points, 6, out,              \
                                           out_length, input, last_ccc);             \
       return n_bytes;                                                               \
     }                                                                               \
+    *last_ccc = 0;                                                                  \
+    return neon_fallback_utf8_##comp_form(input, input_base, input_length,          \
+                                          out, n_bytes);                            \
+  }                                                                                 \
+                                                                                    \
+  static size_t neon_normalize_masked_utf8_##comp_form(                             \
+      const uint8_t *input, const uint8_t *input_base, size_t input_length,         \
+      uint64_t mask, uint8_t **out, size_t out_length, uint8_t *last_ccc) {         \
+    int t1 = __builtin_ctzll(~mask);                                                \
+    /* Eagerly skip ASCII, similar to NF(K)D */                                     \
+    if (t1 > 2) {                                                                   \
+      size_t min = t1 > 52 ? 52 : t1;                                               \
+      neon_memcpy_small(*out, input);                                               \
+      *out += min;                                                                  \
+      *last_ccc = 0;                                                                \
+      return min;                                                                   \
+    }                                                                               \
+                                                                                    \
+    uint8x16_t in = vld1q_u8(input);                                                \
+    uint16_t sml_mask = mask & 0xFFF;                                               \
+                                                                                    \
+    if (sml_mask == 0x924) {                                                        \
+      uint16x4_t code_points = neon_parse_3_byte_utf8(in);                          \
+      return neon_normalize_code_points_utf8_##comp_form(                           \
+          in, code_points, input, input_base, input_length, 12, out,                \
+          out_length, last_ccc);                                                    \
+    }                                                                               \
+    if (sml_mask == 0xAAA) {                                                        \
+      uint16x8_t code_points = neon_parse_2_byte_utf8_wide(in);                     \
+      return neon_normalize_code_points_utf8_##comp_form##_wide(                    \
+          in, code_points, input, input_base, input_length, 12, out,                \
+          out_length, last_ccc);                                                    \
+    }                                                                               \
+                                                                                    \
+    uint8_t idx = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                      \
+    size_t n_bytes = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];                   \
+    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12) {                                    \
+      uint16x8_t code_points = neon_parse_4_12_utf8_wide(in, idx);                  \
+      return neon_normalize_code_points_utf8_##comp_form##_wide(                    \
+          in, code_points, input, input_base, input_length, n_bytes, out,           \
+          out_length, last_ccc);                                                    \
+    }                                                                               \
+    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_123) {                                   \
+      uint16x4_t code_points = neon_parse_4_123_utf8_wide(in, idx);                 \
+      return neon_normalize_code_points_utf8_##comp_form(                           \
+          in, code_points, input, input_base, input_length, n_bytes, out,           \
+          out_length, last_ccc);                                                    \
+    }                                                                               \
+                                                                                    \
+    XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_WIDE_INDEX_1234);                          \
     *last_ccc = 0;                                                                  \
     return neon_fallback_utf8_##comp_form(input, input_base, input_length,          \
                                           out, n_bytes);                            \

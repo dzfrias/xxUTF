@@ -42,6 +42,8 @@ uint16x4_t neon_evaluate_trie_nfc(uint16x4_t input);
 uint16x4_t neon_evaluate_trie_nfkc(uint16x4_t input);
 uint16x8_t neon_evaluate_trie_compound_nfc(uint16x8_t input);
 uint16x8_t neon_evaluate_trie_compound_nfkc(uint16x8_t input);
+uint16x8_t neon_evaluate_trie_nfc_wide(uint16x8_t input);
+uint16x8_t neon_evaluate_trie_nfkc_wide(uint16x8_t input);
 
 // Parse four three-byte UTF-8 code points into their 16-bit code point values.
 uint16x4_t neon_parse_3_byte_utf8(uint8x16_t in);
