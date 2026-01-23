@@ -469,41 +469,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
           uint8x16_t in, uint16x8_t chars, size_t n_bytes,                          \
           const uint8_t *input, uint8_t **out, size_t out_length,                   \
           uint8_t *last_ccc) {                                                      \
-    uint16x8_t index = vshrq_n_u16(chars, 6);                                       \
-    uint16x8_t block_index = {                                                      \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      0)],          \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      1)],          \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      2)],          \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      3)],          \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      4)],          \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vgetq_lane_u16(index,        \
-                                                                      5)],          \
-        0,                                                                          \
-        0,                                                                          \
-    };                                                                              \
-    uint16x8_t masked = vandq_u16(chars, vdupq_n_u16(0x3F));                        \
-    uint16x8_t data_offset = vaddq_u16(block_index, masked);                        \
-    uint16x8_t values = {                                                           \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 0)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 1)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 2)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 3)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 4)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vgetq_lane_u16(               \
-            data_offset, 5)],                                                       \
-        0,                                                                          \
-        0,                                                                          \
-    };                                                                              \
+    uint16x8_t values = NEON_TRIE_LOOKUP_WIDE(                                      \
+        NORMDATA_UTF8_##decomp_form_upper##_TRIE, chars);                           \
     /* Each value contains the UTF-8 code point size (from 0 to 3) in the           \
      * lowest two bits. If there's nothing special about the code point, it         \
      * will have zero bits past those two bits. */                                  \
@@ -561,29 +528,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
                                         uint8_t *last_ccc) {                        \
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                               \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
-    uint16x4_t index = vshr_n_u16(chars, 6);                                        \
-    uint16x4_t block_index = {                                                      \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
-                                                                     0)],           \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
-                                                                     1)],           \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
-                                                                     2)],           \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,         \
-                                                                     3)],           \
-    };                                                                              \
-    uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                          \
-    uint16x4_t data_offset = vadd_u16(block_index, masked);                         \
-    uint16x4_t values = {                                                           \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
-            data_offset, 0)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
-            data_offset, 1)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
-            data_offset, 2)],                                                       \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(                \
-            data_offset, 3)],                                                       \
-    };                                                                              \
+    uint16x4_t values =                                                             \
+        NEON_TRIE_LOOKUP(NORMDATA_UTF8_##decomp_form_upper##_TRIE, chars);          \
     bool decomp_result = vmaxv_u16(values) > 3;                                     \
     /* Case where we have no Hangul syllables and no relevant characters */         \
     if (!hangul_result && !decomp_result) {                                         \
@@ -1016,29 +962,8 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
         return n_bytes;                                                        \
       }                                                                        \
     }                                                                          \
-    uint16x4_t index = vshr_n_u16(code_points, 6);                             \
-    uint16x4_t block_index = {                                                 \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(index,    \
-                                                                     0)],      \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(index,    \
-                                                                     1)],      \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(index,    \
-                                                                     2)],      \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_INDEX[vget_lane_u16(index,    \
-                                                                     3)],      \
-    };                                                                         \
-    uint16x4_t masked = vand_u16(code_points, vdup_n_u16(0x3F));               \
-    uint16x4_t data_offset = vadd_u16(block_index, masked);                    \
-    uint16x4_t values = {                                                      \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(           \
-            data_offset, 0)],                                                  \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(           \
-            data_offset, 1)],                                                  \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(           \
-            data_offset, 2)],                                                  \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE_DATA[vget_lane_u16(           \
-            data_offset, 3)],                                                  \
-    };                                                                         \
+    uint16x4_t values = NEON_TRIE_LOOKUP(                                      \
+        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);                \
     *out_length += vaddv_u16(values);                                          \
     return n_bytes;                                                            \
   }                                                                            \

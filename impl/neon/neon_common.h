@@ -64,4 +64,83 @@ uint64_t neon_make_utf8_code_point_mask(const uint8_t *input);
 // Create a logical vector for high surrogates.
 uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in);
 
+#define NEON_TRIE_LOOKUP(trie_name, code_points)                               \
+  ({                                                                           \
+    uint16x4_t _x = (code_points);                                             \
+    uint16x4_t _index = vshr_n_u16(_x, 6);                                     \
+    uint16x4_t _block_index = {                                                \
+        trie_name##_INDEX[vget_lane_u16(_index, 0)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 1)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 2)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 3)],                           \
+    };                                                                         \
+    uint16x4_t _masked = vand_u16(_x, vdup_n_u16(0x3F));                       \
+    uint16x4_t _data_offset = vadd_u16(_block_index, _masked);                 \
+    uint16x4_t _values = {                                                     \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 0)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 1)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 2)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 3)],                      \
+    };                                                                         \
+    _values;                                                                   \
+  })
+
+#define NEON_TRIE_LOOKUP_WIDE(trie_name, code_points)                          \
+  ({                                                                           \
+    uint16x8_t _x = (code_points);                                             \
+    uint16x8_t _index = vshrq_n_u16(_x, 6);                                    \
+    uint16x8_t _block_index = {                                                \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 0)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 1)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 2)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 3)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 4)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 5)],                          \
+        0,                                                                     \
+        0,                                                                     \
+    };                                                                         \
+    uint16x8_t _masked = vandq_u16(_x, vdupq_n_u16(0x3F));                     \
+    uint16x8_t _data_offset = vaddq_u16(_block_index, _masked);                \
+    uint16x8_t _values = {                                                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 0)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 1)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 2)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 3)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 4)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 5)],                     \
+        0,                                                                     \
+        0,                                                                     \
+    };                                                                         \
+    _values;                                                                   \
+  })
+
+#define NEON_TRIE_LOOKUP_FULL(trie_name, code_points)                          \
+  ({                                                                           \
+    uint16x8_t _x = (code_points);                                             \
+    uint16x8_t _index = vshrq_n_u16(_x, 6);                                    \
+    uint16x8_t _block_index = {                                                \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 0)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 1)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 2)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 3)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 4)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 5)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 6)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 7)],                          \
+    };                                                                         \
+    uint16x8_t _masked = vandq_u16(_x, vdupq_n_u16(0x3F));                     \
+    uint16x8_t _data_offset = vaddq_u16(_block_index, _masked);                \
+    uint16x8_t _values = {                                                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 0)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 1)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 2)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 3)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 4)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 5)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 6)],                     \
+        trie_name##_DATA[vgetq_lane_u16(_data_offset, 7)],                     \
+    };                                                                         \
+    _values;                                                                   \
+  })
+
 #endif // XXUTF_NEON_COMMON_H
