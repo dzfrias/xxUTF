@@ -374,7 +374,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       /* Check if we have no surrogate pairs */                                \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
-        uint16x8_t trie = neon_evaluate_trie_compound_##comp_form(in);         \
+        uint16x8_t trie =                                                      \
+            NEON_TRIE_LOOKUP_FULL(NORMDATA_##comp_form_upper##_TRIE, in);      \
         uint16_t max = vmaxvq_u16(trie);                                       \
         /* Skip if we have no relevant code points */                          \
         if (max == 0) {                                                        \

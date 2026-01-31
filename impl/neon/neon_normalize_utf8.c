@@ -766,7 +766,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint8x16_t in, uint16x4_t code_points, const uint8_t *input,                  \
       const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
-    uint16x4_t values = neon_evaluate_trie_##comp_form(code_points);                \
+    uint16x4_t values =                                                             \
+        NEON_TRIE_LOOKUP(NORMDATA_##comp_form_upper##_TRIE, code_points);           \
     uint16_t max = vmaxv_u16(values);                                               \
     /* No relevant characters */                                                    \
     if (max == 0) {                                                                 \
@@ -798,7 +799,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint8x16_t in, uint16x8_t code_points, const uint8_t *input,                  \
       const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
-    uint16x8_t values = neon_evaluate_trie_##comp_form##_wide(code_points);         \
+    uint16x8_t values =                                                             \
+        NEON_TRIE_LOOKUP_WIDE(NORMDATA_##comp_form_upper##_TRIE, code_points);      \
     uint16_t max = vmaxvq_u16(values);                                              \
     if (max == 0) {                                                                 \
       vst1q_u8(*out, in);                                                           \
