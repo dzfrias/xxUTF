@@ -932,6 +932,52 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
 
 #undef NEON_DEFINE_NORMALIZE_FUNCTIONS
 
+#define NEON_TRIE_LENGTH_SUM(trie_name, code_points)                           \
+  ({                                                                           \
+    uint16x4_t _x = (code_points);                                             \
+    uint16x4_t _index = vshr_n_u16(_x, 6);                                     \
+    uint16x4_t _block_index = {                                                \
+        trie_name##_INDEX[vget_lane_u16(_index, 0)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 1)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 2)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 3)],                           \
+    };                                                                         \
+    uint16x4_t _masked = vand_u16(_x, vdup_n_u16(0x3F));                       \
+    uint16x4_t _data_offset = vadd_u16(_block_index, _masked);                 \
+    uint16_t _sum = 0;                                                         \
+    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 0)];                  \
+    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 1)];                  \
+    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 2)];                  \
+    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 3)];                  \
+    _sum;                                                                      \
+  })
+
+#define NEON_TRIE_LENGTH_SUM_WIDE(trie_name, code_points)                      \
+  ({                                                                           \
+    uint16x8_t _x = (code_points);                                             \
+    uint16x8_t _index = vshrq_n_u16(_x, 6);                                    \
+    uint16x8_t _block_index = {                                                \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 0)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 1)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 2)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 3)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 4)],                          \
+        trie_name##_INDEX[vgetq_lane_u16(_index, 5)],                          \
+        0,                                                                     \
+        0,                                                                     \
+    };                                                                         \
+    uint16x8_t _masked = vandq_u16(_x, vdupq_n_u16(0x3F));                     \
+    uint16x8_t _data_offset = vaddq_u16(_block_index, _masked);                \
+    uint16_t _sum = 0;                                                         \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 0)];                 \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 1)];                 \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 2)];                 \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 3)];                 \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 4)];                 \
+    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 5)];                 \
+    _sum;                                                                      \
+  })
+
 #define NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(form, form_upper)               \
   static size_t neon_normalize_masked_utf8_##form##_length(                    \
       const uint8_t *input, uint64_t mask, size_t *out_length) {               \
@@ -941,32 +987,39 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
       *out_length += min;                                                      \
       return min;                                                              \
     }                                                                          \
-    uint16_t sml_mask = mask & 0xFFF;                                          \
-    uint16x4_t code_points;                                                    \
-    size_t n_bytes;                                                            \
     uint8x16_t in = vld1q_u8(input);                                           \
+    uint16_t sml_mask = mask & 0xFFF;                                          \
+                                                                               \
     if (sml_mask == 0x924) {                                                   \
-      code_points = neon_parse_3_byte_utf8(in);                                \
-      n_bytes = 12;                                                            \
-    } else if ((sml_mask & 0xFF) == 0xAA) {                                    \
-      code_points = neon_parse_2_byte_utf8(in);                                \
-      n_bytes = 8;                                                             \
-    } else {                                                                   \
-      uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];                    \
-      n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];                        \
-      if (idx < NORMDATA_SHUFUTF8_INDEX_12) {                                  \
-        code_points = neon_parse_4_12_utf8(in, idx);                           \
-      } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {                          \
-        code_points = neon_parse_4_123_utf8(in, idx);                          \
-      } else {                                                                 \
-        XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_INDEX_1234);                      \
-        *out_length += scalar_normalize_utf8_##form##_length(input, n_bytes);  \
-        return n_bytes;                                                        \
-      }                                                                        \
+      uint16x4_t code_points = neon_parse_3_byte_utf8(in);                     \
+      *out_length += NEON_TRIE_LENGTH_SUM(                                     \
+          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+      return 12;                                                               \
     }                                                                          \
-    uint16x4_t values = NEON_TRIE_LOOKUP(                                      \
-        NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);                \
-    *out_length += vaddv_u16(values);                                          \
+    if (sml_mask == 0xAAA) {                                                   \
+      uint16x8_t code_points = neon_parse_2_byte_utf8_wide(in);                \
+      *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
+          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+      return 12;                                                               \
+    }                                                                          \
+                                                                               \
+    uint8_t idx = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                 \
+    size_t n_bytes = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];              \
+    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12) {                               \
+      uint16x8_t code_points = neon_parse_4_12_utf8_wide(in, idx);             \
+      *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
+          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+      return n_bytes;                                                          \
+    }                                                                          \
+    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_123) {                              \
+      uint16x4_t code_points = neon_parse_4_123_utf8_wide(in, idx);            \
+      *out_length += NEON_TRIE_LENGTH_SUM(                                     \
+          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+      return n_bytes;                                                          \
+    }                                                                          \
+                                                                               \
+    XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_WIDE_INDEX_1234);                     \
+    *out_length += scalar_normalize_utf8_##form##_length(input, n_bytes);      \
     return n_bytes;                                                            \
   }                                                                            \
                                                                                \
