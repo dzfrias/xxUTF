@@ -700,15 +700,15 @@ int main() {
     if (!compare_normalization_utf8_nfd(buf, nread, true)) {
       continue;
     }
-    // if (!compare_normalization_utf8_nfc(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_normalization_utf8_nfc(buf, nread, true)) {
+      continue;
+    }
     if (!compare_normalization_utf8_nfkd(buf, nread, true)) {
       continue;
     }
-    // if (!compare_normalization_utf8_nfkc(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_normalization_utf8_nfkc(buf, nread, true)) {
+      continue;
+    }
     // if (!compare_normalization_utf16le_nfd(buf, nread, true)) {
     //   continue;
     // }
@@ -733,9 +733,9 @@ int main() {
     // if (!compare_normalization_utf16be_nfkc(buf, nread, true)) {
     //   continue;
     // }
-    // if (!compare_casefold_utf8(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_casefold_utf8(buf, nread, true)) {
+      continue;
+    }
     // if (!compare_casefold_utf16le(buf, nread, true)) {
     //   continue;
     // }
