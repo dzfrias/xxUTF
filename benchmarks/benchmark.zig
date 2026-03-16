@@ -116,11 +116,6 @@ pub fn main() !void {
     defer if (arguments.patterns) |patterns| allocator.free(patterns);
     var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
     defer input_dir.close();
-    var out_dir = if (arguments.output_dir) |path|
-        try std.fs.cwd().makeOpenPath(path, .{})
-    else
-        null;
-    defer if (out_dir) |*dir| dir.close();
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
@@ -153,7 +148,6 @@ pub fn main() !void {
                 stdout,
                 arguments.json,
                 input_dir,
-                out_dir,
                 arguments.specific_test,
                 impl[2],
                 impl[1],
@@ -176,7 +170,6 @@ pub fn main() !void {
 }
 
 const Arguments = struct {
-    output_dir: ?[]const u8 = null,
     specific_test: ?[]const u8 = null,
     patterns: ?[]const []const u8 = null,
     json: bool = false,
@@ -189,10 +182,7 @@ fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
         const arg_name = arg[0..eq_pos];
         const value = arg[eq_pos + 1 ..];
 
-        if (std.mem.eql(u8, arg_name, "-o")) {
-            // TODO: remove this form of output now that we have `-j`
-            arguments.output_dir = value;
-        } else if (std.mem.eql(u8, arg_name, "-p")) {
+        if (std.mem.eql(u8, arg_name, "-p")) {
             var patterns: std.ArrayListUnmanaged([]const u8) = .empty;
             defer patterns.deinit(allocator);
             const first_sep_pos = std.mem.indexOfScalar(u8, value, ',') orelse value.len;
@@ -228,7 +218,6 @@ fn benchmarkImplementation(
     out: *std.Io.Writer,
     quiet: bool,
     inputs: std.fs.Dir,
-    data_out: ?std.fs.Dir,
     specific_test: ?[]const u8,
     encoding: Encoding,
     comptime impl: fn ([]const u8) void,
@@ -236,9 +225,6 @@ fn benchmarkImplementation(
     if (!quiet) {
         try writeHeader(out, name);
     }
-
-    var out_dir = if (data_out) |dir| try dir.makeOpenPath(name, .{}) else null;
-    defer if (out_dir) |*dir| dir.close();
 
     var results: std.ArrayList(BenchResult) = .empty;
     var inputs_it = inputs.iterate();
@@ -268,17 +254,6 @@ fn benchmarkImplementation(
             try out.flush();
         }
         try results.append(allocator, result);
-
-        if (out_dir) |dir| {
-            const out_file = try dir.createFile(entry.name, .{});
-            defer out_file.close();
-            var out_file_buffer: [64]u8 = undefined;
-            var out_file_writer = out_file.writer(&out_file_buffer);
-            for (result.data) |x| {
-                try out_file_writer.interface.print("{d:.3}\n", .{x});
-                try out_file_writer.interface.flush();
-            }
-        }
     }
 
     return .{ .name = name, .results = try results.toOwnedSlice(allocator) };

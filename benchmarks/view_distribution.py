@@ -1,124 +1,74 @@
 #!/usr/bin/env python3
 """
-Script to read numeric values from a file line-by-line and create a distribution plot.
+Script to read JSON from stdin and plot the distribution of the
+parsed benchmark results.
 
-This script was primarily written by Claude.
+This script was primarily written by Gemini.
 """
 
-import matplotlib.pyplot as plt
-import numpy as np
-import argparse
 import sys
-from pathlib import Path
-
-
-def read_numeric_file(filename):
-    """
-    Read numeric values from a file, one per line.
-
-    Args:
-        filename (str): Path to the input file
-
-    Returns:
-        list: List of numeric values
-
-    Raises:
-        FileNotFoundError: If the file doesn't exist
-        ValueError: If non-numeric values are encountered
-    """
-    values = []
-
-    with open(filename, "r") as file:
-        for line_num, line in enumerate(file, 1):
-            line = line.strip()
-
-            # Skip empty lines
-            if not line:
-                continue
-
-            # Try to convert to float
-            value = float(line)
-            values.append(value)
-
-    return values
-
-
-def create_distribution_plot(values, filename, output_file=None):
-    """
-    Create and display a distribution plot of the values.
-
-    Args:
-        values (list): List of numeric values
-        filename (str): Original filename for plot title
-        output_file (str, optional): Path to save the plot
-    """
-    if not values:
-        print("No numeric values found in the file.")
-        return
-
-    plt.figure(figsize=(10, 6))
-
-    # Histogram
-    plt.hist(values, bins=30, alpha=0.7, color="skyblue", edgecolor="black")
-    plt.title(f"Distribution of Values\n({Path(filename).name})")
-    plt.xlabel("Value")
-    plt.ylabel("Frequency")
-    plt.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-
-    # Display statistics
-    stats_text = f"""
-    Statistics for {Path(filename).name}:
-    Count: {len(values)}
-    Mean: {np.mean(values):.2f}
-    Median: {np.median(values):.2f}
-    Std Dev: {np.std(values):.2f}
-    Min: {min(values):.2f}
-    Max: {max(values):.2f}
-    """
-    print(stats_text)
-
-    # Save plot if output file specified
-    if output_file:
-        plt.savefig(output_file, dpi=300, bbox_inches="tight")
-        print(f"Plot saved to: {output_file}")
-
-    # Show plot
-    plt.show()
+import json
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 
 def main():
-    """Main function to handle command line arguments and execute the script."""
-    parser = argparse.ArgumentParser(
-        description="Read numeric values from a file and create distribution plots."
-    )
-    parser.add_argument(
-        "filename", help="Path to the input file containing numeric values"
-    )
-    parser.add_argument(
-        "-o", "--output", help="Output file path to save the plot (optional)"
-    )
+    # 1. Load data from stdin
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        print("Error: Input is not valid JSON.", file=sys.stderr)
+        return
 
-    args = parser.parse_args()
+    # 2. Flatten JSON into a Tidy DataFrame
+    # Target structure: [Implementation, Test Name, Measurement]
+    records = []
+    for entry in input_data:
+        impl_name = entry.get("name", "Unknown")
+        for result in entry.get("results", []):
+            test_name = result.get("name", "Unknown")
+            data_points = result.get("data", [])
+            for value in data_points:
+                records.append(
+                    {"Implementation": impl_name, "Test": test_name, "Value": value}
+                )
 
-    # Check if file exists
-    if not Path(args.filename).exists():
-        print(f"Error: File '{args.filename}' does not exist.")
-        sys.exit(1)
+    if not records:
+        print("No data found to plot.", file=sys.stderr)
+        return
 
-    # Read the file
-    print(f"Reading values from: {args.filename}")
-    values = read_numeric_file(args.filename)
+    df = pd.DataFrame(records)
 
-    if not values:
-        print("No valid numeric values found in the file.")
-        sys.exit(1)
+    # 3. Create a graph for each unique test result
+    unique_tests = df["Test"].unique()
 
-    print(f"Successfully read {len(values)} numeric values.")
+    for test in unique_tests:
+        test_df = df[df["Test"] == test]
 
-    # Create the plot
-    create_distribution_plot(values, args.filename, args.output)
+        plt.figure(figsize=(10, 6))
+        sns.set_theme(style="whitegrid")
+
+        # Plotting both histogram and KDE (Kernel Density Estimate)
+        # 'hue' maps the outermost "name" to a specific color
+        sns.histplot(
+            data=test_df,
+            x="Value",
+            hue="Implementation",
+            kde=True,
+            element="step",
+            palette="viridis",
+            alpha=0.4,
+        )
+
+        plt.title(f"Distribution Comparison: {test}", fontsize=15)
+        plt.xlabel("Execution Time / Metric Value", fontsize=12)
+        plt.ylabel("Frequency", fontsize=12)
+
+        # Use a tight layout to prevent label clipping
+        plt.tight_layout()
+
+        plt.show()
 
 
 if __name__ == "__main__":
