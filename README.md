@@ -4,11 +4,11 @@ xxUTF is a C library that implements
 [Unicode](https://en.wikipedia.org/wiki/Unicode) text transformation algorithms
 at speed using SIMD. Current algorithms supported:
 
-- NFD normalization
-- NFC normalization
-- NFKD normalization
-- NFKC normalization
-- Casefolding
+- [NFD normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
+- [NFC normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
+- [NFKD normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
+- [NFKC normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
+- [Case folding](https://www.unicode.org/reports/tr21/tr21-5.html)
 
 All algorithms are compatible with UTF-8, UTF-16LE (little endian), and UTF-16BE
 (big endian). Further helper functions are defined for efficient and correct
@@ -21,8 +21,8 @@ suites and a fuzzer.
 
 ## Usage
 
-xxUTF is distributed as: a single C source file that is amalgamated before
-build, and a single header file. This is similar to what
+xxUTF is distributed as a single C source file that is amalgamated before build,
+and a single header file. This is similar to what
 [SQLite does](https://sqlite.org/amalgamation.html).
 
 Example C program utilizing xxUTF:
@@ -62,26 +62,32 @@ naively (such as with casefolding). However, not all algorithms have such nice
 properties.
 
 Mainly, normalizing text in a streaming manner requires some care. The problem
-is that string concatenation is not closed under normalized forms. In other
+is that normalization forms are not closed under string concatenation. In other
 words:
 
-toNFD(x) + toNFD(y) = toNFD(x + y)
+```
+normalize(x) + normalize(y) = normalize(x + y)
+```
 
-**does not** hold for all Unicode strings x and y. Read the Unicode
-normalization specification for more details.
+**does not** hold for all Unicode strings `x` and `y`. Read the
+[Unicode normalization specification](https://www.unicode.org/reports/tr15/#Concatenation)
+for more details.
 
 xxUTF thus has special API's so that streaming normalization can be implemented
 in a non-allocating, efficient way.
 
 ## Benchmarks
 
-xxUTF is benchmarked using a variety of large real-world inputs from multiple
-languages. As there are many factors to consider during benchmarking, curious
-users are encouraged to run the benchmark suite (or write their own benchmarks)
-on their machines.
+xxUTF is benchmarked using a variety of
+[large real-world inputs](/benchmarks/inputs) from multiple languages. As there
+are many factors to consider during benchmarking, curious users are encouraged
+to run the benchmark suite (or write their own benchmarks) on their machines.
 
-These are the results for running NFD normalization on UTF-8. Inputs vary in
-size and complexity, so cross-input comparison is not meaningful here.
+These are the results for running NFD normalization on UTF-8 on a machine
+supporting
+[ARM NEON](<https://en.wikipedia.org/wiki/ARM_architecture_family#Advanced_SIMD_(Neon)>).
+Inputs vary in size and complexity, so cross-input comparison is not meaningful
+here.
 
 <img src="doc/neon_utf8_nfd.png" width="70%" />
 
@@ -90,4 +96,4 @@ Benchmarks are compared against the ICU4C library. Other libraries, like
 
 ## License
 
-xxUTF is licenced under the MIT license.
+xxUTF is licenced under the [MIT license](/LICENSE.md).
