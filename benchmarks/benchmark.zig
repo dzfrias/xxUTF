@@ -99,6 +99,11 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
     .{ "xxutf_utf16be_len_cf", xxutfCasefoldUtf16beLength, .utf16be },
 };
 
+const ImplementationResult = struct {
+    name: []const u8,
+    results: []const BenchResult,
+};
+
 pub fn main() !void {
     var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
     defer assert(dbg_allocator.deinit() == .ok);
@@ -120,6 +125,19 @@ pub fn main() !void {
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
 
+    var results: ?std.ArrayList(ImplementationResult) = if (arguments.json)
+        .empty
+    else
+        null;
+    defer if (results) |*r| {
+        for (r.items) |impl_result| {
+            for (impl_result.results) |bench_res| {
+                allocator.free(bench_res.name);
+            }
+            allocator.free(impl_result.results);
+        }
+        r.deinit(allocator);
+    };
     inline for (implementations) |impl| {
         if (arguments.patterns == null or match: {
             for (arguments.patterns.?) |pattern| {
@@ -129,18 +147,31 @@ pub fn main() !void {
             }
             break :match false;
         }) {
-            try benchmarkImplementation(
+            const impl_result = try benchmarkImplementation(
+                allocator,
                 impl[0],
                 stdout,
+                arguments.json,
                 input_dir,
                 out_dir,
                 arguments.specific_test,
                 impl[2],
                 impl[1],
             );
-            try stdout.writeByte('\n');
-            try stdout.flush();
+            if (results) |*r| {
+                try r.append(allocator, impl_result);
+            } else {
+                try stdout.writeByte('\n');
+                try stdout.flush();
+                // Immediately free the allocated ImplementationResult
+                allocator.free(impl_result.results);
+            }
         }
+    }
+
+    if (results) |r| {
+        try stdout.print("{f}", .{std.json.fmt(r.items, .{})});
+        try stdout.flush();
     }
 }
 
@@ -148,6 +179,7 @@ const Arguments = struct {
     output_dir: ?[]const u8 = null,
     specific_test: ?[]const u8 = null,
     patterns: ?[]const []const u8 = null,
+    json: bool = false,
 };
 
 fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
@@ -158,6 +190,7 @@ fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
         const value = arg[eq_pos + 1 ..];
 
         if (std.mem.eql(u8, arg_name, "-o")) {
+            // TODO: remove this form of output now that we have `-j`
             arguments.output_dir = value;
         } else if (std.mem.eql(u8, arg_name, "-p")) {
             var patterns: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -173,6 +206,8 @@ fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
             arguments.patterns = try patterns.toOwnedSlice(allocator);
         } else if (std.mem.eql(u8, arg_name, "-t")) {
             arguments.specific_test = value;
+        } else if (std.mem.eql(u8, arg_name, "-j") and std.mem.eql(u8, value, "true")) {
+            arguments.json = true;
         } else {
             return error.ArgumentError;
         }
@@ -188,19 +223,24 @@ fn writeHeader(out: *std.Io.Writer, title: []const u8) !void {
 }
 
 fn benchmarkImplementation(
+    allocator: Allocator,
     name: []const u8,
     out: *std.Io.Writer,
+    quiet: bool,
     inputs: std.fs.Dir,
     data_out: ?std.fs.Dir,
     specific_test: ?[]const u8,
     encoding: Encoding,
     comptime impl: fn ([]const u8) void,
-) !void {
-    try writeHeader(out, name);
+) !ImplementationResult {
+    if (!quiet) {
+        try writeHeader(out, name);
+    }
 
     var out_dir = if (data_out) |dir| try dir.makeOpenPath(name, .{}) else null;
     defer if (out_dir) |*dir| dir.close();
 
+    var results: std.ArrayList(BenchResult) = .empty;
     var inputs_it = inputs.iterate();
     while (try inputs_it.next()) |entry| {
         if (entry.kind != .file) {
@@ -214,12 +254,20 @@ fn benchmarkImplementation(
 
         const file = try inputs.openFile(entry.name, .{});
         defer file.close();
-        const result = try runBenchmark(file, encoding, impl);
-        try out.print(
-            std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
-            .{ entry.name, result.mean_ms, result.sd_ms },
+        const result = try runBenchmark(
+            try allocator.dupe(u8, entry.name),
+            file,
+            encoding,
+            impl,
         );
-        try out.flush();
+        if (!quiet) {
+            try out.print(
+                std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
+                .{ entry.name, result.mean_ms, result.sd_ms },
+            );
+            try out.flush();
+        }
+        try results.append(allocator, result);
 
         if (out_dir) |dir| {
             const out_file = try dir.createFile(entry.name, .{});
@@ -232,6 +280,8 @@ fn benchmarkImplementation(
             }
         }
     }
+
+    return .{ .name = name, .results = try results.toOwnedSlice(allocator) };
 }
 
 fn xxutfNormalizeUtf8NFD(src: []const u8) void {
@@ -550,6 +600,7 @@ fn xxutfCasefoldUtf16beLength(src: []const u8) void {
 }
 
 const BenchResult = struct {
+    name: []const u8,
     mean_ms: f64,
     sd_ms: f64,
     data: [n_iters]f64,
@@ -571,6 +622,7 @@ fn trimPartialUTF8(input: []const u8) []const u8 {
 }
 
 fn runBenchmark(
+    name: []const u8,
     file: std.fs.File,
     encoding: Encoding,
     comptime impl: fn ([]const u8) void,
@@ -623,5 +675,10 @@ fn runBenchmark(
     }
     const variance = total_dists / (n_iters - 1);
 
-    return .{ .mean_ms = mean, .sd_ms = std.math.sqrt(variance), .data = results };
+    return .{
+        .name = name,
+        .mean_ms = mean,
+        .sd_ms = std.math.sqrt(variance),
+        .data = results,
+    };
 }
