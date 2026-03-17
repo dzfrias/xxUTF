@@ -88,7 +88,6 @@ pub fn build(b: *std.Build) !void {
     const shim_lib = createShimLibrary(b, target, optimize);
     benchmark_exe.linkLibrary(optimized_lib);
     benchmark_exe.linkLibrary(shim_lib);
-    benchmark_exe.linkSystemLibrary2("utf8proc", .{ .preferred_link_mode = .dynamic });
     benchmark_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
     run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));

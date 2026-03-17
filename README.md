@@ -188,8 +188,8 @@ here.
 <img src="doc/neon_utf8_nfd.png" width="70%" />
 
 Benchmarks are compared against the
-[ICU4C library](https://github.com/unicode-org/icu). Other libraries, like
-[utf8proc](https://github.com/JuliaStrings/utf8proc), are not as fast as ICU4C.
+[ICU4C library](https://github.com/unicode-org/icu), as ICU4C has the current
+next fastest open soruce implementations of these algorithms.
 
 ## Building
 
@@ -207,8 +207,8 @@ To create the amalgamation file, run `zig build amalgamate`. It will be put in
 `zig-out/amalgamation.c`.
 
 Running the benchmarks is as simple as running `zig build bench`. But note that
-ICU4C and utf8proc are both required to exist on your system. Make sure that the
-installed versions match the Unicode version that xxUTF is built for.
+ICU4C is required to exist on your system. Make sure that the installed versions
+match the Unicode version that xxUTF is built for.
 
 For all available build options, run `zig build --help`.
 

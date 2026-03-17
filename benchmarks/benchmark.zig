@@ -1,7 +1,6 @@
 const std = @import("std");
 const c = @cImport({
     @cInclude("xxutf.h");
-    @cInclude("utf8proc.h");
     @cInclude("xxutf_shim.h");
 });
 const assert = std.debug.assert;
@@ -15,16 +14,12 @@ const Encoding = enum { utf8, utf16le, utf16be };
 
 const implementations: []const struct { []const u8, ImplementationFunc, Encoding } = &.{
     .{ "xxutf_utf8_nfd", xxutfNormalizeUtf8NFD, .utf8 },
-    .{ "utf8proc_utf8_nfd", utf8procNormalizeNFD, .utf8 },
     .{ "icu_utf8_nfd", IcuNormalizerUtf8(c.shim_unorm2_getNFDInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfkd", xxutfNormalizeUtf8NFKD, .utf8 },
-    .{ "utf8proc_utf8_nfkd", utf8procNormalizeNFKD, .utf8 },
     .{ "icu_utf8_nfkd", IcuNormalizerUtf8(c.shim_unorm2_getNFKDInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfc", xxutfNormalizeUtf8NFC, .utf8 },
-    .{ "utf8proc_utf8_nfc", utf8procNormalizeNFC, .utf8 },
     .{ "icu_utf8_nfc", IcuNormalizerUtf8(c.shim_unorm2_getNFCInstance).implementation, .utf8 },
     .{ "xxutf_utf8_nfkc", xxutfNormalizeUtf8NFKC, .utf8 },
-    .{ "utf8proc_utf8_nfkc", utf8procNormalizeNFKC, .utf8 },
     .{ "icu_utf8_nfkc", IcuNormalizerUtf8(c.shim_unorm2_getNFKCInstance).implementation, .utf8 },
     .{ "xxutf_utf16le_nfd", xxutfNormalizeUtf16leNFD, .utf16le },
     .{
@@ -264,31 +259,9 @@ fn xxutfNormalizeUtf8NFD(src: []const u8) void {
     _ = c.xxutf_normalize_utf8_nfd(src.ptr, src.len, &out);
 }
 
-fn utf8procNormalizeNFD(src: []const u8) void {
-    var out: [*c]c_char = undefined;
-    _ = c.utf8proc_map(
-        src.ptr,
-        @intCast(src.len),
-        &out,
-        c.UTF8PROC_STABLE | c.UTF8PROC_DECOMPOSE,
-    );
-    c.free(out);
-}
-
 fn xxutfNormalizeUtf8NFKD(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.xxutf_normalize_utf8_nfkd(src.ptr, src.len, &out);
-}
-
-fn utf8procNormalizeNFKD(src: []const u8) void {
-    var out: [*c]c_char = undefined;
-    _ = c.utf8proc_map(
-        src.ptr,
-        @intCast(src.len),
-        &out,
-        c.UTF8PROC_STABLE | c.UTF8PROC_DECOMPOSE | c.UTF8PROC_COMPAT,
-    );
-    c.free(out);
 }
 
 fn xxutfNormalizeUtf8NFC(src: []const u8) void {
@@ -296,31 +269,9 @@ fn xxutfNormalizeUtf8NFC(src: []const u8) void {
     _ = c.xxutf_normalize_utf8_nfc(src.ptr, src.len, &out);
 }
 
-fn utf8procNormalizeNFC(src: []const u8) void {
-    var out: [*c]c_char = undefined;
-    _ = c.utf8proc_map(
-        src.ptr,
-        @intCast(src.len),
-        &out,
-        c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE,
-    );
-    c.free(out);
-}
-
 fn xxutfNormalizeUtf8NFKC(src: []const u8) void {
     var out: [100_000]u8 = undefined;
     _ = c.xxutf_normalize_utf8_nfkc(src.ptr, src.len, &out);
-}
-
-fn utf8procNormalizeNFKC(src: []const u8) void {
-    var out: [*c]c_char = undefined;
-    _ = c.utf8proc_map(
-        src.ptr,
-        @intCast(src.len),
-        &out,
-        c.UTF8PROC_STABLE | c.UTF8PROC_COMPOSE | c.UTF8PROC_COMPAT,
-    );
-    c.free(out);
 }
 
 fn xxutfNormalizeUtf16leNFD(src: []const u8) void {
