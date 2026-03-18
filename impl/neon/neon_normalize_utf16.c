@@ -463,45 +463,8 @@ NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfkd, NFKD, nfkc, NFKC,
       }                                                                        \
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       if (vmaxvq_u16(surrogates_mask) == 0) {                                  \
-        uint16x8_t index = vshrq_n_u16(in, 6);                                 \
-        uint16x8_t block_index = {                                             \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 0)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 1)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 2)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 3)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 4)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 5)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 6)],                                                    \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_INDEX[vgetq_lane_u16(    \
-                index, 7)],                                                    \
-        };                                                                     \
-        uint16x8_t masked = vandq_u16(in, vdupq_n_u16(0x3F));                  \
-        uint16x8_t data_offset = vaddq_u16(block_index, masked);               \
-        uint16x8_t values = {                                                  \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 0)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 1)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 2)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 3)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 4)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 5)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 6)],                                              \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE_DATA[vgetq_lane_u16(     \
-                data_offset, 7)],                                              \
-        };                                                                     \
+        uint16x8_t values = NEON_TRIE_LOOKUP_FULL(                             \
+            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE, in);                    \
         out_length += vaddvq_u16(values);                                      \
       } else {                                                                 \
         size_t normalize_range = 16;                                           \
@@ -525,10 +488,10 @@ NEON_UTF16_LENGTH_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, NFD);
 NEON_UTF16_LENGTH_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkd, NFKD);
 NEON_UTF16_LENGTH_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfc, NFC);
 NEON_UTF16_LENGTH_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfkc, NFKC);
-NEON_UTF16_LENGTH_IMPLEMENTATION(be, XXUTF_BIG_ENDIAN, nfd, NFD);
-NEON_UTF16_LENGTH_IMPLEMENTATION(be, XXUTF_BIG_ENDIAN, nfkd, NFKD);
-NEON_UTF16_LENGTH_IMPLEMENTATION(be, XXUTF_BIG_ENDIAN, nfc, NFC);
-NEON_UTF16_LENGTH_IMPLEMENTATION(be, XXUTF_BIG_ENDIAN, nfkc, NFKC);
+NEON_UTF16_LENGTH_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfd, NFD);
+NEON_UTF16_LENGTH_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkd, NFKD);
+NEON_UTF16_LENGTH_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfc, NFC);
+NEON_UTF16_LENGTH_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, nfkc, NFKC);
 
 #undef NEON_UTF16_LENGTH_IMPLEMENTATION
 
