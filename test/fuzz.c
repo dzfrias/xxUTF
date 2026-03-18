@@ -736,12 +736,12 @@ int main() {
     if (!compare_casefold_utf8(buf, nread, true)) {
       continue;
     }
-    // if (!compare_casefold_utf16le(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_casefold_utf16be(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_casefold_utf16le(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_casefold_utf16be(buf, nread, true)) {
+      continue;
+    }
   }
 
   return 0;
