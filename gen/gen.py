@@ -686,14 +686,10 @@ def create_decomp_trie(
     decomp_map: DecompMap, encoding: str, decomp_bound: int
 ) -> tuple[Trie, list[int]]:
     trie = Trie()
-    data: list[int] = [0]
+    data: list[int] = []
     for x in range(0x10000):
-        try:
-            size = len(chr(x).encode(encoding))
-        except UnicodeEncodeError:
-            continue
         if x not in decomp_map:
-            trie.set(x, size)
+            trie.set(x, 0)
             continue
         decomp = decomp_map[x]
         offset = len(data)
@@ -703,24 +699,27 @@ def create_decomp_trie(
             data.extend(chr(c).encode(encoding))
         length = len(data) - offset
         assert length <= decomp_bound
+        first_ccc = 0
+        last_ccc = 0
         if decomp.decomps[-1] in decomp_map:
             last_ccc = decomp_map[decomp.decomps[-1]].ccc
-        else:
-            last_ccc = 0
-        starter = decomp_map[x].ccc == 0
-        is_complex = False
-        decomp_delta = length - len(chr(x).encode(encoding))
-        if decomp_delta < 0 or decomp_delta > 0b111 or decomp_delta + size > 8:
-            decomp_delta = 0
-            is_complex = True
-        value = (
-            (int(is_complex) << 31)
-            | (decomp_delta << 26)
-            | (last_ccc << 18)
-            | (offset << 2)
-            | size
+            ccc_vals = [
+                decomp_map.get(a, DecompValue([], 0)).ccc for a in decomp.decomps
+            ]
+            if (
+                len(ccc_vals) > 1
+                and any(ccc < last_ccc and ccc != 0 for ccc in ccc_vals)
+                and ccc_vals[0] != 0
+            ):
+                first_ccc = ccc_vals[0]
+                assert last_ccc - first_ccc in range(0, 8)
+                final_decomp = 15
+        ccc_delta = 0 if first_ccc == 0 else last_ccc - first_ccc
+        assert ccc_delta <= 0b111
+        trie.set(
+            x,
+            (ccc_delta << 29) | (last_ccc << 21) | (length << 15) | offset,
         )
-        trie.set(x, value)
     trie.compact()
     return trie, data
 
@@ -781,6 +780,7 @@ def create_decomp_trie_2(
         assert length <= 0x3F
         assert offset <= 0x7FFF
         ccc_delta = 0 if first_ccc == 0 else last_ccc - first_ccc
+        assert ccc_delta <= 0b111
         decomp_trie.set(
             x,
             (ccc_delta << 29) | (last_ccc << 21) | (length << 15) | offset,

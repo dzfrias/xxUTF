@@ -78,11 +78,12 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         *last_ccc = 0;                                                         \
         continue;                                                              \
       }                                                                        \
-      uint8_t ccc = (value >> 16) & 0xFF;                                      \
+      uint8_t ccc = (value >> 21) & 0xFF;                                      \
+      uint8_t ccc_delta = value >> 29;                                         \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0xFFFF];   \
-      uint8_t length = value >> 24;                                            \
+                                                                    0x7FFF];   \
+      uint8_t length = (value >> 15) & 0x3F;                                   \
       /* `length` is length in bytes, not code units */                        \
       XXUTF_ASSERT(length % 2 == 0);                                           \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
@@ -103,7 +104,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       }                                                                        \
       *out += length;                                                          \
       out_length += length;                                                    \
-      if (ccc != 0 && *last_ccc > ccc) {                                       \
+      uint8_t cmp_ccc = ccc - ccc_delta;                                       \
+      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                               \
         ccc = scalar_sort_characters_utf16##endianness(*out, out_length);      \
       }                                                                        \
       input += 2;                                                              \
@@ -125,8 +127,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       }                                                                        \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0xFFFF];   \
-      uint8_t length = value >> 24;                                            \
+                                                                    0x7FFF];   \
+      uint8_t length = (value >> 15) & 0x3F;                                   \
       XXUTF_ASSERT(length % 2 == 0);                                           \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
       if (is_big_endian) {                                                     \
@@ -186,7 +188,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       neon_skip_decomp_utf16##endianness(in_dummy, 8, out, last_ccc);          \
       return;                                                                  \
     }                                                                          \
-    uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x00FF0000UL));        \
+    uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x1FE00000UL));        \
     bool non_starter_result = vmaxvq_u32(ccc_mask) > 0;                        \
     if (!non_starter_result && !hangul_result) {                               \
       /* Special path with no combining code points and no Hangul characters   \
@@ -292,8 +294,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       XXUTF_ASSERT(decomp_value != 0);                                         \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS            \
-              [decomp_value & 0xFFFF];                                         \
-      uint8_t length = decomp_value >> 24;                                     \
+              [decomp_value & 0x7FFF];                                         \
+      uint8_t length = (decomp_value >> 15) & 0x3F;                            \
       XXUTF_ASSERT(length <= 8);                                               \
       uint8x8_t decomp_bytes = vld1_u8(decomp_offset);                         \
       if (is_big_endian) {                                                     \
@@ -302,7 +304,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       vst1_u8(*out, decomp_bytes);                                             \
       *out += length;                                                          \
                                                                                \
-      uint8_t ccc = (decomp_value >> 16) & 0xFF;                               \
+      uint8_t ccc = (decomp_value >> 21) & 0xFF;                               \
       if (ccc != 0 && *last_ccc > ccc) {                                       \
         ccc = scalar_sort_characters_utf16##endianness(                        \
             *out, out_length + (*out - start));                                \

@@ -709,30 +709,30 @@ int main() {
     if (!compare_normalization_utf8_nfkc(buf, nread, true)) {
       continue;
     }
-    // if (!compare_normalization_utf16le_nfd(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16be_nfd(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16le_nfkd(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16be_nfkd(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16le_nfc(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16be_nfc(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16le_nfkc(buf, nread, true)) {
-    //   continue;
-    // }
-    // if (!compare_normalization_utf16be_nfkc(buf, nread, true)) {
-    //   continue;
-    // }
+    if (!compare_normalization_utf16le_nfd(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfd(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16le_nfkd(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfkd(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16le_nfc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16le_nfkc(buf, nread, true)) {
+      continue;
+    }
+    if (!compare_normalization_utf16be_nfkc(buf, nread, true)) {
+      continue;
+    }
     if (!compare_casefold_utf8(buf, nread, true)) {
       continue;
     }

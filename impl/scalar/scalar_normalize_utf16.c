@@ -152,7 +152,8 @@ SCALAR_UTF16_HELPERS(be);
                                     comp_form_upper)                                 \
   static size_t                                                                      \
       scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(            \
-          uint32_t code_point, uint8_t *out, uint8_t *ccc) {                         \
+          uint32_t code_point, uint8_t *out, uint8_t *first_ccc,                     \
+          uint8_t *ccc) {                                                            \
     uint8_t *start = out;                                                            \
     uint32_t salt_hash = scalar_phash(                                               \
         code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                   \
@@ -170,12 +171,13 @@ SCALAR_UTF16_HELPERS(be);
     } else {                                                                         \
       *ccc = 0;                                                                      \
     }                                                                                \
+    *first_ccc = 0;                                                                  \
                                                                                      \
     return out - start;                                                              \
   }                                                                                  \
                                                                                      \
   static size_t scalar_decompose_utf16##endianness##_##decomp_form##_bmp(            \
-      uint32_t code_point, uint8_t *out, uint8_t *ccc) {                             \
+      uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {         \
     uint8_t *start = out;                                                            \
     uint16_t shift = code_point >> 6;                                                \
     uint16_t masked = code_point & 63;                                               \
@@ -186,10 +188,10 @@ SCALAR_UTF16_HELPERS(be);
       *ccc = 0;                                                                      \
       return 0;                                                                      \
     }                                                                                \
-    *ccc = (value >> 16) & 0xFF;                                                     \
-    uint8_t length = (value >> 24) & 0xFF;                                           \
+    *ccc = (value >> 21) & 0xFF;                                                     \
+    uint8_t length = (value >> 15) & 0x3F;                                           \
     XXUTF_ASSERT(length % 2 == 0);                                                   \
-    uint16_t offset = value & 0xFFFF;                                                \
+    uint16_t offset = value & 0x7FFF;                                                \
     const uint8_t *bytes =                                                           \
         &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k += 2) {                                         \
@@ -202,6 +204,8 @@ SCALAR_UTF16_HELPERS(be);
       }                                                                              \
       out += 2;                                                                      \
     }                                                                                \
+    uint8_t ccc_delta = value >> 29;                                                 \
+    *first_ccc = ccc_delta == 0 ? 0 : *ccc - ccc_delta;                              \
     return out - start;                                                              \
   }                                                                                  \
                                                                                      \
@@ -251,6 +255,7 @@ SCALAR_UTF16_HELPERS(be);
       uint32_t code_point =                                                          \
           scalar_parse_code_point_utf16##endianness(input + p, &size);               \
                                                                                      \
+      uint8_t first_ccc = 0;                                                         \
       uint8_t ccc = 0;                                                               \
       if (scalar_is_hangul(code_point)) {                                            \
         out += scalar_decompose_hangul_utf16##endianness(code_point, out);           \
@@ -258,12 +263,12 @@ SCALAR_UTF16_HELPERS(be);
         size_t nwritten;                                                             \
         if (size == 2) {                                                             \
           nwritten = scalar_decompose_utf16##endianness##_##decomp_form##_bmp(       \
-              code_point, out, &ccc);                                                \
+              code_point, out, &first_ccc, &ccc);                                    \
         } else {                                                                     \
           XXUTF_ASSERT(size == 4);                                                   \
           nwritten =                                                                 \
               scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(    \
-                  code_point, out, &ccc);                                            \
+                  code_point, out, &first_ccc, &ccc);                                \
         }                                                                            \
         if (nwritten == 0) {                                                         \
           /* Copy if no decomposition is found */                                    \
@@ -276,7 +281,8 @@ SCALAR_UTF16_HELPERS(be);
       }                                                                              \
                                                                                      \
       p += size;                                                                     \
-      if (ccc != 0 && *last_ccc > ccc) {                                             \
+      uint8_t cmp_ccc = first_ccc > 0 ? first_ccc : ccc;                             \
+      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                                     \
         ccc = scalar_sort_characters_utf16##endianness(out, (out - start) +          \
                                                                 out_offset);         \
       }                                                                              \
