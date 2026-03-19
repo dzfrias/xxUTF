@@ -138,8 +138,7 @@ pub fn build(b: *std.Build) !void {
     run_xxu_test.addFileArg(xxu.getEmittedBin());
     run_xxu_test.addFileArg(b.path("benchmarks/inputs"));
     run_xxu_test.addFileArg(b.path("test/inputs"));
-    // TODO: fix other algorithms
-    // test_step.dependOn(&run_test_exe.step);
+    test_step.dependOn(&run_test_exe.step);
     test_step.dependOn(&run_xxu_test.step);
 }
 
