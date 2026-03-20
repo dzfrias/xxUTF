@@ -5,11 +5,6 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const neon = b.option(bool, "neon", "Select usage of ARM NEON (default: detect)");
-    const endianness = b.option(
-        std.builtin.Endian,
-        "endian",
-        "Select native endianness (default: detect)",
-    ) orelse target.result.cpu.arch.endian();
 
     var sources: std.ArrayListUnmanaged([]const u8) = .empty;
     defer sources.deinit(b.allocator);
@@ -21,7 +16,10 @@ pub fn build(b: *std.Build) !void {
     var flags: std.ArrayListUnmanaged([]const u8) = .empty;
     defer flags.deinit(b.allocator);
     try flags.appendSlice(b.allocator, default_flags);
-    try flags.append(b.allocator, booleanFlag("XXUTF_BIG_ENDIAN", endianness == .big));
+    try flags.append(
+        b.allocator,
+        booleanFlag("XXUTF_BIG_ENDIAN", target.result.cpu.arch.endian() == .big),
+    );
     try flags.append(b.allocator, booleanFlag("XXUTF_IMPLEMENTATION_NEON", add_neon));
 
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
@@ -140,6 +138,12 @@ pub fn build(b: *std.Build) !void {
     run_xxu_test.addFileArg(b.path("test/inputs"));
     test_step.dependOn(&run_test_exe.step);
     test_step.dependOn(&run_xxu_test.step);
+
+    const run_generate = std.Build.Step.Run.create(b, "Generate xxUTF data file");
+    run_generate.setCwd(b.path("gen"));
+    run_generate.addFileArg(b.path("gen/gen.py"));
+    const generate_step = b.step("generate", "Generate the xxUTF data file");
+    generate_step.dependOn(&run_generate.step);
 }
 
 fn createLibrary(
