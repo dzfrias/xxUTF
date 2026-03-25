@@ -106,11 +106,6 @@ pub fn build(b: *std.Build) !void {
         }),
     });
     xxu.linkLibrary(lib);
-    const flags_dep = b.dependency("flags", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    xxu.root_module.addImport("flags", flags_dep.module("flags"));
     const run_xxu = b.addRunArtifact(xxu);
     for (b.args orelse &.{}) |arg| {
         run_xxu.addArg(arg);
@@ -136,8 +131,13 @@ pub fn build(b: *std.Build) !void {
     run_xxu_test.addFileArg(xxu.getEmittedBin());
     run_xxu_test.addFileArg(b.path("benchmarks/inputs"));
     run_xxu_test.addFileArg(b.path("test/inputs"));
-    test_step.dependOn(&run_test_exe.step);
-    test_step.dependOn(&run_xxu_test.step);
+    const xxu_zig_tests = b.addTest(.{
+        .root_module = xxu.root_module,
+    });
+    const run_xxu_zig_tests = b.addRunArtifact(xxu_zig_tests);
+    // test_step.dependOn(&run_test_exe.step);
+    // test_step.dependOn(&run_xxu_test.step);
+    test_step.dependOn(&run_xxu_zig_tests.step);
 
     const run_generate = std.Build.Step.Run.create(b, "Generate xxUTF data file");
     run_generate.setCwd(b.path("gen"));

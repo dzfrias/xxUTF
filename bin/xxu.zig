@@ -3,14 +3,15 @@ const builtin = @import("builtin");
 const c = @cImport({
     @cInclude("xxutf.h");
 });
-const flags = @import("flags");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const flags = @import("./flags.zig");
 
 const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };
 const ResolvedEncoding = enum { utf8, utf16le, utf16be };
 
+// TODO: make return u8 and have proper exit codes
 pub fn main() !void {
     if (builtin.mode == .Debug) {
         var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
@@ -22,24 +23,64 @@ pub fn main() !void {
     }
 }
 
-fn mainWithAllocator(allocator: Allocator) !void {
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+const help =
+    \\xxu
+    \\Diego Frias <mail@dzfrias.dev>
+    \\
+    \\xxu implements commonly-used locale-independent Unicode algorithms at speed.
+    \\This includes normalization and case folding.
+    \\
+    \\Project home page: https://github.com/dzfrias/xxUTF
+    \\
+    \\Usage: xxu -x [algorithm] [<file>] [options]
+    \\
+    \\Flags:
+    \\  -x, --algorithm ALGORITHM     Set the Unicode algorithm to run. Available:
+    \\                                  nfd
+    \\                                  nfc
+    \\                                  nfkd
+    \\                                  nfkc
+    \\                                  casefold
+    \\  -e, --encoding ENCODING       Set the encoding of input and output (default: UTF-8).
+    \\  -o, --output FILE             Set the output file to write to (default: stdout).
+    \\  --bom                         Add the U+FEFF BOM (byte-order mark) to the output.
+    \\  -h, --help                    Print this help and exit.
+    \\
+;
 
-    // TODO: we might want to write our own argument parser...
-    //       Doesn't seem too hard and the current options don't fully fit what I want
-    const options = flags.parse(args, "xxu", Flags, .{});
+fn mainWithAllocator(allocator: Allocator) !void {
+    var stderr = std.fs.File.stderr();
+    var stderr_buf: [2048]u8 = undefined;
+    var stderr_writer = stderr.writer(&stderr_buf);
+
+    const result = try flags.parseArgs(Flags, allocator);
+    const options = switch (result) {
+        .flags => |f| f,
+        .err => |e| {
+            try stderr_writer.interface.writeAll("xxu: ");
+            try flags.printErrorDefault(Flags, &stderr_writer.interface, e);
+            try stderr_writer.interface.writeByte('\n');
+            try stderr_writer.interface.flush();
+            return;
+        },
+    };
+
+    if (options.help) {
+        try stderr_writer.interface.writeAll(help);
+        try stderr_writer.interface.flush();
+        return;
+    }
 
     const output_file = if (options.output) |path|
         try std.fs.cwd().createFile(path, .{})
     else
         std.fs.File.stdout();
     defer if (options.output != null) output_file.close();
-    const input = if (options.positional.input) |path|
+    const input = if (options.input) |path|
         try std.fs.cwd().openFile(path, .{})
     else
         std.fs.File.stdin();
-    defer if (options.positional.input != null) input.close();
+    defer if (options.input != null) input.close();
 
     try run(
         allocator,
@@ -52,35 +93,21 @@ fn mainWithAllocator(allocator: Allocator) !void {
 }
 
 const Flags = struct {
+    input: ?[]const u8,
     algorithm: Algorithm,
     encoding: Encoding = .utf8,
     output: ?[]const u8,
     bom: bool,
-    positional: struct {
-        input: ?[]const u8,
+    help: bool,
 
-        pub const descriptions = .{
-            .input = "Set the input file (default: stdin)",
-        };
-    },
-
-    pub const description =
-        \\xxu implements commonly-used locale-independent Unicode algorithms at speed.
-        \\
-        \\Project home page: https://github.com/dzfrias/xxUTF
-    ;
-
-    pub const descriptions = .{
-        .algorithm = "Set the Unicode algorithm to run",
-        .encoding = "Set the encoding of input and output (default: UTF-8)",
-        .output = "Set the output file to write to (default: stdout)",
-        .bom = "Add the U+FEFF BOM (byte-order mark) to the output",
+    pub const positionals = .{
+        .input = void,
     };
-
-    pub const switches = .{
+    pub const shorts = .{
         .algorithm = 'x',
         .encoding = 'e',
         .output = 'o',
+        .help = 'h',
     };
 };
 
@@ -409,4 +436,8 @@ fn validateUtf16(buf: []const u8, endian: std.builtin.Endian) bool {
         }
     }
     return true;
+}
+
+test {
+    _ = flags;
 }
