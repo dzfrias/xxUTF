@@ -135,8 +135,8 @@ pub fn build(b: *std.Build) !void {
         .root_module = xxu.root_module,
     });
     const run_xxu_zig_tests = b.addRunArtifact(xxu_zig_tests);
-    // test_step.dependOn(&run_test_exe.step);
-    // test_step.dependOn(&run_xxu_test.step);
+    test_step.dependOn(&run_test_exe.step);
+    test_step.dependOn(&run_xxu_test.step);
     test_step.dependOn(&run_xxu_zig_tests.step);
 
     const run_generate = std.Build.Step.Run.create(b, "Generate xxUTF data file");

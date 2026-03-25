@@ -31,6 +31,8 @@ pub fn parseFromIterator(
     it: anytype,
     allocator: Allocator,
 ) Allocator.Error!ParseResult(T) {
+    @setEvalBranchQuota(5000);
+
     var args = it;
 
     const info = getInfo(T);
@@ -80,6 +82,9 @@ pub fn parseFromIterator(
                         if (err) |e| {
                             return .{ .err = e };
                         }
+                        if (flag.standalone) {
+                            return .{ .flags = result };
+                        }
                     }
                 }
                 if (!found) {
@@ -104,6 +109,9 @@ pub fn parseFromIterator(
                         }
                         uninit.remove(f);
                         @field(result, flag.name) = true;
+                        if (flag.standalone) {
+                            return .{ .flags = result };
+                        }
                     }
                 }
                 if (!found) {
@@ -136,6 +144,9 @@ pub fn parseFromIterator(
                     );
                     if (err) |e| {
                         return .{ .err = e };
+                    }
+                    if (flag.standalone) {
+                        return .{ .flags = result };
                     }
                 }
             }
@@ -328,6 +339,7 @@ const Flag = struct {
     short: ?u8,
     type: FlagType,
     raw_type: type,
+    standalone: bool,
     default_value: ?*const anyopaque,
 
     pub fn isOptional(self: *const Flag) bool {
@@ -417,6 +429,17 @@ fn getInfo(comptime T: type) TypeInfo {
         }
     }
 
+    comptime var standalone: std.EnumSet(std.meta.FieldEnum(T)) = .initEmpty();
+    if (@hasDecl(T, "standalone")) {
+        inline for (@typeInfo(@TypeOf(T.standalone)).@"struct".fields) |flag| {
+            const f = @field(std.meta.FieldEnum(T), flag.name);
+            if (!flag_fields.contains(f)) {
+                @compileError("standalone must correspond to a flag");
+            }
+            comptime standalone.insert(f);
+        }
+    }
+
     inline for (@typeInfo(T).@"struct".fields) |field| {
         // Skip if we have already handled this field (i.e. it is a positional)
         if (!flag_fields.contains(@field(std.meta.FieldEnum(T), field.name))) {
@@ -444,11 +467,13 @@ fn getInfo(comptime T: type) TypeInfo {
                 else => @compileError("unsupported flag type"),
             },
         };
+        const f = @field(std.meta.FieldEnum(T), field.name);
         flags = flags ++ .{Flag{
             .name = field.name,
-            .short = shorts.fetchRemove(@field(std.meta.FieldEnum(T), field.name)),
+            .short = shorts.fetchRemove(f),
             .type = flag_type,
             .raw_type = field.type,
+            .standalone = standalone.contains(f),
             .default_value = field.default_value_ptr,
         }};
     }
@@ -594,4 +619,15 @@ test parse {
     try std.testing.expectEqualDeep(ParseResult(Example3){ .flags = Example3{
         .quality = .good,
     } }, parse(Example3, fa.allocator(), &.{ "-q", "good" }));
+
+    const Example4 = struct {
+        required: []const u8,
+        help: bool,
+        const standalone = .{
+            .help = void,
+        };
+    };
+    const example4 = parse(Example4, fa.allocator(), &.{"--help"}) catch @panic("unreachable");
+    try std.testing.expect(example4 == .flags);
+    try std.testing.expect(example4.flags.help);
 }

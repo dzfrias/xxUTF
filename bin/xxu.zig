@@ -11,16 +11,13 @@ const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };
 const ResolvedEncoding = enum { utf8, utf16le, utf16be };
 
-// TODO: make return u8 and have proper exit codes
-pub fn main() !void {
-    if (builtin.mode == .Debug) {
+pub fn main() u8 {
+    return if (builtin.mode == .Debug) code: {
         var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
         defer _ = dbg_allocator.deinit();
         const allocator = dbg_allocator.allocator();
-        try mainWithAllocator(allocator);
-    } else {
-        try mainWithAllocator(std.heap.smp_allocator);
-    }
+        break :code mainWithAllocator(allocator);
+    } else mainWithAllocator(std.heap.smp_allocator);
 }
 
 const help =
@@ -48,48 +45,88 @@ const help =
     \\
 ;
 
-fn mainWithAllocator(allocator: Allocator) !void {
+fn mainWithAllocator(allocator: Allocator) u8 {
     var stderr = std.fs.File.stderr();
     var stderr_buf: [2048]u8 = undefined;
     var stderr_writer = stderr.writer(&stderr_buf);
 
-    const result = try flags.parseArgs(Flags, allocator);
+    const result = flags.parseArgs(Flags, allocator) catch {
+        stderr_writer.interface.writeAll("xxu: out of memory") catch return 1;
+        stderr_writer.interface.flush() catch return 1;
+        return 1;
+    };
     const options = switch (result) {
         .flags => |f| f,
         .err => |e| {
-            try stderr_writer.interface.writeAll("xxu: ");
-            try flags.printErrorDefault(Flags, &stderr_writer.interface, e);
-            try stderr_writer.interface.writeByte('\n');
-            try stderr_writer.interface.flush();
-            return;
+            stderr_writer.interface.writeAll("xxu: ") catch return 1;
+            flags.printErrorDefault(Flags, &stderr_writer.interface, e) catch return 1;
+            stderr_writer.interface.writeByte('\n') catch return 1;
+            stderr_writer.interface.flush() catch return 1;
+            return 1;
         },
     };
 
     if (options.help) {
-        try stderr_writer.interface.writeAll(help);
-        try stderr_writer.interface.flush();
-        return;
+        stderr_writer.interface.writeAll(help) catch return 1;
+        stderr_writer.interface.flush() catch return 1;
+        return 0;
     }
 
     const output_file = if (options.output) |path|
-        try std.fs.cwd().createFile(path, .{})
+        std.fs.cwd().createFile(path, .{}) catch |e| {
+            stderr_writer.interface.print("xxu: error creating '{s}': ", .{path}) catch return 1;
+            writeError(&stderr_writer.interface, e) catch return 1;
+            stderr_writer.interface.writeByte('\n') catch return 1;
+            stderr_writer.interface.flush() catch return 1;
+            return 1;
+        }
     else
         std.fs.File.stdout();
     defer if (options.output != null) output_file.close();
     const input = if (options.input) |path|
-        try std.fs.cwd().openFile(path, .{})
+        std.fs.cwd().openFile(path, .{}) catch |e| {
+            stderr_writer.interface.print("xxu: error opening '{s}': ", .{path}) catch return 1;
+            writeError(&stderr_writer.interface, e) catch return 1;
+            stderr_writer.interface.writeByte('\n') catch return 1;
+            stderr_writer.interface.flush() catch return 1;
+            return 1;
+        }
     else
         std.fs.File.stdin();
     defer if (options.input != null) input.close();
 
-    try run(
+    run(
         allocator,
         input,
         output_file,
         options.algorithm,
         options.encoding,
         options.bom,
-    );
+    ) catch |e| {
+        stderr_writer.interface.print(
+            "xxu: error running '{s}' on input: ",
+            .{@tagName(options.algorithm)},
+        ) catch return 1;
+        writeError(&stderr_writer.interface, e) catch return 1;
+        stderr_writer.interface.writeByte('\n') catch return 1;
+        stderr_writer.interface.flush() catch return 1;
+        return 1;
+    };
+    return 0;
+}
+
+fn writeError(writer: *std.Io.Writer, e: anyerror) std.Io.Writer.Error!void {
+    const name = @errorName(e);
+    for (name, 0..) |b, i| {
+        if (std.ascii.isUpper(b)) {
+            if (i > 0) {
+                try writer.writeByte(' ');
+            }
+            try writer.writeByte(std.ascii.toLower(b));
+        } else {
+            try writer.writeByte(b);
+        }
+    }
 }
 
 const Flags = struct {
@@ -108,6 +145,9 @@ const Flags = struct {
         .encoding = 'e',
         .output = 'o',
         .help = 'h',
+    };
+    pub const standalone = .{
+        .help = void,
     };
 };
 
