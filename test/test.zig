@@ -403,6 +403,6 @@ pub fn main() !void {
         }
     }
     root_node.end();
-    try stderr.writeAll("All tests passed!\n");
+    try stderr.writeAll("All Unicode tests passed!\n");
     try stderr.flush();
 }
