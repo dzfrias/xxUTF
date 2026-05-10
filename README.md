@@ -48,8 +48,7 @@ int main() {
 
 One major goal of xxUTF is to have the simplest, most predictable API surface as
 possible. As such, one function call usually suffices for the core
-functionality. More advanced cases, such as streaming normalization, have a more
-involved API. See [Streaming](#streaming) for specifics.
+functionality.
 
 ## API
 
@@ -116,8 +115,9 @@ Like many Unicode processing libraries, xxUTF supports a two-pass pattern:
 1. Get the expected length of the output without writing.
 2. Actually run the algorithm on a properly sized output buffer.
 
-Finding a universal upper bound that depends only on the size of the input is
-not hard, but using it is often wasteful. For example, as of Unicode 18.0, the
+You might wonder why we need the length functions. After all, finding a
+universal upper bound that depends only on the size of the input is not hard.
+But using such a bound is often wasteful. For example, as of Unicode 18.0, the
 largest compatibility decomposition (i.e. from NFKD or NFKC) in the
 [Basic Multilingual Plane](<https://en.wikipedia.org/wiki/Plane_(Unicode)#Basic_Multilingual_Plane>)
 is from the character with code `0xFDFA`. This character is three bytes wide in
@@ -148,7 +148,33 @@ for more details.
 
 xxUTF thus has special APIs so that streaming normalization can be implemented
 in a non-allocating, efficient way. To see these APIs being used to implement
-streaming normalization, read the [xxu](/bin/xxu.zig) program source code.
+streaming normalization, read the [xxu program source code](/bin/xxu.zig).
+
+The APIs are of the form:
+
+```c
+size_t xxutf_find_last_stable_ENCODING_FORM(const char *input, size_t length);
+size_t xxutf_find_first_stable_ENCODING_FORM(const char *input, size_t length);
+```
+
+Here is a simple visual that describes these functions' purposes:
+
+```
+[.........*.........] ++ [....*.........]
+```
+
+Where `++` represents concatenation, and `*` denotes "stable" code points (the
+actual definition of "stable" is somewhat involved). To properly concatenate
+these normalized buffers, we must:
+
+1. Naively concatenate the two buffers
+2. Form a range using the last stable code point of the first buffer and the
+   first stable code point in the second buffer (use streaming APIs for this)
+3. Re-normalize the range found from step 2, in place
+
+Performing these steps without copying large buffers around can be complicated
+to figure out, so you are encouraged to read the
+[xxu source code](/bin/xxu.zig).
 
 ## xxu
 
@@ -185,7 +211,7 @@ next fastest open soruce implementations of these algorithms.
 ## Building
 
 xxUTF is built with the [Zig](https://codeberg.org/ziglang/zig) build system,
-version 0.15.2.
+version 0.16.0.
 
 To build the project in release mode, run `zig build -Doptimize=ReleaseFast`.
 The following artifacts will be created:
