@@ -51,9 +51,11 @@ uint8_t scalar_lookup_ccc(uint32_t code_point) {
     uint8_t value = NORMDATA_CCC_TRIE_DATA[index + masked];
     return value;
   }
-  uint32_t salt_hash = scalar_phash(code_point, 0, NORMDATA_NFD_TABLE_SIZE);
+  uint32_t salt_hash = scalar_phash(
+      code_point, 0, sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry));
   uint32_t salt = NORMDATA_NFD_SALT[salt_hash];
-  uint32_t key_hash = scalar_phash(code_point, salt, NORMDATA_NFD_TABLE_SIZE);
+  uint32_t key_hash = scalar_phash(
+      code_point, salt, sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry));
   NormdataTableEntry kv = NORMDATA_NFD_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
@@ -88,9 +90,11 @@ uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
 
   uint32_t wide = c1;
   uint32_t key = (wide << 16) | c2;
-  uint32_t salt_hash = scalar_phash(key, 0, NORMDATA_NFC_TABLE_SIZE);
+  uint32_t salt_hash =
+      scalar_phash(key, 0, sizeof(NORMDATA_NFC_KV) / (sizeof(uint32_t) * 2));
   uint32_t salt = NORMDATA_NFC_SALT[salt_hash];
-  uint32_t key_hash = scalar_phash(key, salt, NORMDATA_NFC_TABLE_SIZE);
+  uint32_t key_hash =
+      scalar_phash(key, salt, sizeof(NORMDATA_NFC_KV) / (sizeof(uint32_t) * 2));
   uint32_t k = NORMDATA_NFC_KV[key_hash][1];
   uint32_t comp = NORMDATA_NFC_KV[key_hash][0];
   if (k == key) {
@@ -159,11 +163,15 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
           NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];       \
       return value > 3;                                                        \
     }                                                                          \
-    uint32_t salt_hash = scalar_phash(                                         \
-        code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);             \
+    uint32_t salt_hash =                                                       \
+        scalar_phash(code_point, 0,                                            \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /               \
+                         sizeof(NormdataTableEntry));                          \
     uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];            \
-    uint32_t key_hash = scalar_phash(                                          \
-        code_point, salt, NORMDATA_##decomp_form_upper##_TABLE_SIZE);          \
+    uint32_t key_hash =                                                        \
+        scalar_phash(code_point, salt,                                         \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /               \
+                         sizeof(NormdataTableEntry));                          \
     NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];       \
     return kv.k == code_point;                                                 \
   }

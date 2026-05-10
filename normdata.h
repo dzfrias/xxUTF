@@ -105,11 +105,6 @@ extern const uint8_t NORMDATA_UTF16_NFC_LENGTH_TRIE_DATA[871];
 extern const uint16_t NORMDATA_UTF16_NFKC_LENGTH_TRIE_INDEX[1024];
 extern const uint8_t NORMDATA_UTF16_NFKC_LENGTH_TRIE_DATA[3245];
 
-static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
-static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
-static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
-static const uint32_t NORMDATA_CASEFOLD_TABLE_SIZE = sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint64_t);
-
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

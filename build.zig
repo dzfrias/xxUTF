@@ -264,8 +264,7 @@ const default_flags: []const []const u8 = &.{
     "-Wundef",
     "-Wvla",
     "-Wformat=2",
-    // TODO: add back
-    // "-Wc++-compat",
+    "-Wc++-compat",
     "-Werror",
 };
 

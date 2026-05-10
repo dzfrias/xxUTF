@@ -33,9 +33,11 @@
                                                                                \
   static size_t scalar_casefold_character_utf16##endianness##_supplementary(   \
       uint32_t c, uint8_t *out) {                                              \
-    uint32_t salt_hash = scalar_phash(c, 0, NORMDATA_CASEFOLD_TABLE_SIZE);     \
+    uint32_t salt_hash =                                                       \
+        scalar_phash(c, 0, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));   \
     uint32_t salt = NORMDATA_CASEFOLD_SALT[salt_hash];                         \
-    uint32_t key_hash = scalar_phash(c, salt, NORMDATA_CASEFOLD_TABLE_SIZE);   \
+    uint32_t key_hash = scalar_phash(                                          \
+        c, salt, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));             \
     uint32_t k = NORMDATA_CASEFOLD_KV[key_hash][1];                            \
     uint32_t casefold = NORMDATA_CASEFOLD_KV[key_hash][0];                     \
     if (k == c) {                                                              \
@@ -95,9 +97,11 @@
                                                                                \
   static uint8_t scalar_casefold_length_utf16##endianness##_supplementary(     \
       uint32_t c) {                                                            \
-    uint32_t salt_hash = scalar_phash(c, 0, NORMDATA_CASEFOLD_TABLE_SIZE);     \
+    uint32_t salt_hash =                                                       \
+        scalar_phash(c, 0, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));   \
     uint32_t salt = NORMDATA_CASEFOLD_SALT[salt_hash];                         \
-    uint32_t key_hash = scalar_phash(c, salt, NORMDATA_CASEFOLD_TABLE_SIZE);   \
+    uint32_t key_hash = scalar_phash(                                          \
+        c, salt, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));             \
     uint32_t k = NORMDATA_CASEFOLD_KV[key_hash][1];                            \
     uint32_t casefold = NORMDATA_CASEFOLD_KV[key_hash][0];                     \
     if (k == c) {                                                              \

@@ -45,9 +45,8 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
                 name = var_match.group(2)
                 if not name.lower().startswith("xxutf_"):
                     if not line.startswith("static"):
-                        if line.startswith("extern"):
-                            line = line[len("extern ") :]
-                        out.write(f"__attribute__((unused)) static {line}")
+                        if not line.startswith("extern"):
+                            out.write(f"__attribute__((unused)) static {line}")
                     else:
                         out.write(f"__attribute__((unused)) {line}")
                 else:

@@ -155,11 +155,15 @@ SCALAR_UTF16_HELPERS(be);
           uint32_t code_point, uint8_t *out, uint8_t *first_ccc,                     \
           uint8_t *ccc) {                                                            \
     uint8_t *start = out;                                                            \
-    uint32_t salt_hash = scalar_phash(                                               \
-        code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                   \
+    uint32_t salt_hash =                                                             \
+        scalar_phash(code_point, 0,                                                  \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
+                         sizeof(NormdataTableEntry));                                \
     uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                  \
-    uint32_t key_hash = scalar_phash(                                                \
-        code_point, salt, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                \
+    uint32_t key_hash =                                                              \
+        scalar_phash(code_point, salt,                                               \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
+                         sizeof(NormdataTableEntry));                                \
     NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];             \
     if (kv.k == code_point) {                                                        \
       uint32_t const *chars =                                                        \
@@ -485,11 +489,15 @@ SCALAR_UTF16_HELPERS(be);
   static uint8_t                                                                     \
       scalar_decomposition_length_utf16##endianness##_##decomp_form##_supplementary( \
           uint32_t code_point) {                                                     \
-    uint32_t salt_hash = scalar_phash(                                               \
-        code_point, 0, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                   \
+    uint32_t salt_hash =                                                             \
+        scalar_phash(code_point, 0,                                                  \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
+                         sizeof(NormdataTableEntry));                                \
     uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                  \
-    uint32_t key_hash = scalar_phash(                                                \
-        code_point, salt, NORMDATA_##decomp_form_upper##_TABLE_SIZE);                \
+    uint32_t key_hash =                                                              \
+        scalar_phash(code_point, salt,                                               \
+                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
+                         sizeof(NormdataTableEntry));                                \
     NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];             \
     if (kv.k == code_point) {                                                        \
       uint32_t const *chars =                                                        \

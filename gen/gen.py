@@ -94,6 +94,16 @@ def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
     return salts, keys
 
 
+ELEMENT_SIZES = {
+    "uint8_t": 1,
+    "uint16_t": 2,
+    "uint32_t": 4,
+    "uint64_t": 8,
+    "NormdataTableEntry": 12,
+    "NormdataHangulShuf": 25,
+}
+
+
 class HeaderDef:
     def __init__(self, name: str, type_: str):
         self.name = name
@@ -112,8 +122,8 @@ class HeaderDef:
         inst.array_sizes = array_sizes
         return inst
 
-    def size(self, element_size: int) -> int:
-        product = element_size
+    def size(self) -> int:
+        product = ELEMENT_SIZES[self.type_]
         for size in self.array_sizes:
             product *= size
         return product
@@ -584,11 +594,6 @@ uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
 """
 
 POSTAMBLE_H = """
-static const uint32_t NORMDATA_NFD_TABLE_SIZE = sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry);
-static const uint32_t NORMDATA_NFKD_TABLE_SIZE = sizeof(NORMDATA_NFKD_KV) / sizeof(NormdataTableEntry);
-static const uint32_t NORMDATA_NFC_TABLE_SIZE = sizeof(NORMDATA_NFC_KV) / sizeof(uint64_t);
-static const uint32_t NORMDATA_CASEFOLD_TABLE_SIZE = sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint64_t);
-
 static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -1229,20 +1234,12 @@ def main() -> None:
         f.write(POSTAMBLE_H)
 
     lines: list[str] = []
-    ELEMENT_SIZES = {
-        "uint8_t": 1,
-        "uint16_t": 2,
-        "uint32_t": 4,
-        "uint64_t": 8,
-        "NormdataTableEntry": 12,
-        "NormdataHangulShuf": 25,
-    }
     KILOBYTE = 1024
     total = 0
     for header in headers:
         if not header.array_sizes:
             continue
-        size = header.size(ELEMENT_SIZES[header.type_])
+        size = header.size()
         lines.append(f"{header.name}: {size / KILOBYTE:.1f}KiB")
         total += size
     lines.append(f"TOTAL: {total / KILOBYTE:.1f}KiB")
