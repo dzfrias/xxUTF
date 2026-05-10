@@ -1,8 +1,5 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("xxutf.h");
-    @cInclude("xxutf_shim.h");
-});
+const c = @import("c");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -99,20 +96,16 @@ const ImplementationResult = struct {
     results: []const BenchResult,
 };
 
-pub fn main() !void {
-    var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
-    defer assert(dbg_allocator.deinit() == .ok);
-    const allocator = dbg_allocator.allocator();
-
-    var args_it = std.process.args();
+pub fn main(init: std.process.Init) !void {
+    var args_it = init.minimal.args.iterate();
     _ = args_it.next().?;
     const input_dir_path = args_it.next() orelse return error.ArgumentError;
-    const arguments = try parseArgs(allocator, &args_it);
-    defer if (arguments.patterns) |patterns| allocator.free(patterns);
-    var input_dir = try std.fs.cwd().openDir(input_dir_path, .{ .iterate = true });
-    defer input_dir.close();
+    const arguments = try parseArgs(init.gpa, &args_it);
+    defer if (arguments.patterns) |patterns| init.gpa.free(patterns);
+    var input_dir = try std.Io.Dir.cwd().openDir(init.io, input_dir_path, .{ .iterate = true });
+    defer input_dir.close(init.io);
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
 
     var results: ?std.ArrayList(ImplementationResult) = if (arguments.json)
@@ -122,11 +115,11 @@ pub fn main() !void {
     defer if (results) |*r| {
         for (r.items) |impl_result| {
             for (impl_result.results) |bench_res| {
-                allocator.free(bench_res.name);
+                init.gpa.free(bench_res.name);
             }
-            allocator.free(impl_result.results);
+            init.gpa.free(impl_result.results);
         }
-        r.deinit(allocator);
+        r.deinit(init.gpa);
     };
     inline for (implementations) |impl| {
         if (arguments.patterns == null or match: {
@@ -138,7 +131,8 @@ pub fn main() !void {
             break :match false;
         }) {
             const impl_result = try benchmarkImplementation(
-                allocator,
+                init.io,
+                init.gpa,
                 impl[0],
                 stdout,
                 arguments.json,
@@ -148,12 +142,12 @@ pub fn main() !void {
                 impl[1],
             );
             if (results) |*r| {
-                try r.append(allocator, impl_result);
+                try r.append(init.gpa, impl_result);
             } else {
                 try stdout.writeByte('\n');
                 try stdout.flush();
                 // Immediately free the allocated ImplementationResult
-                allocator.free(impl_result.results);
+                init.gpa.free(impl_result.results);
             }
         }
     }
@@ -170,7 +164,7 @@ const Arguments = struct {
     json: bool = false,
 };
 
-fn parseArgs(allocator: Allocator, args: *std.process.ArgIterator) !Arguments {
+fn parseArgs(allocator: Allocator, args: *std.process.Args.Iterator) !Arguments {
     var arguments: Arguments = .{};
     while (args.next()) |arg| {
         const eq_pos = std.mem.indexOfScalar(u8, arg, '=') orelse return error.ArgumentError;
@@ -208,11 +202,12 @@ fn writeHeader(out: *std.Io.Writer, title: []const u8) !void {
 }
 
 fn benchmarkImplementation(
+    io: std.Io,
     allocator: Allocator,
     name: []const u8,
     out: *std.Io.Writer,
     quiet: bool,
-    inputs: std.fs.Dir,
+    inputs: std.Io.Dir,
     specific_test: ?[]const u8,
     encoding: Encoding,
     comptime impl: fn ([]const u8) void,
@@ -223,7 +218,7 @@ fn benchmarkImplementation(
 
     var results: std.ArrayList(BenchResult) = .empty;
     var inputs_it = inputs.iterate();
-    while (try inputs_it.next()) |entry| {
+    while (try inputs_it.next(io)) |entry| {
         if (entry.kind != .file) {
             continue;
         }
@@ -233,9 +228,10 @@ fn benchmarkImplementation(
             }
         }
 
-        const file = try inputs.openFile(entry.name, .{});
-        defer file.close();
+        const file = try inputs.openFile(io, entry.name, .{});
+        defer file.close(io);
         const result = try runBenchmark(
+            io,
             try allocator.dupe(u8, entry.name),
             file,
             encoding,
@@ -548,19 +544,21 @@ fn trimPartialUTF8(input: []const u8) []const u8 {
 }
 
 fn runBenchmark(
+    io: std.Io,
     name: []const u8,
-    file: std.fs.File,
+    file: std.Io.File,
     encoding: Encoding,
     comptime impl: fn ([]const u8) void,
 ) !BenchResult {
     var read_buf: [4096]u8 = undefined;
     var encoded_buf: [4096]u16 = undefined;
 
+    var reader_buf: [4096]u8 = undefined;
+    var reader = file.reader(io, &reader_buf);
     var sum: f64 = 0;
     var results: [n_iters]f64 = undefined;
-    var timer = try std.time.Timer.start();
     for (0..n_iters) |i| {
-        var nread = try file.read(&read_buf);
+        var nread = try reader.interface.readSliceShort(&read_buf);
         var carry_buffer: [4]u8 = undefined;
         var carry = std.ArrayListUnmanaged(u8).initBuffer(&carry_buffer);
         var elapsed: f64 = 0;
@@ -579,18 +577,18 @@ fn runBenchmark(
                     break :buf std.mem.sliceAsBytes(encoded_buf[0..utf16_size]);
                 },
             };
-            timer.reset();
+            const timestamp = std.Io.Timestamp.now(io, .real);
             impl(encoded);
-            elapsed += @floatFromInt(timer.read());
+            elapsed += @floatFromInt(std.Io.Timestamp.untilNow(timestamp, io, .real).nanoseconds);
             carry.clearRetainingCapacity();
             carry.appendSliceBounded(buf[trimmed.len..]) catch unreachable;
             @memcpy(read_buf[0..carry.items.len], carry.items);
-            nread = try file.read(read_buf[carry.items.len..]);
+            nread = try reader.interface.readSliceShort(read_buf[carry.items.len..]);
         }
         const elapsed_ms: f64 = elapsed / std.time.ns_per_ms;
         sum += elapsed_ms;
         results[i] = elapsed_ms;
-        try file.seekTo(0);
+        try reader.seekTo(0);
     }
     const mean = sum / n_iters;
 

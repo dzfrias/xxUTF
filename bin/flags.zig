@@ -35,7 +35,7 @@ pub fn parseFromIterator(
 
     var args = it;
 
-    const info = getInfo(T);
+    const info = comptime getInfo(T);
 
     var result: T = undefined;
     var uninit: std.EnumSet(std.meta.FieldEnum(T)) = .initFull();
@@ -314,15 +314,8 @@ pub fn parse(
     return parseFromIterator(T, SliceIterator{ .inner = slice }, allocator);
 }
 
-pub fn parseArgs(comptime T: type, allocator: Allocator) Allocator.Error!ParseResult(T) {
-    var args = std.process.args();
-    // Consume the first argument for program name
-    _ = args.next() orelse return .{ .err = .expected_program_name };
-    return parseFromIterator(T, args, allocator);
-}
-
 pub fn freeFlags(allocator: Allocator, flags: anytype) void {
-    const info = getInfo(@TypeOf(flags));
+    const info = comptime getInfo(@TypeOf(flags));
     if (info.variadic) |variadic| {
         allocator.free(@field(flags, variadic.name));
     }
@@ -342,7 +335,7 @@ const Flag = struct {
     standalone: bool,
     default_value: ?*const anyopaque,
 
-    pub fn isOptional(self: *const Flag) bool {
+    pub fn isOptional(comptime self: *const Flag) bool {
         return self.default_value != null or
             @typeInfo(self.raw_type) == .optional or
             self.type == .boolean;
@@ -361,7 +354,7 @@ const Positional = struct {
     raw_type: type,
     default_value: ?*const anyopaque,
 
-    pub fn isOptional(self: *const Positional) bool {
+    pub fn isOptional(comptime self: *const Positional) bool {
         return self.default_value != null or @typeInfo(self.raw_type) == .optional;
     }
 };
@@ -371,123 +364,129 @@ const Variadic = struct {
 };
 
 fn getInfo(comptime T: type) TypeInfo {
-    comptime var flags: []const Flag = &.{};
-    comptime var positionals: []const Positional = &.{};
-    var variadic: ?Variadic = null;
+    const info: TypeInfo = comptime info: {
+        var flags: []const Flag = &.{};
+        var positionals: []const Positional = &.{};
+        var variadic: ?Variadic = null;
 
-    comptime var flag_fields: std.EnumSet(std.meta.FieldEnum(T)) = .initFull();
-    if (@hasDecl(T, "positionals")) {
-        const pos_fields = @typeInfo(@TypeOf(T.positionals)).@"struct".fields;
-        var found_default = false;
-        inline for (pos_fields) |pos_field| {
-            if (!@hasField(T, pos_field.name)) {
-                @compileError(std.fmt.comptimePrint("positional field `{s}` does not exist", .{pos_field.name}));
-            }
-            var field: std.builtin.Type.StructField = undefined;
-            inline for (@typeInfo(T).@"struct".fields) |f| {
-                if (std.mem.eql(u8, f.name, pos_field.name)) {
-                    field = f;
+        var flag_fields: std.EnumSet(std.meta.FieldEnum(T)) = .initFull();
+        if (@hasDecl(T, "positionals")) {
+            const pos_fields = @typeInfo(@TypeOf(T.positionals)).@"struct".fields;
+            var found_default = false;
+            for (pos_fields) |pos_field| {
+                if (!@hasField(T, pos_field.name)) {
+                    @compileError(std.fmt.comptimePrint("positional field `{s}` does not exist", .{pos_field.name}));
                 }
+                const field: std.builtin.Type.StructField = b: {
+                    for (@typeInfo(T).@"struct".fields) |f| {
+                        if (std.mem.eql(u8, f.name, pos_field.name)) {
+                            break :b f;
+                        }
+                    }
+                };
+                if (unwrapOptional(field.type) != []const u8) {
+                    @compileError("positional fields should be []const u8");
+                }
+                if (field.default_value_ptr != null) {
+                    found_default = true;
+                } else if (found_default) {
+                    @compileError("positional with default values should be trailing");
+                }
+                positionals = positionals ++ .{Positional{
+                    .name = pos_field.name,
+                    .raw_type = field.type,
+                    .default_value = field.default_value_ptr,
+                }};
+                flag_fields.remove(@field(std.meta.FieldEnum(T), pos_field.name));
             }
-            if (unwrapOptional(field.type) != []const u8) {
-                @compileError("positional fields should be []const u8");
+        }
+
+        var shorts: std.EnumMap(std.meta.FieldEnum(T), u8) = .init(.{});
+        if (@hasDecl(T, "shorts")) {
+            for (@typeInfo(@TypeOf(T.shorts)).@"struct".fields) |sw| {
+                const value = sw.defaultValue() orelse @compileError("need switch value");
+                if (!std.ascii.isAscii(value)) {
+                    @compileError(std.fmt.comptimePrint(
+                        "shorts must be ASCII characters only, got '{c}'",
+                        .{value},
+                    ));
+                }
+                if (value == '-') {
+                    @compileError("shorts cannot be `-`");
+                }
+                if (@hasField(T, &.{value})) {
+                    @compileError("shorts cannot conflict with flags");
+                }
+                var it = shorts.iterator();
+                while (it.next()) |entry| {
+                    if (value == entry.value.*) {
+                        @compileError("shorts cannot conflict with each other");
+                    }
+                }
+                shorts.put(@field(std.meta.FieldEnum(T), sw.name), value);
             }
-            if (field.default_value_ptr != null) {
-                found_default = true;
-            } else if (found_default) {
-                @compileError("positional with default values should be trailing");
+        }
+
+        var standalone: std.EnumSet(std.meta.FieldEnum(T)) = .initEmpty();
+        if (@hasDecl(T, "standalone")) {
+            for (@typeInfo(@TypeOf(T.standalone)).@"struct".fields) |flag| {
+                const f = @field(std.meta.FieldEnum(T), flag.name);
+                if (!flag_fields.contains(f)) {
+                    @compileError("standalone must correspond to a flag");
+                }
+                standalone.insert(f);
             }
-            positionals = positionals ++ .{Positional{
-                .name = pos_field.name,
+        }
+
+        for (@typeInfo(T).@"struct".fields) |field| {
+            // Skip if we have already handled this field (i.e. it is a positional)
+            if (!flag_fields.contains(@field(std.meta.FieldEnum(T), field.name))) {
+                continue;
+            }
+            // Handle special variadic field
+            if (field.type == []const []const u8 or field.type == [][]const u8) {
+                if (positionals.len > 0 and positionals[positionals.len - 1].default_value != null) {
+                    @compileError("cannot have variadic argument with default positional arguments");
+                }
+                variadic = .{ .name = field.name };
+                continue;
+            }
+
+            if (std.mem.indexOfScalar(u8, field.name, '=') != null) {
+                @compileError("flag name cannot have `=` in it");
+            }
+
+            const flag_type: FlagType = switch (unwrapOptional(field.type)) {
+                []const u8 => .bytes,
+                bool => .boolean,
+                else => switch (@typeInfo(unwrapOptional(field.type))) {
+                    .int => .{ .integer = unwrapOptional(field.type) },
+                    .@"enum" => |info| .{ .@"enum" = info.fields },
+                    else => @compileError("unsupported flag type"),
+                },
+            };
+            const f = @field(std.meta.FieldEnum(T), field.name);
+            flags = flags ++ .{Flag{
+                .name = field.name,
+                .short = shorts.fetchRemove(f),
+                .type = flag_type,
                 .raw_type = field.type,
+                .standalone = standalone.contains(f),
                 .default_value = field.default_value_ptr,
             }};
-            comptime flag_fields.remove(@field(std.meta.FieldEnum(T), pos_field.name));
-        }
-    }
-
-    comptime var shorts: std.EnumMap(std.meta.FieldEnum(T), u8) = .init(.{});
-    if (@hasDecl(T, "shorts")) {
-        inline for (@typeInfo(@TypeOf(T.shorts)).@"struct".fields) |sw| {
-            const value = sw.defaultValue() orelse @compileError("need switch value");
-            if (!std.ascii.isAscii(value)) {
-                @compileError("shorts must be ASCII characters only");
-            }
-            if (value == '-') {
-                @compileError("shorts cannot be `-`");
-            }
-            if (@hasField(T, &.{value})) {
-                @compileError("shorts cannot conflict with flags");
-            }
-            comptime var it = shorts.iterator();
-            while (it.next()) |entry| {
-                if (value == entry.value.*) {
-                    @compileError("shorts cannot conflict with each other");
-                }
-            }
-            comptime shorts.put(@field(std.meta.FieldEnum(T), sw.name), value);
-        }
-    }
-
-    comptime var standalone: std.EnumSet(std.meta.FieldEnum(T)) = .initEmpty();
-    if (@hasDecl(T, "standalone")) {
-        inline for (@typeInfo(@TypeOf(T.standalone)).@"struct".fields) |flag| {
-            const f = @field(std.meta.FieldEnum(T), flag.name);
-            if (!flag_fields.contains(f)) {
-                @compileError("standalone must correspond to a flag");
-            }
-            comptime standalone.insert(f);
-        }
-    }
-
-    inline for (@typeInfo(T).@"struct".fields) |field| {
-        // Skip if we have already handled this field (i.e. it is a positional)
-        if (!flag_fields.contains(@field(std.meta.FieldEnum(T), field.name))) {
-            continue;
-        }
-        // Handle special variadic field
-        if (field.type == []const []const u8 or field.type == [][]const u8) {
-            if (positionals.len > 0 and positionals[positionals.len - 1].default_value != null) {
-                @compileError("cannot have variadic argument with default positional arguments");
-            }
-            variadic = .{ .name = field.name };
-            continue;
         }
 
-        if (std.mem.indexOfScalar(u8, field.name, '=') != null) {
-            @compileError("flag name cannot have `=` in it");
+        var shorts_it = shorts.iterator();
+        while (shorts_it.next()) |entry| {
+            @compileError(std.fmt.comptimePrint("unmapped short: {s}", .{@tagName(entry.key)}));
         }
-
-        const flag_type: FlagType = switch (unwrapOptional(field.type)) {
-            []const u8 => .bytes,
-            bool => .boolean,
-            else => switch (@typeInfo(unwrapOptional(field.type))) {
-                .int => .{ .integer = unwrapOptional(field.type) },
-                .@"enum" => |info| .{ .@"enum" = info.fields },
-                else => @compileError("unsupported flag type"),
-            },
+        break :info .{
+            .flags = flags,
+            .positionals = positionals,
+            .variadic = variadic,
         };
-        const f = @field(std.meta.FieldEnum(T), field.name);
-        flags = flags ++ .{Flag{
-            .name = field.name,
-            .short = shorts.fetchRemove(f),
-            .type = flag_type,
-            .raw_type = field.type,
-            .standalone = standalone.contains(f),
-            .default_value = field.default_value_ptr,
-        }};
-    }
-
-    comptime var shorts_it = shorts.iterator();
-    while (shorts_it.next()) |entry| {
-        @compileError(std.fmt.comptimePrint("unmapped short: {s}", .{@tagName(entry.key)}));
-    }
-
-    return .{
-        .flags = flags,
-        .positionals = positionals,
-        .variadic = variadic,
     };
+    return info;
 }
 
 fn unwrapOptional(comptime T: type) type {

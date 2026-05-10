@@ -1,8 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @cImport({
-    @cInclude("xxutf.h");
-});
+const c = @import("c");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const flags = @import("./flags.zig");
@@ -10,15 +8,6 @@ const flags = @import("./flags.zig");
 const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };
 const ResolvedEncoding = enum { utf8, utf16le, utf16be };
-
-pub fn main() u8 {
-    return if (builtin.mode == .Debug) code: {
-        var dbg_allocator: std.heap.DebugAllocator(.{}) = .init;
-        defer _ = dbg_allocator.deinit();
-        const allocator = dbg_allocator.allocator();
-        break :code mainWithAllocator(allocator);
-    } else mainWithAllocator(std.heap.smp_allocator);
-}
 
 const help =
     \\xxu
@@ -45,12 +34,14 @@ const help =
     \\
 ;
 
-fn mainWithAllocator(allocator: Allocator) u8 {
-    var stderr = std.fs.File.stderr();
+pub fn main(init: std.process.Init) u8 {
+    var stderr = std.Io.File.stderr();
     var stderr_buf: [2048]u8 = undefined;
-    var stderr_writer = stderr.writer(&stderr_buf);
+    var stderr_writer = stderr.writer(init.io, &stderr_buf);
 
-    const result = flags.parseArgs(Flags, allocator) catch {
+    var args_it = init.minimal.args.iterate();
+    _ = args_it.next();
+    const result = flags.parseFromIterator(Flags, args_it, init.gpa) catch {
         stderr_writer.interface.writeAll("xxu: out of memory") catch return 1;
         stderr_writer.interface.flush() catch return 1;
         return 1;
@@ -73,7 +64,7 @@ fn mainWithAllocator(allocator: Allocator) u8 {
     }
 
     const output_file = if (options.output) |path|
-        std.fs.cwd().createFile(path, .{}) catch |e| {
+        std.Io.Dir.cwd().createFile(init.io, path, .{}) catch |e| {
             stderr_writer.interface.print("xxu: error creating '{s}': ", .{path}) catch return 1;
             writeError(&stderr_writer.interface, e) catch return 1;
             stderr_writer.interface.writeByte('\n') catch return 1;
@@ -81,10 +72,10 @@ fn mainWithAllocator(allocator: Allocator) u8 {
             return 1;
         }
     else
-        std.fs.File.stdout();
-    defer if (options.output != null) output_file.close();
+        std.Io.File.stdout();
+    defer if (options.output != null) output_file.close(init.io);
     const input = if (options.input) |path|
-        std.fs.cwd().openFile(path, .{}) catch |e| {
+        std.Io.Dir.cwd().openFile(init.io, path, .{}) catch |e| {
             stderr_writer.interface.print("xxu: error opening '{s}': ", .{path}) catch return 1;
             writeError(&stderr_writer.interface, e) catch return 1;
             stderr_writer.interface.writeByte('\n') catch return 1;
@@ -92,11 +83,12 @@ fn mainWithAllocator(allocator: Allocator) u8 {
             return 1;
         }
     else
-        std.fs.File.stdin();
-    defer if (options.input != null) input.close();
+        std.Io.File.stdin();
+    defer if (options.input != null) input.close(init.io);
 
     run(
-        allocator,
+        init.io,
+        init.gpa,
         input,
         output_file,
         options.algorithm,
@@ -278,19 +270,21 @@ const Error = error{
 const read_buf_size = 4096;
 
 fn run(
+    io: std.Io,
     allocator: Allocator,
-    input: std.fs.File,
-    output_file: std.fs.File,
+    input: std.Io.File,
+    output_file: std.Io.File,
     algorithm: Algorithm,
     encoding: Encoding,
     write_bom: bool,
 ) Error!void {
     var output_buffer: [read_buf_size]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
     // Start with a guess of two times the size of the read buffer
     var out_buf = try allocator.alloc(u8, read_buf_size * 2);
     defer allocator.free(out_buf);
 
+    var io_reader_buf: [4096]u8 = undefined;
     // We have `read_buf_size + 3` extra bytes that live at the start of the buffer. These are
     // "carry" bytes that preserve two things:
     // 1. Partial UTF-8 or UTF-16 from previous reads
@@ -306,7 +300,8 @@ fn run(
     // Denotes where the carry section ends in `read_buf`
     const carry_end = read_buf_size + 3;
     // We have `read_buf_size` bytes after `carry_end`
-    var nread = input.read(read_buf[carry_end..]) catch return error.ReadFailed;
+    var input_reader = input.reader(io, &io_reader_buf);
+    var nread = input_reader.interface.readSliceShort(read_buf[carry_end..]) catch return error.ReadFailed;
     const resolved_encoding = try resolveEncoding(
         read_buf[carry_end .. nread + carry_end],
         encoding,
@@ -369,7 +364,7 @@ fn run(
             read_buf[(carry_end - carry_partial.len) - carry_stable.len .. carry_end - carry_partial.len],
             carry_stable,
         );
-        nread = input.read(read_buf[carry_end..]) catch return error.ReadFailed;
+        nread = input_reader.interface.readSliceShort(read_buf[carry_end..]) catch return error.ReadFailed;
     }
     // Flush the leftover carry bytes
     const leftover = read_buf[carry_end - carried .. carry_end];

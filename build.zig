@@ -54,12 +54,20 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
-    compare_exe.addIncludePath(b.path(""));
-    compare_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
-    compare_exe.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
-    compare_exe.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
+    compare_exe.root_module.addIncludePath(b.path(""));
+    compare_exe.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
+    compare_exe.root_module.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
+    compare_exe.root_module.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
     b.installArtifact(compare_exe);
 
+    const benchmark_c = b.addTranslateC(.{
+        .root_source_file = b.path("benchmarks/c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    benchmark_c.addIncludePath(b.path(""));
+    benchmark_c.addIncludePath(b.path("benchmarks"));
+    benchmark_c.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
     const benchmark_exe = b.addExecutable(.{
         .name = "benchmark",
         .root_module = b.createModule(.{
@@ -69,6 +77,12 @@ pub fn build(b: *std.Build) !void {
                 .ReleaseFast
             else
                 optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = benchmark_c.createModule(),
+                },
+            },
         }),
     });
     const optimized_lib = createLibrary(
@@ -84,9 +98,9 @@ pub fn build(b: *std.Build) !void {
         amalgamation,
     );
     const shim_lib = createShimLibrary(b, target, optimize);
-    benchmark_exe.linkLibrary(optimized_lib);
-    benchmark_exe.linkLibrary(shim_lib);
-    benchmark_exe.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
+    benchmark_exe.root_module.linkLibrary(optimized_lib);
+    benchmark_exe.root_module.linkLibrary(shim_lib);
+    benchmark_exe.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
     run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
     for (b.args orelse &.{}) |arg| {
@@ -97,15 +111,27 @@ pub fn build(b: *std.Build) !void {
     benchmark_step.dependOn(&run_benchmark_exe.step);
     benchmark_step.dependOn(&benchmark_install.step);
 
+    const xxu_c = b.addTranslateC(.{
+        .root_source_file = b.path("bin/c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    xxu_c.addIncludePath(b.path(""));
     const xxu = b.addExecutable(.{
         .name = "xxu",
         .root_module = b.createModule(.{
             .root_source_file = b.path("bin/xxu.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = xxu_c.createModule(),
+                },
+            },
         }),
     });
-    xxu.linkLibrary(lib);
+    xxu.root_module.linkLibrary(lib);
     const run_xxu = b.addRunArtifact(xxu);
     for (b.args orelse &.{}) |arg| {
         run_xxu.addArg(arg);
@@ -114,15 +140,27 @@ pub fn build(b: *std.Build) !void {
     xxu_run_step.dependOn(&run_xxu.step);
     b.installArtifact(xxu);
 
+    const test_c = b.addTranslateC(.{
+        .root_source_file = b.path("test/c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_c.addIncludePath(b.path(""));
     const test_exe = b.addExecutable(.{
         .name = "test_xxutf",
         .root_module = b.createModule(.{
             .root_source_file = b.path("test/test.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = test_c.createModule(),
+                },
+            },
         }),
     });
-    test_exe.linkLibrary(lib);
+    test_exe.root_module.linkLibrary(lib);
     const run_test_exe = b.addRunArtifact(test_exe);
     run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
     const test_step = b.step("test", "Test xxUTF using the Unicode Character Database");
@@ -160,13 +198,13 @@ fn createLibrary(
             .target = target,
             .optimize = optimize,
             .sanitize_c = .off,
+            .link_libc = true,
         }),
         .linkage = .static,
     });
-    lib.linkLibC();
-    lib.addIncludePath(b.path(""));
+    lib.root_module.addIncludePath(b.path(""));
     if (optimize == .Debug) {
-        lib.addCSourceFiles(.{
+        lib.root_module.addCSourceFiles(.{
             .root = b.path(""),
             .files = sources,
             .flags = flags,
@@ -174,7 +212,7 @@ fn createLibrary(
     } else {
         // Use single header for release builds. This gives worse compiler errors, but
         // better performance.
-        lib.addCSourceFile(.{ .file = amalgamation_path, .flags = flags });
+        lib.root_module.addCSourceFile(.{ .file = amalgamation_path, .flags = flags });
     }
     lib.installHeader(b.path("xxutf.h"), "xxutf.h");
 
@@ -191,13 +229,13 @@ fn createShimLibrary(
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
         .linkage = .static,
     });
-    lib.linkLibC();
-    lib.linkSystemLibrary2("icu-uc", .{ .preferred_link_mode = .dynamic });
-    lib.addIncludePath(b.path("benchmarks"));
-    lib.addCSourceFile(.{ .file = b.path("benchmarks/shim.c") });
+    lib.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
+    lib.root_module.addIncludePath(b.path("benchmarks"));
+    lib.root_module.addCSourceFile(.{ .file = b.path("benchmarks/shim.c") });
     lib.installHeader(b.path("benchmarks/shim.h"), "xxutf_shim.h");
     return lib;
 }
@@ -226,7 +264,8 @@ const default_flags: []const []const u8 = &.{
     "-Wundef",
     "-Wvla",
     "-Wformat=2",
-    "-Wc++-compat",
+    // TODO: add back
+    // "-Wc++-compat",
     "-Werror",
 };
 

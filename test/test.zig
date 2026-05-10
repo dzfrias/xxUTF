@@ -1,7 +1,5 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("xxutf.h");
-});
+const c = @import("c");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
@@ -66,10 +64,9 @@ fn convertTest(comptime col: ColumnType, utf8_test: TestInfo(.utf8), allocator: 
 }
 
 fn extractComment(input: []const u8) ?struct { []const u8, []const u8 } {
-    const comment_start = std.mem.indexOfScalar(u8, input, '#') orelse return null;
-    const part1 = input[0..comment_start];
-    const comment = std.mem.trimLeft(u8, input[comment_start..], "# ");
-    return .{ part1, comment };
+    const cut = std.mem.cutScalar(u8, input, '#') orelse return null;
+    const comment = std.mem.cutPrefix(u8, cut[1], " ") orelse cut[1];
+    return .{ cut[0], comment };
 }
 
 fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo(.utf8) {
@@ -79,7 +76,7 @@ fn parseTestInfo(allocator: Allocator, input: []const u8) !TestInfo(.utf8) {
 
     var raw_cols: [5][]const u8 = undefined;
     {
-        const trimmed = std.mem.trimRight(u8, data, "; ");
+        const trimmed = std.mem.cutSuffix(u8, data, "; ") orelse @panic("bad data found");
         var cols_it = std.mem.splitScalar(u8, trimmed, ';');
         var i: usize = 0;
         while (cols_it.next()) |col| : (i += 1) raw_cols[i] = col;
@@ -337,25 +334,21 @@ fn printFailure(comptime col: ColumnType, writer: *std.Io.Writer, failure: Failu
     }
 }
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+pub fn main(init: std.process.Init) !void {
+    var args_it = init.minimal.args.iterate();
+    _ = args_it.next() orelse @panic("should have initial argument");
+    const arg1 = args_it.next() orelse return error.NeedArgument;
 
-    var args = std.process.args();
-    _ = args.next() orelse @panic("should have initial argument");
-    const arg1 = args.next() orelse return error.NeedArgument;
-
-    const file = try std.fs.openFileAbsolute(arg1, .{});
-    defer file.close();
+    const file = try std.Io.Dir.openFileAbsolute(init.io, arg1, .{});
+    defer file.close(init.io);
     var file_buffer: [1024]u8 = undefined;
-    var file_reader = file.reader(&file_buffer);
+    var file_reader = file.reader(init.io, &file_buffer);
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buffer);
     const stderr = &stderr_writer.interface;
 
     var i: usize = 0;
-    var root_node = std.Progress.start(.{ .root_name = "tests" });
+    var root_node = std.Progress.start(init.io, .{ .root_name = "tests" });
     var current_part: ?std.Progress.Node = null;
     while (try file_reader.interface.takeDelimiter('\n')) |line| : (i += 1) {
         if (std.mem.startsWith(u8, line, "#")) {
@@ -366,18 +359,18 @@ pub fn main() !void {
             const part_num = line["@Part".len];
             const comment = if (extractComment(line)) |e| e[1] else null;
             const part_name = try if (comment) |s|
-                std.fmt.allocPrint(allocator, "part {c} ({s})", .{ part_num, s })
+                std.fmt.allocPrint(init.arena.allocator(), "part {c} ({s})", .{ part_num, s })
             else
-                std.fmt.allocPrint(allocator, "part {c}", .{part_num});
+                std.fmt.allocPrint(init.arena.allocator(), "part {c}", .{part_num});
             current_part = root_node.start(part_name, 0);
             continue;
         }
-        var test_node = current_part.?.start(try std.fmt.allocPrint(allocator, "test (line {})", .{i + 1}), 1);
+        var test_node = current_part.?.start(try std.fmt.allocPrint(init.arena.allocator(), "test (line {})", .{i + 1}), 1);
         defer test_node.end();
-        const test_info = try parseTestInfo(allocator, line);
+        const test_info = try parseTestInfo(init.arena.allocator(), line);
 
         inline for (comptime std.meta.tags(ColumnType)) |col| {
-            const converted = try convertTest(col, test_info, allocator);
+            const converted = try convertTest(col, test_info, init.arena.allocator());
             inline for (comptime std.meta.tags(NormalizationForm)) |form| {
                 if (runTest(form, col, converted)) |failure| {
                     const form_name = switch (form) {
