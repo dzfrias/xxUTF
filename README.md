@@ -1,14 +1,5 @@
 # xxUTF
 
-- [Usage](#usage)
-- [API](#api)
-- [Streaming](#streaming)
-- [Benchmarks](#benchmarks)
-- [xxu](#xxu)
-- [Building](#building)
-- [Fuzzing](#fuzzing)
-- [License](#license)
-
 xxUTF is a C library that implements
 [Unicode](https://en.wikipedia.org/wiki/Unicode) text transformation algorithms
 at speed using SIMD. Current algorithms supported:
@@ -161,8 +152,8 @@ streaming normalization, read the [xxu](/bin/xxu.zig) program source code.
 
 ## xxu
 
-xxUTF also provides the `xxu` tool, puts the speed of the xxUTF library onto the
-command line. You can download the tool from the
+xxUTF also provides the `xxu` tool, which puts the speed of the xxUTF library
+onto the command line. You can download the tool from the
 [releases page](https://github.com/dzfrias/xxUTF/releases), or
 [build it from source](#building).
 
