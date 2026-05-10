@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("c");
+const flags = @import("flags");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -96,19 +97,59 @@ const ImplementationResult = struct {
     results: []const BenchResult,
 };
 
+const help =
+    \\The xxUTF benchmark runner
+    \\
+    \\Positionals:
+    \\  DIR  Set the directory that has the benchmark inputs
+    \\
+    \\Flags:
+    \\  -p, --patterns PATTERNS     A comma-separated list of implementations (defalt: all).
+    \\  -j, --json                  Output detailed JSON instead of a table graphic (default: false).
+    \\  -t, --test TEST             Run a spcific test, with file extension omitted.
+    \\  -h, --help                  Print this help and exit.
+    \\
+    \\Notes:
+    \\  Patterns are of the form:
+    \\    IMPL_ENCODING_ALGO
+    \\  Possible IMPL values:     icu, xxutf
+    \\  Possible ENCODING values: utf8, utf16le, utf16be
+    \\  Possible ALGO values:     nfd, nfkd, nfc, nfkc, cf
+    \\  Examples:
+    \\    zig build bench -- --patterns xxutf_utf8_nfd,icu_utf8_nfd
+    \\    zig build bench -- --patterns xxutf_utf8,icu_utf8
+    \\
+;
+
 pub fn main(init: std.process.Init) !void {
     var args_it = init.minimal.args.iterate();
     _ = args_it.next().?;
-    const input_dir_path = args_it.next() orelse return error.ArgumentError;
-    const arguments = try parseArgs(init.gpa, &args_it);
-    defer if (arguments.patterns) |patterns| init.gpa.free(patterns);
-    var input_dir = try std.Io.Dir.cwd().openDir(init.io, input_dir_path, .{ .iterate = true });
+    const result = flags.parseFromIterator(Flags, args_it, init.gpa) catch return error.ArgumentError;
+    const options = switch (result) {
+        .flags => |f| f,
+        .err => return error.ArgumentError,
+    };
+
+    if (options.help) {
+        var stderr = std.Io.File.stderr();
+        var stderr_buf: [2048]u8 = undefined;
+        var stderr_writer = stderr.writer(init.io, &stderr_buf);
+        try stderr_writer.interface.writeAll(help);
+        try stderr_writer.interface.flush();
+        return;
+    }
+
+    var input_dir = try std.Io.Dir.cwd().openDir(
+        init.io,
+        options.input_dir_path,
+        .{ .iterate = true },
+    );
     defer input_dir.close(init.io);
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
 
-    var results: ?std.ArrayList(ImplementationResult) = if (arguments.json)
+    var results: ?std.ArrayList(ImplementationResult) = if (options.json)
         .empty
     else
         null;
@@ -121,9 +162,11 @@ pub fn main(init: std.process.Init) !void {
         }
         r.deinit(init.gpa);
     };
+    const patterns = if (options.patterns) |s| try parseCommaList(init.gpa, s) else null;
+    defer if (patterns) |p| init.gpa.free(p);
     inline for (implementations) |impl| {
-        if (arguments.patterns == null or match: {
-            for (arguments.patterns.?) |pattern| {
+        if (patterns == null or match: {
+            for (patterns.?) |pattern| {
                 if (std.mem.indexOf(u8, impl[0], pattern) != null) {
                     break :match true;
                 }
@@ -135,9 +178,9 @@ pub fn main(init: std.process.Init) !void {
                 init.gpa,
                 impl[0],
                 stdout,
-                arguments.json,
+                options.json,
                 input_dir,
-                arguments.specific_test,
+                options.@"test",
                 impl[2],
                 impl[1],
             );
@@ -158,41 +201,34 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-const Arguments = struct {
-    specific_test: ?[]const u8 = null,
-    patterns: ?[]const []const u8 = null,
-    json: bool = false,
+const Flags = struct {
+    input_dir_path: []const u8,
+    @"test": ?[]const u8,
+    patterns: ?[]const u8,
+    json: bool,
+    help: bool,
+
+    pub const positionals = .{
+        .input_dir_path = void,
+    };
+    pub const shorts = .{
+        .json = 'j',
+        .patterns = 'p',
+        .@"test" = 't',
+    };
+    pub const standalone = .{
+        .help = void,
+    };
 };
 
-fn parseArgs(allocator: Allocator, args: *std.process.Args.Iterator) !Arguments {
-    var arguments: Arguments = .{};
-    while (args.next()) |arg| {
-        const eq_pos = std.mem.indexOfScalar(u8, arg, '=') orelse return error.ArgumentError;
-        const arg_name = arg[0..eq_pos];
-        const value = arg[eq_pos + 1 ..];
-
-        if (std.mem.eql(u8, arg_name, "-p")) {
-            var patterns: std.ArrayListUnmanaged([]const u8) = .empty;
-            defer patterns.deinit(allocator);
-            const first_sep_pos = std.mem.indexOfScalar(u8, value, ',') orelse value.len;
-            try patterns.append(allocator, value[0..first_sep_pos]);
-            var p = first_sep_pos + 1;
-            while (p < value.len) {
-                const sep_pos = std.mem.indexOfScalar(u8, value[p..], ',') orelse value[p..].len;
-                try patterns.append(allocator, value[p .. p + sep_pos]);
-                p += sep_pos + 1;
-            }
-            arguments.patterns = try patterns.toOwnedSlice(allocator);
-        } else if (std.mem.eql(u8, arg_name, "-t")) {
-            arguments.specific_test = value;
-        } else if (std.mem.eql(u8, arg_name, "-j") and std.mem.eql(u8, value, "true")) {
-            arguments.json = true;
-        } else {
-            return error.ArgumentError;
-        }
+fn parseCommaList(allocator: Allocator, patterns: []const u8) ![]const []const u8 {
+    var parsed: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer parsed.deinit(allocator);
+    var split_it = std.mem.splitScalar(u8, patterns, ',');
+    while (split_it.next()) |pat| {
+        try parsed.append(allocator, pat);
     }
-
-    return arguments;
+    return try parsed.toOwnedSlice(allocator);
 }
 
 fn writeHeader(out: *std.Io.Writer, title: []const u8) !void {

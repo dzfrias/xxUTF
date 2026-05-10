@@ -1,9 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
+const flags = @import("flags");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const flags = @import("./flags.zig");
 
 const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };

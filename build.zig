@@ -60,6 +60,12 @@ pub fn build(b: *std.Build) !void {
     compare_exe.root_module.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
     b.installArtifact(compare_exe);
 
+    const flags_module = b.createModule(.{
+        .root_source_file = b.path("bin/flags.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const benchmark_c = b.addTranslateC(.{
         .root_source_file = b.path("benchmarks/c.h"),
         .target = target,
@@ -81,6 +87,10 @@ pub fn build(b: *std.Build) !void {
                 .{
                     .name = "c",
                     .module = benchmark_c.createModule(),
+                },
+                .{
+                    .name = "flags",
+                    .module = flags_module,
                 },
             },
         }),
@@ -127,6 +137,10 @@ pub fn build(b: *std.Build) !void {
                 .{
                     .name = "c",
                     .module = xxu_c.createModule(),
+                },
+                .{
+                    .name = "flags",
+                    .module = flags_module,
                 },
             },
         }),
