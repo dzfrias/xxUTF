@@ -50,21 +50,7 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
     }
   }
 
-  uint16x4_t index = vshr_n_u16(chars, 6);
-  uint16x4_t block_index = {
-      NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[vget_lane_u16(index, 0)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[vget_lane_u16(index, 1)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[vget_lane_u16(index, 2)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[vget_lane_u16(index, 3)],
-  };
-  uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));
-  uint16x4_t data_offset = vadd_u16(block_index, masked);
-  uint16x4_t values = {
-      NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 0)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 1)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 2)],
-      NORMDATA_UTF8_CASEFOLD_TRIE_DATA[vget_lane_u16(data_offset, 3)],
-  };
+  uint16x4_t values = NEON_TRIE_LOOKUP(NORMDATA_UTF8_CASEFOLD_TRIE, chars);
   if (vmaxv_u16(values) == 0) {
     vst1q_u8(*out, in);
     *out += nbytes;
@@ -147,21 +133,8 @@ static size_t neon_casefold_masked_utf8_length(const uint8_t *input,
       return n_bytes;
     }
   }
-  uint16x4_t index = vshr_n_u16(chars, 6);
-  uint16x4_t block_index = {
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[vget_lane_u16(index, 0)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[vget_lane_u16(index, 1)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[vget_lane_u16(index, 2)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[vget_lane_u16(index, 3)],
-  };
-  uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));
-  uint16x4_t data_offset = vadd_u16(block_index, masked);
-  uint16x4_t values = {
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[vget_lane_u16(data_offset, 0)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[vget_lane_u16(data_offset, 1)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[vget_lane_u16(data_offset, 2)],
-      NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[vget_lane_u16(data_offset, 3)],
-  };
+  uint16x4_t values =
+      NEON_TRIE_LOOKUP(NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE, chars);
   *out_length += vaddv_u16(values);
   return n_bytes;
 }
