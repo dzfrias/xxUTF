@@ -182,16 +182,15 @@ UTF16_HELPERS(be);
 
 #undef UTF16_HELPERS
 
-static bool equal(const char *a, const char *b) {
-  for (size_t i = 0;; i++) {
-    if (a[i] == '\0') {
-      return b[i] == '\0';
-    }
+static bool equal(const char *a, size_t a_len, const char *b, size_t b_len) {
+  if (a_len != b_len) {
+    return false;
+  }
+  for (size_t i = 0; i < a_len; i++) {
     if (a[i] != b[i]) {
       return false;
     }
   }
-
   return true;
 }
 
@@ -256,9 +255,7 @@ static bool compare_casefold_utf8(const char *input, size_t length,
     return false;
   }
 
-  icu_out[icu_out_length] = '\0';
-  xxutf_out[xxutf_out_length] = '\0';
-  if (!equal(xxutf_out, icu_out)) {
+  if (!equal(xxutf_out, xxutf_out_length, icu_out, icu_out_length)) {
     if (verbose) {
       printf("Buffers (UTF-8, CF) not equal\n");
       printf("   input: ");
@@ -356,10 +353,7 @@ static bool compare_casefold_utf8(const char *input, size_t length,
       return false;                                                            \
     }                                                                          \
                                                                                \
-    icu_out[icu_out_length] = '\0';                                            \
-    xxutf_out[xxutf_out_length] = '\0';                                        \
-                                                                               \
-    if (!equal(xxutf_out, icu_out)) {                                          \
+    if (!equal(xxutf_out, xxutf_out_length, icu_out, icu_out_length)) {        \
       if (verbose) {                                                           \
         printf("Buffers (%s, CF) not equal\n", "UTF-16" #endianness_upper);    \
         printf("   input: ");                                                  \
@@ -446,10 +440,7 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    icu_out[icu_out_length] = '\0';                                            \
-    xxutf_out[xxutf_out_length] = '\0';                                        \
-                                                                               \
-    if (!equal(xxutf_out, icu_out)) {                                          \
+    if (!equal(xxutf_out, xxutf_out_length, icu_out, icu_out_length)) {        \
       if (verbose) {                                                           \
         printf("Buffers (UTF-8, %s) not equal\n", #form_upper);                \
         printf("   input: ");                                                  \
@@ -565,10 +556,7 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    icu_out[icu_out_length] = '\0';                                            \
-    xxutf_out[xxutf_out_length] = '\0';                                        \
-                                                                               \
-    if (!equal(xxutf_out, icu_out)) {                                          \
+    if (!equal(xxutf_out, xxutf_out_length, icu_out, icu_out_length)) {        \
       if (verbose) {                                                           \
         printf("Buffers (%s, %s) not equal\n", "UTF-16" #endianness_upper,     \
                #form_upper);                                                   \
