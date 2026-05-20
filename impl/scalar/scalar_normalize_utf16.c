@@ -192,10 +192,11 @@ SCALAR_UTF16_HELPERS(be);
       *ccc = 0;                                                                      \
       return 0;                                                                      \
     }                                                                                \
-    *ccc = (value >> 21) & 0xFF;                                                     \
-    uint8_t length = (value >> 15) & 0x3F;                                           \
+    *ccc = value >> 24;                                                              \
+    uint8_t delta = (value >> 14) & 0x3F;                                            \
+    uint8_t length = delta + 2;                                                      \
     XXUTF_ASSERT(length % 2 == 0);                                                   \
-    uint16_t offset = value & 0x7FFF;                                                \
+    uint16_t offset = value & 0x3FFF;                                                \
     const uint8_t *bytes =                                                           \
         &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
     for (size_t k = 0; k < length; k += 2) {                                         \
@@ -208,7 +209,7 @@ SCALAR_UTF16_HELPERS(be);
       }                                                                              \
       out += 2;                                                                      \
     }                                                                                \
-    uint8_t ccc_delta = value >> 29;                                                 \
+    uint8_t ccc_delta = (value >> 20) & 0b111;                                       \
     *first_ccc = ccc_delta == 0 ? 0 : *ccc - ccc_delta;                              \
     return out - start;                                                              \
   }                                                                                  \

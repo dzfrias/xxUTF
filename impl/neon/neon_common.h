@@ -32,6 +32,14 @@ uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars);
 // lesat 64 bytes of space.
 void neon_memcpy_small(uint8_t *dst, const uint8_t *src);
 
+// Create a movemask based on byte-wise logical vector. This movemask differs
+// from traditional movemasks; for every bit in a traditional movemask, there
+// are four copies of that bit in bitmask4. For example, 011 -> 000011111111.
+//
+// The incentive of using this function over traditional movemask functions is
+// that it is very fast on ARM NEON.
+uint64_t neon_bitmask4(uint8x16_t v);
+
 // Pass a code point vector through the NFC bloom filter, which will return a
 // vector of 0s and 0xFFFFFFFFs probabilistically indicating whether the
 // corresponding code point has an decomposition or is a combining character.

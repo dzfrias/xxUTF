@@ -67,9 +67,10 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
                                                                                \
   /* Decompose UTF-16 code points that have some number of precomposed or      \
    * combining characters in them, but no precomposed Hangul syllables. */     \
-  static inline void neon_write_non_hangul_utf16##endianness##_##decomp_form(  \
-      uint32x4_t values, uint8_t **out, size_t out_length,                     \
-      const uint8_t *input, uint8_t *last_ccc) {                               \
+  static inline void                                                           \
+      neon_write_non_hangul_utf16##endianness##_##decomp_form##_fallback(      \
+          uint32x4_t values, uint8_t **out, size_t out_length,                 \
+          const uint8_t *input, uint8_t *last_ccc) {                           \
     for (size_t i = 0; i < 4; i++) {                                           \
       uint32_t value = values[i];                                              \
       if (value == 0) {                                                        \
@@ -78,12 +79,13 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
         *last_ccc = 0;                                                         \
         continue;                                                              \
       }                                                                        \
-      uint8_t ccc = (value >> 21) & 0xFF;                                      \
-      uint8_t ccc_delta = value >> 29;                                         \
+      uint8_t ccc = value >> 24;                                               \
+      uint8_t ccc_delta = (value >> 20) & 0b111;                               \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0x7FFF];   \
-      uint8_t length = (value >> 15) & 0x3F;                                   \
+                                                                    0x3FFF];   \
+      uint8_t delta = (value >> 14) & 0x3F;                                    \
+      uint8_t length = delta + 2;                                              \
       /* `length` is length in bytes, not code units */                        \
       XXUTF_ASSERT(length % 2 == 0);                                           \
       uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
@@ -114,41 +116,58 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
   }                                                                            \
                                                                                \
   static inline void                                                           \
-      neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
-          uint32x4_t values, uint8_t **out, const uint8_t *input,              \
-          uint8_t *last_ccc) {                                                 \
-    *last_ccc = 0;                                                             \
-    for (size_t i = 0; i < 4; i++) {                                           \
+      neon_write_non_hangul_simple_utf16##endianness##_##decomp_form(          \
+          uint16x4_t chars, uint32x4_t delta, uint32x4_t values,               \
+          uint8_t *out) {                                                      \
+    /* Get all characters that can be decomposed */                            \
+    uint32x4_t decomps =                                                       \
+        vcgtq_u32(vandq_u32(values, vdupq_n_u32(1 << 23)), vdupq_n_u32(0));    \
+    /* Divide delta by 2 and replaces non-decomposable character deltas with   \
+     * 0b11. */                                                                \
+    uint32x4_t length_fixup =                                                  \
+        vbslq_u32(decomps, vshrq_n_u32(delta, 1), vdupq_n_u32(0b11));          \
+    uint32x4_t shifts = {0, 2, 4, 6};                                          \
+    uint32x4_t shifted_lengths = vshlq_u32(length_fixup, shifts);              \
+    /* Create a packed integer representing entries of `length_fixup` */       \
+    uint32_t packed_shift = vaddvq_u32(shifted_lengths);                       \
+    XXUTF_ASSERT(packed_shift < 256);                                          \
+    /* Load the pre-made index table. In the UTF-8 NF(K)D implementation, we   \
+     * created this index table at runtime. But we can take advantage of the   \
+     * simplicity of UTF-16 to generate all possible index tables at compile   \
+     * time. */                                                                \
+    uint8x16_t index = vld1q_u8(NORMDATA_UTF16_DECOMP_SHUF[packed_shift]);     \
+    /* Each 8 byte sub-table at position `i` holds the potential decomposition \
+     * of the character `chars[i / 8]`. There are four 8 byte sub-tables       \
+     * because there are four characters. */                                   \
+    uint8_t tbls[4 * 8];                                                       \
+    /* Create a bitmask corresponding to `decomps` that we can iterate         \
+     * through.                                                                \
+     */                                                                        \
+    uint64_t bitmask16 =                                                       \
+        neon_bitmask4(vreinterpretq_u8_u16(decomps)) & 0x8000800080008000ULL;  \
+    for (; bitmask16 > 0; bitmask16 &= bitmask16 - 1) {                        \
+      uint32_t i = __builtin_ctzll(bitmask16) >> 4;                            \
       uint32_t value = values[i];                                              \
-      if (value == 0) {                                                        \
-        *(*out)++ = *input++;                                                  \
-        *(*out)++ = *input++;                                                  \
-        continue;                                                              \
-      }                                                                        \
-      const uint8_t *decomp_offset =                                           \
+      /* Load the character's decomposition */                                 \
+      uint8x8_t decomp_bytes = vld1_u8(                                        \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0x7FFF];   \
-      uint8_t length = (value >> 15) & 0x3F;                                   \
-      XXUTF_ASSERT(length % 2 == 0);                                           \
-      uint8x16_t decomp_bytes = vld1q_u8(decomp_offset);                       \
+                                                                    0x3FFF]);  \
       if (is_big_endian) {                                                     \
-        decomp_bytes = vrev16q_u8(decomp_bytes);                               \
+        decomp_bytes = vrev16_u8(decomp_bytes);                                \
       }                                                                        \
-      vst1q_u8(*out, decomp_bytes);                                            \
-      if (large_decompositions && XXUTF_UNLIKELY(length > 16)) {               \
-        for (size_t j = 16; j < length; j += 2) {                              \
-          if (is_big_endian) {                                                 \
-            (*out)[j] = decomp_offset[j + 1];                                  \
-            (*out)[j + 1] = decomp_offset[j];                                  \
-          } else {                                                             \
-            (*out)[j] = decomp_offset[j];                                      \
-            (*out)[j + 1] = decomp_offset[j + 1];                              \
-          }                                                                    \
-        }                                                                      \
-      }                                                                        \
-      *out += length;                                                          \
-      input += 2;                                                              \
+      vst1_u8(&tbls[i * 8], decomp_bytes);                                     \
     }                                                                          \
+    uint8x16_t bytes =                                                         \
+        vcombine_u16(vreinterpret_u16_u8(chars), vdup_n_u16(0));               \
+    if (is_big_endian) {                                                       \
+      bytes = vrev16q_u8(bytes);                                               \
+    }                                                                          \
+    /* Create the table that holds the original bytes and the decomposition    \
+     * sub-tables. */                                                          \
+    uint8x16x3_t tbl = {bytes, vld1q_u8(&tbls[0]), vld1q_u8(&tbls[16])};       \
+    uint8x16_t decomposed = vqtbl3q_u8(tbl, index);                            \
+    /* Write the decomposition table */                                        \
+    vst1q_u8(out, decomposed);                                                 \
   }                                                                            \
                                                                                \
   /* Decompose four UTF-16 code points in the BMP. */                          \
@@ -170,6 +189,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     };                                                                         \
     uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                     \
     uint16x4_t data_offset = vadd_u16(block_index, masked);                    \
+    /* TODO: would like to use macro for this. Need 32 bit counterpart */      \
     uint32x4_t values = {                                                      \
         NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(          \
             data_offset, 0)],                                                  \
@@ -188,16 +208,50 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       neon_skip_decomp_utf16##endianness(in_dummy, 8, out, last_ccc);          \
       return;                                                                  \
     }                                                                          \
-    uint32x4_t ccc_mask = vandq_u32(values, vdupq_n_u32(0x1FE00000UL));        \
-    bool non_starter_result = vmaxvq_u32(ccc_mask) > 0;                        \
-    if (!non_starter_result && !hangul_result) {                               \
+    /* Get the delta values. Note that the trie value format specifies using 6 \
+     * bits for the delta, but we actually mask 9 bits here. This is an        \
+     * optimization that takes advantage of the fact that the ccc_delta bits   \
+     * are right next to the delta. In the event of a non-zero ccc_delta, this \
+     * 9 bit value will be very large and will cause the total <= 16 check to  \
+     * fail, putting us in the slow path, which is what we want because        \
+     * non-zero ccc_deltas should put us in the slow path. This means we can   \
+     * avoid explicitly checking ccc_delta bits.*/                             \
+    uint32x4_t delta = vandq_u32(vshrq_n_u32(values, 14), vdupq_n_u32(0x1FF)); \
+    /* All code points are two bytes wide, and we have four of them, so the    \
+     * total should be 8 + (the totaldecomposition size). */                   \
+    uint32_t total = 8 + vaddvq_u32(delta);                                    \
+    uint32x4_t ccc_values = vshrq_n_u32(values, 24);                           \
+    /* Shift ccc values right by one and insert last_ccc */                    \
+    uint32x4_t shifted_ccc = vextq_u32(vdupq_n_u32(*last_ccc), ccc_values, 3); \
+    uint32x4_t starters = vceqq_u32(ccc_values, vdupq_n_u32(0));               \
+    /* Replace all starter ccc's (0) with 255 */                               \
+    uint32x4_t ccc_fixup = vbslq_u32(starters, vdupq_n_u32(255), ccc_values);  \
+    /* Any non-zero entry corresponds to out of order ccc's */                 \
+    uint32x4_t ccc_lt = vcltq_u32(ccc_fixup, shifted_ccc);                     \
+    /* There are four conditions in which we would enter the slow path:        \
+     *                                                                         \
+     * 1. We have a precomposed Hangul character.                              \
+     * 2. The total number of bytes we need to write the decomposition of the  \
+     *    input bytes would be greater than 16.                                \
+     * 3. We've detected that combining characters are out-of-order.           \
+     * 4. We have a character that adds more than 2 extra characters after     \
+     *    decomposition (there are a little over 100 of such characters in the \
+     *    BMP).                                                                \
+     *                                                                         \
+     * All of these conditions are rather uncommon, except for the first one   \
+     * when dealing with Korean text.                                          \
+     */                                                                        \
+    if (XXUTF_LIKELY(!hangul_result && total <= 16 &&                          \
+                     vmaxvq_u32(ccc_lt) == 0 && vmaxvq_u32(delta) < 6)) {      \
+      *last_ccc = vgetq_lane_u32(ccc_values, 3);                               \
       /* Special path with no combining code points and no Hangul characters   \
        */                                                                      \
-      neon_write_non_hangul_starters_utf16##endianness##_##decomp_form(        \
-          values, out, input, last_ccc);                                       \
-    } else if (non_starter_result && !hangul_result) {                         \
-      /* Path with combining code points but no Hangul characters */           \
-      neon_write_non_hangul_utf16##endianness##_##decomp_form(                 \
+      neon_write_non_hangul_simple_utf16##endianness##_##decomp_form(          \
+          chars, delta, values, *out);                                         \
+      *out += total;                                                           \
+    } else if (!hangul_result) {                                               \
+      /* Fallback path without Hangul characters */                            \
+      neon_write_non_hangul_utf16##endianness##_##decomp_form##_fallback(      \
           values, out, out_length, input, last_ccc);                           \
     } else if (hangul_result && !decomp_result) {                              \
       /* Path with only Hangul characters but no decomposable/combining code   \
@@ -205,6 +259,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       neon_write_hangul_utf16##endianness##_##decomp_form(                     \
           chars, hangul_mask, out, input, last_ccc);                           \
     } else {                                                                   \
+      /* Path with both decomposable characters AND Hangul characters */       \
       *out +=                                                                  \
           scalar_normalize_utf16##endianness##_##decomp_form##_with_context(   \
               input, 8, *out, out_length, last_ccc);                           \
@@ -294,8 +349,9 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       XXUTF_ASSERT(decomp_value != 0);                                         \
       const uint8_t *decomp_offset =                                           \
           &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS            \
-              [decomp_value & 0x7FFF];                                         \
-      uint8_t length = (decomp_value >> 15) & 0x3F;                            \
+              [decomp_value & 0x3FFF];                                         \
+      uint8_t delta = (decomp_value >> 14) & 0x3F;                             \
+      uint8_t length = delta + 2;                                              \
       XXUTF_ASSERT(length <= 8);                                               \
       uint8x8_t decomp_bytes = vld1_u8(decomp_offset);                         \
       if (is_big_endian) {                                                     \
@@ -304,7 +360,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       vst1_u8(*out, decomp_bytes);                                             \
       *out += length;                                                          \
                                                                                \
-      uint8_t ccc = (decomp_value >> 21) & 0xFF;                               \
+      uint8_t ccc = decomp_value >> 24;                                        \
       if (ccc != 0 && *last_ccc > ccc) {                                       \
         ccc = scalar_sort_characters_utf16##endianness(                        \
             *out, out_length + (*out - start));                                \

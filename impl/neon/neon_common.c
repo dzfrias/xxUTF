@@ -80,6 +80,12 @@ void neon_memcpy_small(uint8_t *dst, const uint8_t *src) {
   vst1q_u8(dst + 48, vld1q_u8(src + 48));
 }
 
+uint64_t neon_bitmask4(uint8x16_t v) {
+  uint16x8_t v16 = vreinterpretq_u16_u8(v);
+  uint8x8_t res = vshrn_n_u16(v16, 4);
+  return vget_lane_u64(vreinterpret_u64_u8(res), 0);
+}
+
 // Taken from simdutf
 uint16x4_t neon_parse_3_byte_utf8(uint8x16_t in) {
   const uint8x16_t sh = {0, 2, 3, 5, 6, 8, 9, 11, 1, 1, 4, 4, 7, 7, 10, 10};

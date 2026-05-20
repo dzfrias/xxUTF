@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 from itertools import batched
 from dataclasses import dataclass
 from trie import Trie
@@ -469,6 +470,38 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
     writer.write("};\n")
     headers.append(HeaderDef.array("NORMDATA_HANGUL_SHUF", "NormdataHangulShuf", 16))
 
+    writer.write(f"\nconst uint8_t NORMDATA_UTF16_DECOMP_SHUF[256][16] = {{\n")
+    for x in range(1 << 8):
+        tbl = list(range(16))
+        s = f"{x:08b}"
+        pairs = [int(s[i : i + 2], 2) for i in range(0, len(s), 2)]
+        pairs.reverse()
+        # In this case, we can't fit the decomposition into 16 bytes
+        if sum(x % 3 for x in pairs) > 4:
+            tbl = [255] * 16
+            writer.write(f"  {{{", ".join(map(str, tbl))}}},\n")
+            continue
+        displacement = 0
+        for i, delta in enumerate(pairs):
+            if delta == 0b11:
+                continue
+            lookup_base = 16 + (i * 8)
+            decomp_size = 2 + (delta * 2)
+            tbl_pos = (i * 2) + displacement
+            tbl[tbl_pos : tbl_pos + decomp_size] = list(
+                range(lookup_base, lookup_base + decomp_size)
+            )
+            tbl[tbl_pos + decomp_size : 16] = [
+                j - (delta * 2) for j in tbl[tbl_pos + decomp_size :]
+            ]
+            displacement += delta * 2
+        assert len(tbl) == 16
+        writer.write(f"  {{{", ".join(map(str, tbl))}}},\n")
+    writer.write("};\n")
+    headers.append(
+        HeaderDef.multi_array("NORMDATA_UTF16_DECOMP_SHUF", "uint8_t", [256, 16])
+    )
+
     return headers
 
 
@@ -687,23 +720,25 @@ def load_decomp_maps() -> tuple[DecompMap, DecompMap]:
     return nfd_map, nfkd_map
 
 
-def create_decomp_trie(
-    decomp_map: DecompMap, encoding: str, decomp_bound: int
+def create_decomp_trie_utf16(
+    decomp_map: DecompMap, decomp_bound: int
 ) -> tuple[Trie, list[int]]:
     trie = Trie()
-    data: list[int] = []
+    data: list[int] = [0]
     for x in range(0x10000):
         if x not in decomp_map:
             trie.set(x, 0)
             continue
         decomp = decomp_map[x]
         offset = len(data)
-        # We use the lower 16 bits for the offset into the data table
-        assert offset <= 0xFFFF
+        # We use the lower 14 bits for the offset into the data table
+        assert offset <= 0x3FFF
         for c in decomp.decomps:
-            data.extend(chr(c).encode(encoding))
+            data.extend(chr(c).encode("UTF-16LE"))
         length = len(data) - offset
         assert length <= decomp_bound
+        delta = length - 2
+        assert delta >= 0
         first_ccc = 0
         last_ccc = 0
         if decomp.decomps[-1] in decomp_map:
@@ -718,26 +753,29 @@ def create_decomp_trie(
             ):
                 first_ccc = ccc_vals[0]
                 assert last_ccc - first_ccc in range(0, 8)
-                final_decomp = 15
         ccc_delta = 0 if first_ccc == 0 else last_ccc - first_ccc
         assert ccc_delta <= 0b111
         trie.set(
             x,
-            (ccc_delta << 29) | (last_ccc << 21) | (length << 15) | offset,
+            (last_ccc << 24)
+            | (int(decomp.decomps[0] != x) << 23)
+            | (ccc_delta << 20)
+            | (delta << 14)
+            | offset,
         )
     trie.compact()
     return trie, data
 
 
-def create_decomp_trie_2(
-    decomp_map: DecompMap, encoding: str, decomp_bound: int
+def create_decomp_trie_utf8(
+    decomp_map: DecompMap, decomp_bound: int
 ) -> tuple[Trie, Trie, list[int]]:
     trie = Trie()
     decomp_trie = Trie()
     data: list[int] = [0]
     for x in range(0x10000):
         try:
-            size = len(chr(x).encode(encoding))
+            size = len(chr(x).encode("UTF-8"))
         except UnicodeEncodeError:
             continue
         if x not in decomp_map:
@@ -749,10 +787,10 @@ def create_decomp_trie_2(
         # We use the lower 16 bits for the offset into the data table
         assert offset <= 0xFFFF
         for c in decomp.decomps:
-            data.extend(chr(c).encode(encoding))
+            data.extend(chr(c).encode("UTF-8"))
         length = len(data) - offset
         assert length <= decomp_bound
-        decomp_delta = length - len(chr(x).encode(encoding))
+        decomp_delta = length - len(chr(x).encode("UTF-8"))
         final_decomp = min(decomp_delta, 15)
         first_ccc = 0
         last_ccc = 0
@@ -775,6 +813,10 @@ def create_decomp_trie_2(
         # `decomp_trie` trie should be used to get length information.
         if length > 8:
             final_decomp = 15
+        # TODO: we can use the fact that last_ccc is also stored in the
+        # decomp_trie to do the following optimization: put 255 here
+        # instead of 0 for starters. This removes the need for fixing
+        # up the ccc at runtime. Maybe.
         value = (
             ((final_decomp & 0x1F) << 11)
             | (int(decomp.decomps[0] != x) << 10)
@@ -1058,18 +1100,15 @@ def main() -> None:
         default_hash_scheme,
         non_starters,
     )
-    utf8_nfd_trie, utf8_nfd_data_trie, utf8_nfd_data = create_decomp_trie_2(
-        nfd_map, "UTF-8", decomp_bound=16
+    utf8_nfd_trie, utf8_nfd_data_trie, utf8_nfd_data = create_decomp_trie_utf8(
+        nfd_map, decomp_bound=16
     )
-    utf8_nfkd_trie, utf8_nfkd_data_trie, utf8_nfkd_data = create_decomp_trie_2(
-        nfkd_map, "UTF-8", decomp_bound=48
+    utf8_nfkd_trie, utf8_nfkd_data_trie, utf8_nfkd_data = create_decomp_trie_utf8(
+        nfkd_map, decomp_bound=48
     )
-    utf16_nfd_trie, utf16_nfd_data = create_decomp_trie(
-        nfd_map, "UTF-16LE", decomp_bound=16
-    )
-    utf16_nfkd_trie, utf16_nfkd_data = create_decomp_trie(
+    utf16_nfd_trie, utf16_nfd_data = create_decomp_trie_utf16(nfd_map, decomp_bound=16)
+    utf16_nfkd_trie, utf16_nfkd_data = create_decomp_trie_utf16(
         nfkd_map,
-        "UTF-16LE",
         decomp_bound=48,
     )
     ccc_trie = Trie()

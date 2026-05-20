@@ -165,12 +165,6 @@ static inline uint16x8_t neon_prefix_sum_uint16x8(uint16x8_t v) {
   return v;
 }
 
-static inline uint64_t neon_bitmask4(uint8x16_t v) {
-  uint16x8_t v16 = vreinterpretq_u16_u8(v);
-  uint8x8_t res = vshrn_n_u16(v16, 4);
-  return vget_lane_u64(vreinterpret_u64_u8(res), 0);
-}
-
 // Taken from simdutf
 static uint16x8_t neon_parse_2_byte_utf8_wide(uint8x16_t in) {
   // 10bbbbbb 110aaaaa
