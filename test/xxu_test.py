@@ -37,7 +37,7 @@ def compare(xxu_bin, algorithm, name, contents, encoding):
     assert uconv_result.returncode == 0
     if xxu_result.stdout != uconv_result.stdout:
         print(
-            f"got output mismatch for input {name} (algorithm: {algorithm}, encoding: {encoding})"
+            f"\ngot output mismatch for input {name} (algorithm: {algorithm}, encoding: {encoding})"
         )
         sys.exit(1)
 
