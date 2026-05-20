@@ -144,4 +144,25 @@ uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in);
     _values;                                                                   \
   })
 
+#define NEON_TRIE_LOOKUP_32(trie_name, code_points)                            \
+  ({                                                                           \
+    uint16x4_t _x = (code_points);                                             \
+    uint16x4_t _index = vshr_n_u16(_x, 6);                                     \
+    uint16x4_t _block_index = {                                                \
+        trie_name##_INDEX[vget_lane_u16(_index, 0)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 1)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 2)],                           \
+        trie_name##_INDEX[vget_lane_u16(_index, 3)],                           \
+    };                                                                         \
+    uint16x4_t _masked = vand_u16(_x, vdup_n_u16(0x3F));                       \
+    uint16x4_t _data_offset = vadd_u16(_block_index, _masked);                 \
+    uint32x4_t _values = {                                                     \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 0)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 1)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 2)],                      \
+        trie_name##_DATA[vget_lane_u16(_data_offset, 3)],                      \
+    };                                                                         \
+    _values;                                                                   \
+  })
+
 #endif // XXUTF_NEON_COMMON_H

@@ -176,30 +176,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       size_t out_length, uint8_t *last_ccc) {                                  \
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                          \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                           \
-    uint16x4_t index = vshr_n_u16(chars, 6);                                   \
-    uint16x4_t block_index = {                                                 \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,   \
-                                                                      0)],     \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,   \
-                                                                      1)],     \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,   \
-                                                                      2)],     \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[vget_lane_u16(index,   \
-                                                                      3)],     \
-    };                                                                         \
-    uint16x4_t masked = vand_u16(chars, vdup_n_u16(0x3F));                     \
-    uint16x4_t data_offset = vadd_u16(block_index, masked);                    \
-    /* TODO: would like to use macro for this. Need 32 bit counterpart */      \
-    uint32x4_t values = {                                                      \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(          \
-            data_offset, 0)],                                                  \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(          \
-            data_offset, 1)],                                                  \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(          \
-            data_offset, 2)],                                                  \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[vget_lane_u16(          \
-            data_offset, 3)],                                                  \
-    };                                                                         \
+    uint32x4_t values =                                                        \
+        NEON_TRIE_LOOKUP_32(NORMDATA_UTF16_##decomp_form_upper##_TRIE, chars); \
     bool decomp_result = vmaxvq_u32(values) > 0;                               \
     /* With no Hangul characters and no decomposable/combining code points, we \
      * can skip */                                                             \
