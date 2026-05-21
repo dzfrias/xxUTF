@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import sys
-from itertools import batched
 from dataclasses import dataclass
+from itertools import batched
+from typing import Collection
 from trie import Trie
 
 
@@ -47,7 +48,7 @@ def my_hash(x: int, salt: int, n: int) -> int:
 
 # Compute minimal perfect hash function
 # Taken from the unicode-rs/unicode-normalization project
-def minimal_perfect_hash(d: DecompMap) -> tuple[list[int], list[int]]:
+def minimal_perfect_hash(d: Collection[int]) -> tuple[list[int], list[int]]:
     n = len(d)
     buckets: dict[int, list[int]] = dict((h, []) for h in range(n))
     for key in d:
@@ -982,9 +983,9 @@ class DerivedProps:
 
 
 def load_derived_props() -> DerivedProps:
-    exclusions = []
-    nfc_qc = []
-    nfkc_qc = []
+    exclusions: list[int] = []
+    nfc_qc: list[int] = []
+    nfkc_qc: list[int] = []
 
     with open("DerivedNormalizationProps.txt", "r") as f:
         for line in f:

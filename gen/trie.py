@@ -38,10 +38,10 @@ class Trie:
         self.data[block + (c & MASK)] = value
 
     def compact(self) -> None:
-        compressed = []
+        compressed: list[int] = []
 
         # Keeps track of blocks that we've seen before
-        blocks = {}
+        blocks: dict[tuple, int] = {}
         for i in range(len(self.index)):
             block_index = self.index[i]
             block_slice = self.data[block_index : block_index + BLOCK_LENGTH]
