@@ -3,7 +3,7 @@
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <arm_neon.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,11 +38,11 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
     chars = neon_parse_2_byte_utf8(in);
     nbytes = 8;
   } else {
-    uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];
-    nbytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];
-    if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+    uint8_t idx = UNIDATA_CODE_POINT_INDEX[sml_mask][0];
+    nbytes = UNIDATA_CODE_POINT_INDEX[sml_mask][1];
+    if (idx < UNIDATA_SHUFUTF8_INDEX_12) {
       chars = neon_parse_4_12_utf8(in, idx);
-    } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
+    } else if (idx < UNIDATA_SHUFUTF8_INDEX_123) {
       chars = neon_parse_4_123_utf8(in, idx);
     } else {
       *out += scalar_casefold_utf8(input, nbytes, *out);
@@ -50,7 +50,7 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
     }
   }
 
-  uint16x4_t values = NEON_TRIE_LOOKUP(NORMDATA_UTF8_CASEFOLD_TRIE, chars);
+  uint16x4_t values = NEON_TRIE_LOOKUP(UNIDATA_UTF8_CASEFOLD_TRIE, chars);
   if (vmaxv_u16(values) == 0) {
     vst1q_u8(*out, in);
     *out += nbytes;
@@ -59,7 +59,7 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
 
   for (size_t i = 0; i < 4; i++) {
     uint8_t leading = input[0];
-    uint8_t size = NORMDATA_UTF8_SIZE[leading];
+    uint8_t size = UNIDATA_UTF8_SIZE[leading];
     uint16_t value = values[i];
     if (value == 0) {
       vst1_u8(*out, vld1_u8(input));
@@ -68,8 +68,7 @@ static size_t neon_casefold_masked_utf8(const uint8_t *input, uint64_t mask,
       continue;
     }
     uint8_t length = value >> 12;
-    const uint8_t *casefold_offset =
-        &NORMDATA_UTF8_CASEFOLD_DATA[value & 0xFFF];
+    const uint8_t *casefold_offset = &UNIDATA_UTF8_CASEFOLD_DATA[value & 0xFFF];
     vst1_u8(*out, vld1_u8(casefold_offset));
     *out += length;
     input += size;
@@ -122,11 +121,11 @@ static size_t neon_casefold_masked_utf8_length(const uint8_t *input,
     chars = neon_parse_2_byte_utf8(in);
     n_bytes = 8;
   } else {
-    uint8_t idx = NORMDATA_CODE_POINT_INDEX[sml_mask][0];
-    n_bytes = NORMDATA_CODE_POINT_INDEX[sml_mask][1];
-    if (idx < NORMDATA_SHUFUTF8_INDEX_12) {
+    uint8_t idx = UNIDATA_CODE_POINT_INDEX[sml_mask][0];
+    n_bytes = UNIDATA_CODE_POINT_INDEX[sml_mask][1];
+    if (idx < UNIDATA_SHUFUTF8_INDEX_12) {
       chars = neon_parse_4_12_utf8(in, idx);
-    } else if (idx < NORMDATA_SHUFUTF8_INDEX_123) {
+    } else if (idx < UNIDATA_SHUFUTF8_INDEX_123) {
       chars = neon_parse_4_123_utf8(in, idx);
     } else {
       *out_length += scalar_casefold_utf8_length(input, n_bytes);
@@ -134,7 +133,7 @@ static size_t neon_casefold_masked_utf8_length(const uint8_t *input,
     }
   }
   uint16x4_t values =
-      NEON_TRIE_LOOKUP(NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE, chars);
+      NEON_TRIE_LOOKUP(UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE, chars);
   *out_length += vaddv_u16(values);
   return n_bytes;
 }

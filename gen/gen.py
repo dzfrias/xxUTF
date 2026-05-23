@@ -101,8 +101,8 @@ ELEMENT_SIZES = {
     "uint16_t": 2,
     "uint32_t": 4,
     "uint64_t": 8,
-    "NormdataTableEntry": 12,
-    "NormdataHangulShuf": 25,
+    "UnidataTableEntry": 12,
+    "UnidataHangulShuf": 25,
 }
 
 
@@ -167,7 +167,7 @@ def generate_decomp_hash_table(
         offset += len(decomp.decomps)
     assert offset <= 2**16 - 1
 
-    writer.write(f"const uint32_t NORMDATA_{name}_CHARS[{len(all_decomps)}] = {{\n")
+    writer.write(f"const uint32_t UNIDATA_{name}_CHARS[{len(all_decomps)}] = {{\n")
     for row in batched(all_decomps, 13):
         writer.write(" ")
         for b in row:
@@ -176,7 +176,7 @@ def generate_decomp_hash_table(
     writer.write("};\n")
 
     decomp_salt, decomp_keys = minimal_perfect_hash(supplementary_map)
-    writer.write(f"\nconst uint16_t NORMDATA_{name}_SALT[{len(decomp_salt)}] = {{\n")
+    writer.write(f"\nconst uint16_t UNIDATA_{name}_SALT[{len(decomp_salt)}] = {{\n")
     for salts in batched(decomp_salt, 14):
         writer.write(" ")
         for s in salts:
@@ -185,7 +185,7 @@ def generate_decomp_hash_table(
     writer.write("};\n")
 
     writer.write(
-        f"\nconst NormdataTableEntry NORMDATA_{name}_KV[{len(decomp_keys)}] = {{\n"
+        f"\nconst UnidataTableEntry UNIDATA_{name}_KV[{len(decomp_keys)}] = {{\n"
     )
     for batch in batched(decomp_keys, 5):
         writer.write(" ")
@@ -210,9 +210,9 @@ def generate_decomp_hash_table(
     writer.write("};\n")
 
     return [
-        HeaderDef.array(f"NORMDATA_{name}_CHARS", "uint32_t", len(all_decomps)),
-        HeaderDef.array(f"NORMDATA_{name}_SALT", "uint16_t", len(decomp_salt)),
-        HeaderDef.array(f"NORMDATA_{name}_KV", "NormdataTableEntry", len(decomp_keys)),
+        HeaderDef.array(f"UNIDATA_{name}_CHARS", "uint32_t", len(all_decomps)),
+        HeaderDef.array(f"UNIDATA_{name}_SALT", "uint16_t", len(decomp_salt)),
+        HeaderDef.array(f"UNIDATA_{name}_KV", "UnidataTableEntry", len(decomp_keys)),
     ]
 
 
@@ -233,14 +233,14 @@ def generate_hash_tables(
         if c1 <= 0xFFFF and c2 <= 0xFFFF:
             comp_table[(c1 << 16) | c2] = x
     comp_salt, comp_keys = minimal_perfect_hash(comp_table)
-    writer.write(f"\nconst uint16_t NORMDATA_NFC_SALT[{len(comp_salt)}] = {{\n")
+    writer.write(f"\nconst uint16_t UNIDATA_NFC_SALT[{len(comp_salt)}] = {{\n")
     for salts in batched(comp_salt, 14):
         writer.write(" ")
         for s in salts:
             writer.write(f" 0x{s:04X},")
         writer.write("\n")
     writer.write("};\n")
-    writer.write(f"\nconst uint32_t NORMDATA_NFC_KV[{len(comp_keys)}][2] = {{\n")
+    writer.write(f"\nconst uint32_t UNIDATA_NFC_KV[{len(comp_keys)}][2] = {{\n")
     for batch in batched(comp_keys, 8):
         writer.write(" ")
         for k in batch:
@@ -250,7 +250,7 @@ def generate_hash_tables(
     writer.write("};\n")
 
     writer.write(
-        "\nuint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2) {\n"
+        "\nuint32_t unidata_compose_supplementary(uint32_t c1, uint32_t c2) {\n"
     )
     for (c1, c2), x in comp_map.items():
         if c1 <= 0xFFFF and c2 <= 0xFFFF:
@@ -260,8 +260,8 @@ def generate_hash_tables(
 
     headers.extend(
         [
-            HeaderDef.array("NORMDATA_NFC_SALT", "uint16_t", len(comp_salt)),
-            HeaderDef.multi_array("NORMDATA_NFC_KV", "uint32_t", [len(comp_keys), 2]),
+            HeaderDef.array("UNIDATA_NFC_SALT", "uint16_t", len(comp_salt)),
+            HeaderDef.multi_array("UNIDATA_NFC_KV", "uint32_t", [len(comp_keys), 2]),
         ]
     )
 
@@ -274,9 +274,7 @@ def generate_hash_tables(
         assert len(v) == 1
         casefold_table[k] = v[0]
     casefold_salt, casefold_keys = minimal_perfect_hash(casefold_table)
-    writer.write(
-        f"\nconst uint16_t NORMDATA_CASEFOLD_SALT[{len(casefold_salt)}] = {{\n"
-    )
+    writer.write(f"\nconst uint16_t UNIDATA_CASEFOLD_SALT[{len(casefold_salt)}] = {{\n")
     for salts in batched(casefold_salt, 14):
         writer.write(" ")
         for s in salts:
@@ -284,7 +282,7 @@ def generate_hash_tables(
         writer.write("\n")
     writer.write("};\n")
     writer.write(
-        f"\nconst uint32_t NORMDATA_CASEFOLD_KV[{len(casefold_keys)}][2] = {{\n"
+        f"\nconst uint32_t UNIDATA_CASEFOLD_KV[{len(casefold_keys)}][2] = {{\n"
     )
     for batch in batched(casefold_keys, 8):
         writer.write(" ")
@@ -296,9 +294,9 @@ def generate_hash_tables(
 
     headers.extend(
         [
-            HeaderDef.array("NORMDATA_CASEFOLD_SALT", "uint16_t", len(casefold_salt)),
+            HeaderDef.array("UNIDATA_CASEFOLD_SALT", "uint16_t", len(casefold_salt)),
             HeaderDef.multi_array(
-                "NORMDATA_CASEFOLD_KV", "uint32_t", [len(casefold_keys), 2]
+                "UNIDATA_CASEFOLD_KV", "uint32_t", [len(casefold_keys), 2]
             ),
         ]
     )
@@ -390,7 +388,7 @@ def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
     cases = case12_small + case12 + case123 + case1234
 
     all_shuf = [build_shuf(z, size12) for z in cases]
-    writer.write(f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}[{len(cases)}][16] = {{\n")
+    writer.write(f"\nconst uint8_t UNIDATA_SHUFUTF8{suffix}[{len(cases)}][16] = {{\n")
     for shuf in all_shuf:
         writer.write(f"  {{{", ".join(map(str, shuf))}}},\n")
     writer.write("};\n")
@@ -412,7 +410,7 @@ def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
             arrg.append((len(all_shuf), 12))
 
     writer.write(
-        f"\nconst uint8_t NORMDATA_CODE_POINT_INDEX{suffix}[{len(arrg)}][2] = {{\n"
+        f"\nconst uint8_t UNIDATA_CODE_POINT_INDEX{suffix}[{len(arrg)}][2] = {{\n"
     )
     for row in batched(arrg, 8):
         writer.write(" ")
@@ -422,29 +420,25 @@ def generate_shufutf8(writer, size12: int, suffix: str) -> list[HeaderDef]:
     writer.write("};\n")
 
     writer.write(
-        f"\nconst uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12_SMALL = {len(case12_small)};\n"
+        f"\nconst uint8_t UNIDATA_SHUFUTF8{suffix}_INDEX_12_SMALL = {len(case12_small)};\n"
     )
     writer.write(
-        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_12 = {len(case12_small) + len(case12)};\n"
+        f"const uint8_t UNIDATA_SHUFUTF8{suffix}_INDEX_12 = {len(case12_small) + len(case12)};\n"
     )
     writer.write(
-        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_123 = {len(case12_small) + len(case12) + len(case123)};\n"
+        f"const uint8_t UNIDATA_SHUFUTF8{suffix}_INDEX_123 = {len(case12_small) + len(case12) + len(case123)};\n"
     )
-    writer.write(
-        f"const uint8_t NORMDATA_SHUFUTF8{suffix}_INDEX_1234 = {len(cases)};\n"
-    )
+    writer.write(f"const uint8_t UNIDATA_SHUFUTF8{suffix}_INDEX_1234 = {len(cases)};\n")
 
     return [
+        HeaderDef.multi_array(f"UNIDATA_SHUFUTF8{suffix}", "uint8_t", [len(cases), 16]),
         HeaderDef.multi_array(
-            f"NORMDATA_SHUFUTF8{suffix}", "uint8_t", [len(cases), 16]
+            f"UNIDATA_CODE_POINT_INDEX{suffix}", "uint8_t", [len(arrg), 2]
         ),
-        HeaderDef.multi_array(
-            f"NORMDATA_CODE_POINT_INDEX{suffix}", "uint8_t", [len(arrg), 2]
-        ),
-        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_12_SMALL", "uint8_t"),
-        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_12", "uint8_t"),
-        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_123", "uint8_t"),
-        HeaderDef(f"NORMDATA_SHUFUTF8{suffix}_INDEX_1234", "uint8_t"),
+        HeaderDef(f"UNIDATA_SHUFUTF8{suffix}_INDEX_12_SMALL", "uint8_t"),
+        HeaderDef(f"UNIDATA_SHUFUTF8{suffix}_INDEX_12", "uint8_t"),
+        HeaderDef(f"UNIDATA_SHUFUTF8{suffix}_INDEX_123", "uint8_t"),
+        HeaderDef(f"UNIDATA_SHUFUTF8{suffix}_INDEX_1234", "uint8_t"),
     ]
 
 
@@ -453,7 +447,7 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
     headers.extend(generate_shufutf8(writer, size12=4, suffix=""))
     headers.extend(generate_shufutf8(writer, size12=6, suffix="_WIDE"))
 
-    writer.write(f"\nconst NormdataHangulShuf NORMDATA_HANGUL_SHUF[16] = {{\n")
+    writer.write(f"\nconst UnidataHangulShuf UNIDATA_HANGUL_SHUF[16] = {{\n")
     for x in range(1 << 4):
         exclude = []
         total_size = 0
@@ -469,9 +463,9 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
         tbl.extend([255] * (24 - len(tbl)))
         writer.write(f"  {{{total_size}, {{{", ".join(map(str, tbl))}}}}},\n")
     writer.write("};\n")
-    headers.append(HeaderDef.array("NORMDATA_HANGUL_SHUF", "NormdataHangulShuf", 16))
+    headers.append(HeaderDef.array("UNIDATA_HANGUL_SHUF", "UnidataHangulShuf", 16))
 
-    writer.write(f"\nconst uint8_t NORMDATA_UTF16_DECOMP_SHUF[256][16] = {{\n")
+    writer.write(f"\nconst uint8_t UNIDATA_UTF16_DECOMP_SHUF[256][16] = {{\n")
     for x in range(1 << 8):
         tbl = list(range(16))
         s = f"{x:08b}"
@@ -500,7 +494,7 @@ def generate_shuffle_tables(writer) -> list[HeaderDef]:
         writer.write(f"  {{{", ".join(map(str, tbl))}}},\n")
     writer.write("};\n")
     headers.append(
-        HeaderDef.multi_array("NORMDATA_UTF16_DECOMP_SHUF", "uint8_t", [256, 16])
+        HeaderDef.multi_array("UNIDATA_UTF16_DECOMP_SHUF", "uint8_t", [256, 16])
     )
 
     return headers
@@ -595,40 +589,40 @@ S_COUNT = L_COUNT * N_COUNT
 
 PREAMBLE_H = """// This file was generated by gen/gen.py
 
-#ifndef XXUTF_NORMDATA_H
-#define XXUTF_NORMDATA_H
+#ifndef XXUTF_UNIDATA_H
+#define XXUTF_UNIDATA_H
 
 #include <stdint.h>
 
-typedef struct NormdataTableEntry {
+typedef struct UnidataTableEntry {
   uint8_t len;
   uint8_t ccc;
   uint8_t last_ccc;
   uint16_t offset;
   uint32_t k;
-} NormdataTableEntry;
+} UnidataTableEntry;
 
-typedef struct NormdataHangulShuf {
+typedef struct UnidataHangulShuf {
   uint8_t len;
   uint8_t tbl[24];
-} NormdataHangulShuf;
+} UnidataHangulShuf;
 
-static const uint16_t NORMDATA_S_BASE = 0xAC00;
-static const uint16_t NORMDATA_L_BASE = 0x1100;
-static const uint16_t NORMDATA_V_BASE = 0x1161;
-static const uint16_t NORMDATA_T_BASE = 0x11A7;
-static const uint16_t NORMDATA_L_COUNT = 19;
-static const uint16_t NORMDATA_V_COUNT = 21;
-static const uint16_t NORMDATA_T_COUNT = 28;
-static const uint16_t NORMDATA_N_COUNT = NORMDATA_V_COUNT * NORMDATA_T_COUNT;
-static const uint16_t NORMDATA_S_COUNT = NORMDATA_L_COUNT * NORMDATA_N_COUNT;
+static const uint16_t UNIDATA_S_BASE = 0xAC00;
+static const uint16_t UNIDATA_L_BASE = 0x1100;
+static const uint16_t UNIDATA_V_BASE = 0x1161;
+static const uint16_t UNIDATA_T_BASE = 0x11A7;
+static const uint16_t UNIDATA_L_COUNT = 19;
+static const uint16_t UNIDATA_V_COUNT = 21;
+static const uint16_t UNIDATA_T_COUNT = 28;
+static const uint16_t UNIDATA_N_COUNT = UNIDATA_V_COUNT * UNIDATA_T_COUNT;
+static const uint16_t UNIDATA_S_COUNT = UNIDATA_L_COUNT * UNIDATA_N_COUNT;
 
-uint32_t normdata_compose_supplementary(uint32_t c1, uint32_t c2);
+uint32_t unidata_compose_supplementary(uint32_t c1, uint32_t c2);
 
 """
 
 POSTAMBLE_H = """
-static const uint8_t NORMDATA_UTF8_SIZE[256] = {
+static const uint8_t UNIDATA_UTF8_SIZE[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -641,12 +635,12 @@ static const uint8_t NORMDATA_UTF8_SIZE[256] = {
     2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
     4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0};
 
-#endif // XXUTF_NORMDATA_H
+#endif // XXUTF_UNIDATA_H
 """
 
 PREAMBLE = """// This file was generated by gen/gen.py
 
-#include "normdata.h"
+#include "unidata.h"
 
 """
 
@@ -1139,90 +1133,84 @@ def main() -> None:
     )
 
     headers: list[HeaderDef] = []
-    with open("normdata.c", "w") as f:
+    with open("unidata.c", "w") as f:
         f.write(PREAMBLE)
         headers.extend(
             generate_hash_tables(f, nfd_map, nfkd_map, comp_map, casefold_map)
         )
         headers.extend(generate_shuffle_tables(f))
         headers.append(
-            generate_array(f, "NORMDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", utf8_nfd_data, 8)
+            generate_array(f, "UNIDATA_UTF8_NFD_TRIE_DECOMPOSITIONS", utf8_nfd_data, 8)
         )
         headers.append(
             generate_array(
-                f, "NORMDATA_UTF8_NFKD_TRIE_DECOMPOSITIONS", utf8_nfkd_data, 8
+                f, "UNIDATA_UTF8_NFKD_TRIE_DECOMPOSITIONS", utf8_nfkd_data, 8
             )
         )
+        headers.extend(generate_trie(f, "UNIDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 16))
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFD_TRIE", utf8_nfd_trie, 16, 16)
+            generate_trie(f, "UNIDATA_UTF8_NFD_DATA_TRIE", utf8_nfd_data_trie, 16, 32)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFD_DATA_TRIE", utf8_nfd_data_trie, 16, 32)
+            generate_trie(f, "UNIDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 16)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_NFKD_TRIE", utf8_nfkd_trie, 16, 16)
-        )
-        headers.extend(
-            generate_trie(
-                f, "NORMDATA_UTF8_NFKD_DATA_TRIE", utf8_nfkd_data_trie, 16, 32
-            )
+            generate_trie(f, "UNIDATA_UTF8_NFKD_DATA_TRIE", utf8_nfkd_data_trie, 16, 32)
         )
         headers.append(
             generate_array(
-                f, "NORMDATA_UTF16_NFD_TRIE_DECOMPOSITIONS", utf16_nfd_data, 8
+                f, "UNIDATA_UTF16_NFD_TRIE_DECOMPOSITIONS", utf16_nfd_data, 8
             )
         )
         headers.append(
             generate_array(
-                f, "NORMDATA_UTF16_NFKD_TRIE_DECOMPOSITIONS", utf16_nfkd_data, 8
+                f, "UNIDATA_UTF16_NFKD_TRIE_DECOMPOSITIONS", utf16_nfkd_data, 8
             )
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF16_NFD_TRIE", utf16_nfd_trie, 16, 32)
+            generate_trie(f, "UNIDATA_UTF16_NFD_TRIE", utf16_nfd_trie, 16, 32)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF16_NFKD_TRIE", utf16_nfkd_trie, 16, 32)
+            generate_trie(f, "UNIDATA_UTF16_NFKD_TRIE", utf16_nfkd_trie, 16, 32)
         )
-        headers.extend(generate_trie(f, "NORMDATA_CCC_TRIE", ccc_trie, 16, 8))
-        headers.extend(generate_trie(f, "NORMDATA_NFC_TRIE", nfc_trie, 16, 8))
-        headers.extend(generate_trie(f, "NORMDATA_NFKC_TRIE", nfkc_trie, 16, 8))
-        headers.extend(generate_bloom_filter(f, "NORMDATA_NFC_BLOOM_FILTER", nfc_bloom))
+        headers.extend(generate_trie(f, "UNIDATA_CCC_TRIE", ccc_trie, 16, 8))
+        headers.extend(generate_trie(f, "UNIDATA_NFC_TRIE", nfc_trie, 16, 8))
+        headers.extend(generate_trie(f, "UNIDATA_NFKC_TRIE", nfkc_trie, 16, 8))
+        headers.extend(generate_bloom_filter(f, "UNIDATA_NFC_BLOOM_FILTER", nfc_bloom))
         headers.extend(
-            generate_bloom_filter(f, "NORMDATA_NFKC_BLOOM_FILTER", nfkc_bloom)
+            generate_bloom_filter(f, "UNIDATA_NFKC_BLOOM_FILTER", nfkc_bloom)
         )
         headers.extend(
             generate_bloom_filter(
-                f, "NORMDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
+                f, "UNIDATA_NON_STARTERS_BLOOM_FILTER", non_starters_bloom
             )
         )
         headers.append(
-            generate_array(f, "NORMDATA_UTF8_CASEFOLD_DATA", casefold_utf8_data, 8)
+            generate_array(f, "UNIDATA_UTF8_CASEFOLD_DATA", casefold_utf8_data, 8)
         )
         headers.extend(
-            generate_trie(f, "NORMDATA_UTF8_CASEFOLD_TRIE", casefold_utf8_trie, 16, 16)
+            generate_trie(f, "UNIDATA_UTF8_CASEFOLD_TRIE", casefold_utf8_trie, 16, 16)
         )
         headers.append(
-            generate_array(f, "NORMDATA_UTF16_CASEFOLD_DATA", casefold_utf16_data, 8)
+            generate_array(f, "UNIDATA_UTF16_CASEFOLD_DATA", casefold_utf16_data, 8)
+        )
+        headers.extend(
+            generate_trie(f, "UNIDATA_UTF16_CASEFOLD_TRIE", casefold_utf16_trie, 16, 16)
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_CASEFOLD_TRIE", casefold_utf16_trie, 16, 16
+                f, "UNIDATA_UTF8_NFD_LENGTH_TRIE", utf8_nfd_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF8_NFD_LENGTH_TRIE", utf8_nfd_length_trie, 16, 8
-            )
-        )
-        headers.extend(
-            generate_trie(
-                f, "NORMDATA_UTF8_NFKD_LENGTH_TRIE", utf8_nfkd_length_trie, 16, 8
+                f, "UNIDATA_UTF8_NFKD_LENGTH_TRIE", utf8_nfkd_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
                 f,
-                "NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE",
+                "UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE",
                 utf8_casefold_length_trie,
                 16,
                 8,
@@ -1230,18 +1218,18 @@ def main() -> None:
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_NFD_LENGTH_TRIE", utf16_nfd_length_trie, 16, 8
+                f, "UNIDATA_UTF16_NFD_LENGTH_TRIE", utf16_nfd_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_NFKD_LENGTH_TRIE", utf16_nfkd_length_trie, 16, 8
+                f, "UNIDATA_UTF16_NFKD_LENGTH_TRIE", utf16_nfkd_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
                 f,
-                "NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE",
+                "UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE",
                 utf16_casefold_length_trie,
                 16,
                 8,
@@ -1249,25 +1237,25 @@ def main() -> None:
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF8_NFC_LENGTH_TRIE", utf8_nfc_length_trie, 16, 8
+                f, "UNIDATA_UTF8_NFC_LENGTH_TRIE", utf8_nfc_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF8_NFKC_LENGTH_TRIE", utf8_nfkc_length_trie, 16, 8
+                f, "UNIDATA_UTF8_NFKC_LENGTH_TRIE", utf8_nfkc_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_NFC_LENGTH_TRIE", utf16_nfc_length_trie, 16, 8
+                f, "UNIDATA_UTF16_NFC_LENGTH_TRIE", utf16_nfc_length_trie, 16, 8
             )
         )
         headers.extend(
             generate_trie(
-                f, "NORMDATA_UTF16_NFKC_LENGTH_TRIE", utf16_nfkc_length_trie, 16, 8
+                f, "UNIDATA_UTF16_NFKC_LENGTH_TRIE", utf16_nfkc_length_trie, 16, 8
             )
         )
-    with open("normdata.h", "w") as f:
+    with open("unidata.h", "w") as f:
         f.write(PREAMBLE_H)
         for header in headers:
             generate_header_def(f, header)

@@ -1,5 +1,5 @@
 #include "impl/scalar/scalar_common.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,8 +18,8 @@ uint32_t scalar_phash(uint32_t key, uint32_t salt, uint64_t size) {
 
 // Check if a code point is in the Hangul block.
 bool scalar_is_hangul(uint32_t code_point) {
-  return code_point >= NORMDATA_S_BASE &&
-         code_point < NORMDATA_S_BASE + NORMDATA_S_COUNT;
+  return code_point >= UNIDATA_S_BASE &&
+         code_point < UNIDATA_S_BASE + UNIDATA_S_COUNT;
 }
 
 // Reverse a subsection of an array.
@@ -47,16 +47,16 @@ uint8_t scalar_lookup_ccc(uint32_t code_point) {
   if (code_point <= 0xFFFF) {
     uint16_t shift = code_point >> 6;
     uint16_t masked = code_point & 63;
-    uint16_t index = NORMDATA_CCC_TRIE_INDEX[shift];
-    uint8_t value = NORMDATA_CCC_TRIE_DATA[index + masked];
+    uint16_t index = UNIDATA_CCC_TRIE_INDEX[shift];
+    uint8_t value = UNIDATA_CCC_TRIE_DATA[index + masked];
     return value;
   }
   uint32_t salt_hash = scalar_phash(
-      code_point, 0, sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry));
-  uint32_t salt = NORMDATA_NFD_SALT[salt_hash];
+      code_point, 0, sizeof(UNIDATA_NFD_KV) / sizeof(UnidataTableEntry));
+  uint32_t salt = UNIDATA_NFD_SALT[salt_hash];
   uint32_t key_hash = scalar_phash(
-      code_point, salt, sizeof(NORMDATA_NFD_KV) / sizeof(NormdataTableEntry));
-  NormdataTableEntry kv = NORMDATA_NFD_KV[key_hash];
+      code_point, salt, sizeof(UNIDATA_NFD_KV) / sizeof(UnidataTableEntry));
+  UnidataTableEntry kv = UNIDATA_NFD_KV[key_hash];
   if (kv.k == code_point) {
     return kv.ccc;
   }
@@ -67,36 +67,36 @@ uint8_t scalar_lookup_ccc(uint32_t code_point) {
 // composed code point if the composition is valid, or zero if the composition
 // is not valid.
 uint32_t scalar_try_compose_bmp(uint16_t c1, uint16_t c2) {
-  if (c1 >= NORMDATA_L_BASE && c1 < NORMDATA_L_BASE + NORMDATA_L_COUNT &&
-      c2 >= NORMDATA_V_BASE && c2 < NORMDATA_V_BASE + NORMDATA_V_COUNT) {
-    uint32_t l_index = c1 - NORMDATA_L_BASE;
-    uint32_t v_index = c2 - NORMDATA_V_BASE;
-    uint32_t lv_index = l_index * NORMDATA_N_COUNT + v_index * NORMDATA_T_COUNT;
-    return NORMDATA_S_BASE + lv_index;
+  if (c1 >= UNIDATA_L_BASE && c1 < UNIDATA_L_BASE + UNIDATA_L_COUNT &&
+      c2 >= UNIDATA_V_BASE && c2 < UNIDATA_V_BASE + UNIDATA_V_COUNT) {
+    uint32_t l_index = c1 - UNIDATA_L_BASE;
+    uint32_t v_index = c2 - UNIDATA_V_BASE;
+    uint32_t lv_index = l_index * UNIDATA_N_COUNT + v_index * UNIDATA_T_COUNT;
+    return UNIDATA_S_BASE + lv_index;
   }
   // Check if we have an LV syllable and a T jamo. Note that we check c2 >
-  // NORMDATA_T_BASE, not c2 >= NORMDATA_T_BASE for a good reason: the first
-  // valid T jamo is NORMDATA_T_BASE + 1! The spec defines the T base constant
+  // UNIDATA_T_BASE, not c2 >= UNIDATA_T_BASE for a good reason: the first
+  // valid T jamo is UNIDATA_T_BASE + 1! The spec defines the T base constant
   // to be off by one in order to make the math for algorithmic decomposition
   // cleaner.
   //
   // See:
   // https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G59434
-  if (c1 >= NORMDATA_S_BASE && c1 < NORMDATA_S_BASE + NORMDATA_S_COUNT &&
-      (c1 - NORMDATA_S_BASE) % NORMDATA_T_COUNT == 0 && c2 > NORMDATA_T_BASE &&
-      c2 < NORMDATA_T_BASE + NORMDATA_T_COUNT) {
-    return c1 + (c2 - NORMDATA_T_BASE);
+  if (c1 >= UNIDATA_S_BASE && c1 < UNIDATA_S_BASE + UNIDATA_S_COUNT &&
+      (c1 - UNIDATA_S_BASE) % UNIDATA_T_COUNT == 0 && c2 > UNIDATA_T_BASE &&
+      c2 < UNIDATA_T_BASE + UNIDATA_T_COUNT) {
+    return c1 + (c2 - UNIDATA_T_BASE);
   }
 
   uint32_t wide = c1;
   uint32_t key = (wide << 16) | c2;
   uint32_t salt_hash =
-      scalar_phash(key, 0, sizeof(NORMDATA_NFC_KV) / (sizeof(uint32_t) * 2));
-  uint32_t salt = NORMDATA_NFC_SALT[salt_hash];
+      scalar_phash(key, 0, sizeof(UNIDATA_NFC_KV) / (sizeof(uint32_t) * 2));
+  uint32_t salt = UNIDATA_NFC_SALT[salt_hash];
   uint32_t key_hash =
-      scalar_phash(key, salt, sizeof(NORMDATA_NFC_KV) / (sizeof(uint32_t) * 2));
-  uint32_t k = NORMDATA_NFC_KV[key_hash][1];
-  uint32_t comp = NORMDATA_NFC_KV[key_hash][0];
+      scalar_phash(key, salt, sizeof(UNIDATA_NFC_KV) / (sizeof(uint32_t) * 2));
+  uint32_t k = UNIDATA_NFC_KV[key_hash][1];
+  uint32_t comp = UNIDATA_NFC_KV[key_hash][0];
   if (k == key) {
     // The composition is valid, return the composed code point
     return comp;
@@ -131,8 +131,8 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
     if (code_point <= 0xFFFF) {                                                \
       uint16_t shift = code_point >> 6;                                        \
       uint16_t masked = code_point & 63;                                       \
-      uint16_t index = NORMDATA_##comp_form_upper##_TRIE_INDEX[shift];         \
-      uint8_t value = NORMDATA_##comp_form_upper##_TRIE_DATA[index + masked];  \
+      uint16_t index = UNIDATA_##comp_form_upper##_TRIE_INDEX[shift];          \
+      uint8_t value = UNIDATA_##comp_form_upper##_TRIE_DATA[index + masked];   \
       return value > 0;                                                        \
     }                                                                          \
     uint32_t h1 = scalar_multiply_shift_hash(code_point);                      \
@@ -140,7 +140,7 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
     uint32_t h3 = scalar_xorshift_mul_hash(code_point ^ 0xDEADBEEFUL);         \
     uint32_t h4 = scalar_xorshift_mul_hash(code_point);                        \
     const uint32_t COMP_BLOOM_SIZE =                                           \
-        sizeof(NORMDATA_##comp_form_upper##_BLOOM_FILTER) / sizeof(uint32_t);  \
+        sizeof(UNIDATA_##comp_form_upper##_BLOOM_FILTER) / sizeof(uint32_t);   \
     uint32_t block_idx = h1 % COMP_BLOOM_SIZE;                                 \
     uint32_t shift1 = h2 % 32;                                                 \
     uint32_t shift2 = h3 % 32;                                                 \
@@ -150,7 +150,7 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
     mask |= 1u << shift2;                                                      \
     mask |= 1u << shift3;                                                      \
                                                                                \
-    uint32_t block = NORMDATA_##comp_form_upper##_BLOOM_FILTER[block_idx];     \
+    uint32_t block = UNIDATA_##comp_form_upper##_BLOOM_FILTER[block_idx];      \
     return (block & mask) == mask;                                             \
   }                                                                            \
                                                                                \
@@ -158,21 +158,19 @@ static uint32_t scalar_xorshift_mul_hash(uint32_t x) {
     if (code_point <= 0xFFFF) {                                                \
       uint16_t shift = code_point >> 6;                                        \
       uint16_t masked = code_point & 63;                                       \
-      uint16_t index = NORMDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];  \
+      uint16_t index = UNIDATA_UTF8_##decomp_form_upper##_TRIE_INDEX[shift];   \
       uint8_t value =                                                          \
-          NORMDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];       \
+          UNIDATA_UTF8_##decomp_form_upper##_TRIE_DATA[index + masked];        \
       return value > 3;                                                        \
     }                                                                          \
-    uint32_t salt_hash =                                                       \
-        scalar_phash(code_point, 0,                                            \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /               \
-                         sizeof(NormdataTableEntry));                          \
-    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];            \
-    uint32_t key_hash =                                                        \
-        scalar_phash(code_point, salt,                                         \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /               \
-                         sizeof(NormdataTableEntry));                          \
-    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];       \
+    uint32_t salt_hash = scalar_phash(                                         \
+        code_point, 0,                                                         \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry)); \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];             \
+    uint32_t key_hash = scalar_phash(                                          \
+        code_point, salt,                                                      \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry)); \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];         \
     return kv.k == code_point;                                                 \
   }
 
@@ -277,7 +275,7 @@ size_t scalar_count_code_points_utf8(const uint8_t *buf, size_t length) {
   size_t count = 0;
   size_t p = 0;
   while (p < length) {
-    p += NORMDATA_UTF8_SIZE[buf[p]];
+    p += UNIDATA_UTF8_SIZE[buf[p]];
     count++;
   }
   return count;

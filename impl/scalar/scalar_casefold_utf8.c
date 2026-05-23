@@ -1,6 +1,6 @@
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -10,15 +10,15 @@
 static size_t scalar_casefold_character_utf8_bmp(uint16_t c, uint8_t *out) {
   uint16_t shifted = c >> 6;
   uint16_t masked = c & 63;
-  uint16_t index = NORMDATA_UTF8_CASEFOLD_TRIE_INDEX[shifted];
-  uint16_t value = NORMDATA_UTF8_CASEFOLD_TRIE_DATA[index + masked];
+  uint16_t index = UNIDATA_UTF8_CASEFOLD_TRIE_INDEX[shifted];
+  uint16_t value = UNIDATA_UTF8_CASEFOLD_TRIE_DATA[index + masked];
   if (value == 0) {
     return 0;
   }
   uint8_t length = value >> 12;
   size_t offset = value & 0xFFF;
   for (size_t k = 0; k < length; k++) {
-    out[k] = NORMDATA_UTF8_CASEFOLD_DATA[offset + k];
+    out[k] = UNIDATA_UTF8_CASEFOLD_DATA[offset + k];
   }
   return length;
 }
@@ -28,12 +28,12 @@ static size_t scalar_casefold_character_utf8_bmp(uint16_t c, uint8_t *out) {
 static size_t scalar_casefold_character_utf8_supplementary(uint32_t c,
                                                            uint8_t *out) {
   uint32_t salt_hash =
-      scalar_phash(c, 0, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));
-  uint32_t salt = NORMDATA_CASEFOLD_SALT[salt_hash];
+      scalar_phash(c, 0, sizeof(UNIDATA_CASEFOLD_KV) / sizeof(uint32_t));
+  uint32_t salt = UNIDATA_CASEFOLD_SALT[salt_hash];
   uint32_t key_hash =
-      scalar_phash(c, salt, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));
-  uint32_t k = NORMDATA_CASEFOLD_KV[key_hash][1];
-  uint32_t casefold = NORMDATA_CASEFOLD_KV[key_hash][0];
+      scalar_phash(c, salt, sizeof(UNIDATA_CASEFOLD_KV) / sizeof(uint32_t));
+  uint32_t k = UNIDATA_CASEFOLD_KV[key_hash][1];
+  uint32_t casefold = UNIDATA_CASEFOLD_KV[key_hash][0];
   if (k == c) {
     return scalar_write_code_point_utf8(casefold, out);
   }
@@ -45,8 +45,8 @@ static size_t scalar_casefold_character_utf8_supplementary(uint32_t c,
 static uint8_t scalar_casefold_length_utf8_bmp(uint16_t c) {
   uint16_t shifted = c >> 6;
   uint16_t masked = c & 63;
-  uint16_t index = NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[shifted];
-  uint8_t value = NORMDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[index + masked];
+  uint16_t index = UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[shifted];
+  uint8_t value = UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[index + masked];
   return value;
 }
 
@@ -54,12 +54,12 @@ static uint8_t scalar_casefold_length_utf8_bmp(uint16_t c) {
 // `c` is in the supplementary plane.
 static uint8_t scalar_casefold_length_utf8_supplementary(uint32_t c) {
   uint32_t salt_hash =
-      scalar_phash(c, 0, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));
-  uint32_t salt = NORMDATA_CASEFOLD_SALT[salt_hash];
+      scalar_phash(c, 0, sizeof(UNIDATA_CASEFOLD_KV) / sizeof(uint32_t));
+  uint32_t salt = UNIDATA_CASEFOLD_SALT[salt_hash];
   uint32_t key_hash =
-      scalar_phash(c, salt, sizeof(NORMDATA_CASEFOLD_KV) / sizeof(uint32_t));
-  uint32_t k = NORMDATA_CASEFOLD_KV[key_hash][1];
-  uint32_t casefold = NORMDATA_CASEFOLD_KV[key_hash][0];
+      scalar_phash(c, salt, sizeof(UNIDATA_CASEFOLD_KV) / sizeof(uint32_t));
+  uint32_t k = UNIDATA_CASEFOLD_KV[key_hash][1];
+  uint32_t casefold = UNIDATA_CASEFOLD_KV[key_hash][0];
   if (k == c) {
     return scalar_code_point_size_utf8(casefold);
   }

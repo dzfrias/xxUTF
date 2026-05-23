@@ -3,7 +3,7 @@
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <arm_neon.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -43,7 +43,7 @@
       /* Check if we have all BMP characters */                                \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
         uint16x8_t values =                                                    \
-            NEON_TRIE_LOOKUP_FULL(NORMDATA_UTF16_CASEFOLD_TRIE, in);           \
+            NEON_TRIE_LOOKUP_FULL(UNIDATA_UTF16_CASEFOLD_TRIE, in);            \
         for (size_t i = 0; i < 8; i++) {                                       \
           uint16_t value = values[i];                                          \
           if (value == 0) {                                                    \
@@ -54,7 +54,7 @@
           }                                                                    \
           uint8_t len = value >> 12;                                           \
           const uint8_t *casefold_offset =                                     \
-              &NORMDATA_UTF16_CASEFOLD_DATA[value & 0xFFF];                    \
+              &UNIDATA_UTF16_CASEFOLD_DATA[value & 0xFFF];                     \
           uint8x8_t casefold_bytes = vld1_u8(casefold_offset);                 \
           if (is_big_endian) {                                                 \
             casefold_bytes = vrev16_u8(casefold_bytes);                        \
@@ -102,40 +102,40 @@
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
         uint16x8_t index = vshrq_n_u16(in, 6);                                 \
         uint16x8_t block_index = {                                             \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     0)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     1)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     2)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     3)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     4)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     5)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     6)],      \
-            NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,    \
-                                                                     7)],      \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    0)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    1)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    2)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    3)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    4)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    5)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    6)],       \
+            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
+                                                                    7)],       \
         };                                                                     \
         uint16x8_t masked = vandq_u16(in, vdupq_n_u16(0x3F));                  \
         uint16x8_t data_offset = vaddq_u16(block_index, masked);               \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 0)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 1)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 2)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 3)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 4)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 5)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 6)];                                                  \
-        out_length += NORMDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16( \
+        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
             data_offset, 7)];                                                  \
         p += 16;                                                               \
       } else {                                                                 \

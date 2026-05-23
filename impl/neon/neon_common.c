@@ -1,7 +1,7 @@
 // amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
 #include "impl/neon/neon_common.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <arm_neon.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -33,16 +33,15 @@ NEON_PRINT_FUNC(int32x2_t, int32_t, vst1_s32);
 #undef NEON_PRINT_FUNC
 
 uint16x4_t neon_hangul_mask(uint16x4_t input) {
-  uint16x4_t ge = vcge_u16(input, vdup_n_u16(NORMDATA_S_BASE));
-  uint16x4_t lt =
-      vclt_u16(input, vdup_n_u16(NORMDATA_S_BASE + NORMDATA_S_COUNT));
+  uint16x4_t ge = vcge_u16(input, vdup_n_u16(UNIDATA_S_BASE));
+  uint16x4_t lt = vclt_u16(input, vdup_n_u16(UNIDATA_S_BASE + UNIDATA_S_COUNT));
   uint16x4_t cmp = vand_u16(lt, ge);
   return cmp;
 }
 
 uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
   // Compute the S index
-  uint16x4_t s = vsub_u16(chars, vdup_n_u16(NORMDATA_S_BASE));
+  uint16x4_t s = vsub_u16(chars, vdup_n_u16(UNIDATA_S_BASE));
 
   uint32x4_t l_fixed = vmull_n_u16(s, 28533);
   // Shift the fixed point number
@@ -51,7 +50,7 @@ uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
   uint16x4_t l = vmovn_u32(l_wide);
 
   // Multiply and subtract to get the remainder
-  uint16x4_t v_modulo = vmls_n_u16(s, l, NORMDATA_N_COUNT);
+  uint16x4_t v_modulo = vmls_n_u16(s, l, UNIDATA_N_COUNT);
   uint32x4_t v_fixed = vmull_n_u16(v_modulo, 2341);
   uint32x4_t v_wide = vshrq_n_u32(v_fixed, 16);
   // V index: (s % N_COUNT) / T_COUNT
@@ -63,12 +62,12 @@ uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars) {
   uint32x4_t t_div_wide = vshrq_n_u32(t_fixed, 17);
   uint16x4_t t_div = vmovn_u32(t_div_wide);
   // T index: s % T_COUNT
-  uint16x4_t t = vmls_n_u16(s, t_div, NORMDATA_T_COUNT);
+  uint16x4_t t = vmls_n_u16(s, t_div, UNIDATA_T_COUNT);
 
   uint16x4x3_t vals;
-  vals.val[0] = vadd_u16(l, vdup_n_u16(NORMDATA_L_BASE));
-  vals.val[1] = vadd_u16(v, vdup_n_u16(NORMDATA_V_BASE));
-  vals.val[2] = vadd_u16(t, vdup_n_u16(NORMDATA_T_BASE));
+  vals.val[0] = vadd_u16(l, vdup_n_u16(UNIDATA_L_BASE));
+  vals.val[1] = vadd_u16(v, vdup_n_u16(UNIDATA_V_BASE));
+  vals.val[2] = vadd_u16(t, vdup_n_u16(UNIDATA_T_BASE));
 
   return vals;
 }
@@ -159,7 +158,7 @@ uint32x4_t neon_parse_4_byte_utf8(uint8x16_t in) {
 
 // Taken from simdutf
 uint16x4_t neon_parse_4_12_utf8(uint8x16_t in, size_t shufutf8_idx) {
-  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(UNIDATA_SHUFUTF8[shufutf8_idx]);
   // Shuffle
   // 1 byte: 00000000 0bbbbbbb
   // 2 byte: 110aaaaa 10bbbbbb
@@ -181,7 +180,7 @@ uint16x4_t neon_parse_4_12_utf8(uint8x16_t in, size_t shufutf8_idx) {
 // Taken from simdutf
 uint16x4_t neon_parse_4_123_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // UTF-16 and UTF-32 use similar algorithms, but UTF-32 skips the narrowing.
-  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(UNIDATA_SHUFUTF8[shufutf8_idx]);
   // XXX: depending on the system scalar instructions might be faster.
   // 1 byte: 00000000 00000000 0ccccccc
   // 2 byte: 00000000 110bbbbb 10cccccc
@@ -222,7 +221,7 @@ uint16x4_t neon_parse_4_123_utf8(uint8x16_t in, size_t shufutf8_idx) {
 uint32x4_t neon_parse_3_1234_utf8(uint8x16_t in, size_t shufutf8_idx) {
   // Unlike UTF-16, doing a fast codepath doesn't have nearly as much benefit
   // due to surrogates no longer being involved.
-  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(UNIDATA_SHUFUTF8[shufutf8_idx]);
   // 1 byte: 00000000 00000000 00000000 0ddddddd
   // 2 byte: 00000000 00000000 110ccccc 10dddddd
   // 3 byte: 00000000 1110bbbb 10cccccc 10dddddd

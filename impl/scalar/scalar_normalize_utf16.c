@@ -1,7 +1,7 @@
 #include "common_defs.h"
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -10,19 +10,19 @@
   /* Decompose a Hangul code point into UTF-16 */                              \
   static size_t scalar_decompose_hangul_utf16##endianness(uint32_t code_point, \
                                                           uint8_t *out) {      \
-    uint32_t s_index = code_point - NORMDATA_S_BASE;                           \
-    uint32_t l_index = s_index / NORMDATA_N_COUNT;                             \
-    uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;        \
-    uint32_t t_index = s_index % NORMDATA_T_COUNT;                             \
+    uint32_t s_index = code_point - UNIDATA_S_BASE;                            \
+    uint32_t l_index = s_index / UNIDATA_N_COUNT;                              \
+    uint32_t v_index = (s_index % UNIDATA_N_COUNT) / UNIDATA_T_COUNT;          \
+    uint32_t t_index = s_index % UNIDATA_T_COUNT;                              \
                                                                                \
     size_t nwritten = 0;                                                       \
     nwritten += scalar_write_code_point_utf16##endianness(                     \
-        NORMDATA_L_BASE + l_index, out);                                       \
+        UNIDATA_L_BASE + l_index, out);                                        \
     nwritten += scalar_write_code_point_utf16##endianness(                     \
-        NORMDATA_V_BASE + v_index, out + nwritten);                            \
+        UNIDATA_V_BASE + v_index, out + nwritten);                             \
     if (t_index > 0) {                                                         \
       nwritten += scalar_write_code_point_utf16##endianness(                   \
-          NORMDATA_T_BASE + t_index, out + nwritten);                          \
+          UNIDATA_T_BASE + t_index, out + nwritten);                           \
     }                                                                          \
     return nwritten;                                                           \
   }                                                                            \
@@ -155,19 +155,16 @@ SCALAR_UTF16_HELPERS(be);
           uint32_t code_point, uint8_t *out, uint8_t *first_ccc,                     \
           uint8_t *ccc) {                                                            \
     uint8_t *start = out;                                                            \
-    uint32_t salt_hash =                                                             \
-        scalar_phash(code_point, 0,                                                  \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
-                         sizeof(NormdataTableEntry));                                \
-    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                  \
-    uint32_t key_hash =                                                              \
-        scalar_phash(code_point, salt,                                               \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
-                         sizeof(NormdataTableEntry));                                \
-    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];             \
+    uint32_t salt_hash = scalar_phash(                                               \
+        code_point, 0,                                                               \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                   \
+    uint32_t key_hash = scalar_phash(                                                \
+        code_point, salt,                                                            \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];               \
     if (kv.k == code_point) {                                                        \
-      uint32_t const *chars =                                                        \
-          &NORMDATA_##decomp_form_upper##_CHARS[kv.offset];                          \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];       \
       for (size_t k = 0; k < kv.len; k++) {                                          \
         out += scalar_write_code_point_utf16##endianness(chars[k], out);             \
       }                                                                              \
@@ -185,9 +182,9 @@ SCALAR_UTF16_HELPERS(be);
     uint8_t *start = out;                                                            \
     uint16_t shift = code_point >> 6;                                                \
     uint16_t masked = code_point & 63;                                               \
-    uint16_t index = NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shift];         \
+    uint16_t index = UNIDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shift];          \
     uint32_t value =                                                                 \
-        NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];              \
+        UNIDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];               \
     if (value == 0) {                                                                \
       *ccc = 0;                                                                      \
       return 0;                                                                      \
@@ -198,7 +195,7 @@ SCALAR_UTF16_HELPERS(be);
     XXUTF_ASSERT(length % 2 == 0);                                                   \
     uint16_t offset = value & 0x3FFF;                                                \
     const uint8_t *bytes =                                                           \
-        &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
+        &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];            \
     for (size_t k = 0; k < length; k += 2) {                                         \
       if (is_big_endian) {                                                           \
         out[0] = bytes[k + 1];                                                       \
@@ -448,7 +445,7 @@ SCALAR_UTF16_HELPERS(be);
         if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {                           \
           composed = scalar_try_compose_bmp(starter, normalized_c);                  \
         } else {                                                                     \
-          composed = normdata_compose_supplementary(starter, normalized_c);          \
+          composed = unidata_compose_supplementary(starter, normalized_c);           \
         }                                                                            \
         /* Skip if no composed character */                                          \
         if (composed == 0) {                                                         \
@@ -490,19 +487,16 @@ SCALAR_UTF16_HELPERS(be);
   static uint8_t                                                                     \
       scalar_decomposition_length_utf16##endianness##_##decomp_form##_supplementary( \
           uint32_t code_point) {                                                     \
-    uint32_t salt_hash =                                                             \
-        scalar_phash(code_point, 0,                                                  \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
-                         sizeof(NormdataTableEntry));                                \
-    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                  \
-    uint32_t key_hash =                                                              \
-        scalar_phash(code_point, salt,                                               \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                     \
-                         sizeof(NormdataTableEntry));                                \
-    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];             \
+    uint32_t salt_hash = scalar_phash(                                               \
+        code_point, 0,                                                               \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                   \
+    uint32_t key_hash = scalar_phash(                                                \
+        code_point, salt,                                                            \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];               \
     if (kv.k == code_point) {                                                        \
-      uint32_t const *chars =                                                        \
-          &NORMDATA_##decomp_form_upper##_CHARS[kv.offset];                          \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];       \
       uint8_t length = 0;                                                            \
       for (size_t k = 0; k < kv.len; k++) {                                          \
         length += scalar_code_point_size_utf16(chars[k]);                            \
@@ -518,9 +512,9 @@ SCALAR_UTF16_HELPERS(be);
     uint16_t shift = code_point >> 6;                                                \
     uint16_t masked = code_point & 63;                                               \
     uint16_t index =                                                                 \
-        NORMDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];               \
+        UNIDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];                \
     uint8_t value =                                                                  \
-        NORMDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];       \
+        UNIDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];        \
     return value;                                                                    \
   }                                                                                  \
                                                                                      \
@@ -530,9 +524,9 @@ SCALAR_UTF16_HELPERS(be);
     uint16_t shift = code_point >> 6;                                                \
     uint16_t masked = code_point & 63;                                               \
     uint16_t index =                                                                 \
-        NORMDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                 \
+        UNIDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                  \
     uint8_t value =                                                                  \
-        NORMDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];         \
+        UNIDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];          \
     return value;                                                                    \
   }
 

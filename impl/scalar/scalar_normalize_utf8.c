@@ -1,25 +1,25 @@
 #include "common_defs.h"
 #include "impl/scalar.h"
 #include "impl/scalar/scalar_common.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 // Hangul code points can be decomposed into Hangul syllables algorithmically.
 static size_t scalar_decompose_hangul_utf8(uint32_t code_point, uint8_t *out) {
-  uint32_t s_index = code_point - NORMDATA_S_BASE;
-  uint32_t l_index = s_index / NORMDATA_N_COUNT;
-  uint32_t v_index = (s_index % NORMDATA_N_COUNT) / NORMDATA_T_COUNT;
-  uint32_t t_index = s_index % NORMDATA_T_COUNT;
+  uint32_t s_index = code_point - UNIDATA_S_BASE;
+  uint32_t l_index = s_index / UNIDATA_N_COUNT;
+  uint32_t v_index = (s_index % UNIDATA_N_COUNT) / UNIDATA_T_COUNT;
+  uint32_t t_index = s_index % UNIDATA_T_COUNT;
 
   size_t nwritten = 0;
-  nwritten += scalar_write_code_point_utf8(NORMDATA_L_BASE + l_index, out);
+  nwritten += scalar_write_code_point_utf8(UNIDATA_L_BASE + l_index, out);
   nwritten +=
-      scalar_write_code_point_utf8(NORMDATA_V_BASE + v_index, out + nwritten);
+      scalar_write_code_point_utf8(UNIDATA_V_BASE + v_index, out + nwritten);
   if (t_index > 0) {
     nwritten +=
-        scalar_write_code_point_utf8(NORMDATA_T_BASE + t_index, out + nwritten);
+        scalar_write_code_point_utf8(UNIDATA_T_BASE + t_index, out + nwritten);
   }
   return nwritten;
 }
@@ -145,19 +145,16 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
   static size_t scalar_decompose_utf8_##decomp_form##_supplementary(                \
       uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {        \
     uint8_t *start = out;                                                           \
-    uint32_t salt_hash =                                                            \
-        scalar_phash(code_point, 0,                                                 \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                    \
-                         sizeof(NormdataTableEntry));                               \
-    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                 \
-    uint32_t key_hash =                                                             \
-        scalar_phash(code_point, salt,                                              \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                    \
-                         sizeof(NormdataTableEntry));                               \
-    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];            \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0,                                                              \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                  \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt,                                                           \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];              \
     if (kv.k == code_point) {                                                       \
-      uint32_t const *chars =                                                       \
-          &NORMDATA_##decomp_form_upper##_CHARS[kv.offset];                         \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];      \
       for (size_t k = 0; k < kv.len; k++) {                                         \
         out += scalar_write_code_point_utf8(chars[k], out);                         \
       }                                                                             \
@@ -178,9 +175,9 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
     uint16_t index =                                                                \
-        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                 \
+        UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shift];                  \
     uint32_t value =                                                                \
-        NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];         \
+        UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];          \
     if (value == 0) {                                                               \
       return 0;                                                                     \
     }                                                                               \
@@ -188,7 +185,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint16_t offset = value & 0x7FFF;                                               \
     uint8_t length = (value >> 15) & 0x3F;                                          \
     const uint8_t *bytes =                                                          \
-        &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
+        &UNIDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];            \
     for (size_t k = 0; k < length; k++) {                                           \
       *out++ = bytes[k];                                                            \
     }                                                                               \
@@ -444,7 +441,7 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
         if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {                          \
           composed = scalar_try_compose_bmp(starter, normalized_c);                 \
         } else {                                                                    \
-          composed = normdata_compose_supplementary(starter, normalized_c);         \
+          composed = unidata_compose_supplementary(starter, normalized_c);          \
         }                                                                           \
         /* Skip if no composed character */                                         \
         if (composed == 0) {                                                        \
@@ -488,29 +485,26 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
     uint16_t index =                                                                \
-        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];               \
+        UNIDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];                \
     uint8_t value =                                                                 \
-        NORMDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];       \
+        UNIDATA_UTF8_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];        \
     return value;                                                                   \
   }                                                                                 \
                                                                                     \
   static uint8_t                                                                    \
       scalar_decomposition_length_utf8_##decomp_form##_supplementary(               \
           uint32_t code_point) {                                                    \
-    uint32_t salt_hash =                                                            \
-        scalar_phash(code_point, 0,                                                 \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                    \
-                         sizeof(NormdataTableEntry));                               \
-    uint32_t salt = NORMDATA_##decomp_form_upper##_SALT[salt_hash];                 \
-    uint32_t key_hash =                                                             \
-        scalar_phash(code_point, salt,                                              \
-                     sizeof(NORMDATA_##decomp_form_upper##_KV) /                    \
-                         sizeof(NormdataTableEntry));                               \
-    NormdataTableEntry kv = NORMDATA_##decomp_form_upper##_KV[key_hash];            \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0,                                                              \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                  \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt,                                                           \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];              \
     if (kv.k == code_point) {                                                       \
       uint8_t length = 0;                                                           \
-      uint32_t const *chars =                                                       \
-          &NORMDATA_##decomp_form_upper##_CHARS[kv.offset];                         \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];      \
       for (size_t k = 0; k < kv.len; k++) {                                         \
         length += scalar_code_point_size_utf8(chars[k]);                            \
       }                                                                             \
@@ -524,9 +518,9 @@ size_t scalar_rfind_starter_utf8(const uint8_t *input, size_t length) {
     uint16_t shift = code_point >> 6;                                               \
     uint16_t masked = code_point & 63;                                              \
     uint16_t index =                                                                \
-        NORMDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                 \
+        UNIDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                  \
     uint8_t value =                                                                 \
-        NORMDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];         \
+        UNIDATA_UTF8_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];          \
     return value;                                                                   \
   }
 

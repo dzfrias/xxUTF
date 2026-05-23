@@ -4,7 +4,7 @@
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <arm_neon.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -80,7 +80,7 @@ static void neon_decompose_hangul_utf8(uint16x4_t chars, uint16x4_t relevant,
     }
     if (relevant[i] == 0) {
       // Not a Hangul syllable, just copy the input.
-      size_t size = NORMDATA_UTF8_SIZE[input[0]];
+      size_t size = UNIDATA_UTF8_SIZE[input[0]];
       for (size_t j = 0; j < size; j++) {
         *(*out)++ = input[j];
       }
@@ -102,7 +102,7 @@ static void neon_decompose_hangul_utf8(uint16x4_t chars, uint16x4_t relevant,
     // being zero or not, because the branch miss penalty is quite high. For the
     // korean.txt benchmark, this gave a ~33% speedup.
     neon_write_3_byte_code_point_utf8(t, *out);
-    *out += 3 * (t - NORMDATA_T_BASE > 0);
+    *out += 3 * (t - UNIDATA_T_BASE > 0);
     input += 3;
   }
 }
@@ -121,13 +121,13 @@ static void neon_decompose_all_hangul_utf8(uint16x4_t values, uint8_t **out,
   // syllables each.
   vst3_u16(tmp, lvt);
 
-  uint16x4_t t = vsub_u16(lvt.val[2], vdup_n_u16(NORMDATA_T_BASE));
+  uint16x4_t t = vsub_u16(lvt.val[2], vdup_n_u16(UNIDATA_T_BASE));
   // Mask for all precomposed Hangul syllables that should not have a
   // trailing consonant
   uint16x4_t t_mask = vceqz_u16(t);
   uint8_t bitmask = neon_movemask_u16(t_mask);
   // Use the trailing consonant bitmask to get a shuffle vector
-  NormdataHangulShuf shuf = NORMDATA_HANGUL_SHUF[bitmask];
+  UnidataHangulShuf shuf = UNIDATA_HANGUL_SHUF[bitmask];
 
   // Load the tmp buffer into a large byte table
   uint8x16_t tbl_low = vreinterpretq_u8_u16(vld1q_u16(tmp));
@@ -183,7 +183,7 @@ static uint16x8_t neon_parse_2_byte_utf8_wide(uint8x16_t in) {
 // Taken from simdutf
 static uint16x8_t neon_parse_4_12_utf8_wide(uint8x16_t in,
                                             size_t shufutf8_idx) {
-  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8_WIDE[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(UNIDATA_SHUFUTF8_WIDE[shufutf8_idx]);
   // Shuffle
   // 1 byte: 00000000 0bbbbbbb
   // 2 byte: 110aaaaa 10bbbbbb
@@ -206,7 +206,7 @@ static uint16x8_t neon_parse_4_12_utf8_wide(uint8x16_t in,
 static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
                                              size_t shufutf8_idx) {
   // UTF-16 and UTF-32 use similar algorithms, but UTF-32 skips the narrowing.
-  uint8x16_t sh = vld1q_u8(NORMDATA_SHUFUTF8_WIDE[shufutf8_idx]);
+  uint8x16_t sh = vld1q_u8(UNIDATA_SHUFUTF8_WIDE[shufutf8_idx]);
   // XXX: depending on the system scalar instructions might be faster.
   // 1 byte: 00000000 00000000 0ccccccc
   // 2 byte: 00000000 110bbbbb 10cccccc
@@ -266,7 +266,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       }                                                                             \
                                                                                     \
       uint16_t value = values[i];                                                   \
-      uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
+      uint8_t size = UNIDATA_UTF8_SIZE[leading];                                    \
       if (value <= 3) {                                                             \
         vst1_u8(*out, vld1_u8(input));                                              \
         *out += size;                                                               \
@@ -281,16 +281,16 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint8_t ccc = (value >> 2) & 0xFF;                                            \
                                                                                     \
       uint16_t data_index =                                                         \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];       \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];        \
       uint32_t data =                                                               \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +           \
-                                                             (chars[i] & 63)];      \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[data_index +            \
+                                                            (chars[i] & 63)];       \
       uint16_t offset = data & 0x7FFF;                                              \
       uint8_t length = (data >> 15) & 0x3F;                                         \
       uint8_t first_ccc_delta = data >> 29;                                         \
                                                                                     \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];         \
+          &UNIDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];          \
       vst1q_u8(*out, vld1q_u8(decomp_offset));                                      \
       /* `large_decompositions` is a preprocessor-known value, so the compiler      \
        * will optimize this check out if it is false. In NFD, we only need to       \
@@ -379,12 +379,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint16_t code_point = chars[i];                                               \
       /* Pre-load the decomposition into the appropriate sub-table */               \
       uint16_t data_index =                                                         \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[code_point >>         \
-                                                              6];                   \
-      uint32_t value = NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA           \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[code_point >> 6];      \
+      uint32_t value = UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA            \
           [data_index + (code_point & 63)];                                         \
       vst1_u8(&tbls[j * 8],                                                         \
-              vld1_u8(&NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS      \
+              vld1_u8(&UNIDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS       \
                           [value & 0x7FFF]));                                       \
       j++;                                                                          \
       displacement += dlt;                                                          \
@@ -418,11 +417,11 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       }                                                                             \
                                                                                     \
       uint16_t index =                                                              \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];       \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[chars[i] >> 6];        \
       uint32_t value =                                                              \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index +                \
-                                                             (chars[i] & 63)];      \
-      XXUTF_ASSERT(NORMDATA_UTF8_SIZE[leading] == 2);                               \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index +                 \
+                                                            (chars[i] & 63)];       \
+      XXUTF_ASSERT(UNIDATA_UTF8_SIZE[leading] == 2);                                \
       if (value == 0) {                                                             \
         *(*out)++ = leading;                                                        \
         *(*out)++ = input[1];                                                       \
@@ -437,7 +436,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint8_t first_ccc_delta = value >> 29;                                        \
                                                                                     \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];         \
+          &UNIDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];          \
       vst1q_u8(*out, vld1q_u8(decomp_offset));                                      \
       if (large_decompositions && XXUTF_UNLIKELY(length > 16)) {                    \
         vst1q_u8(*out + 16, vld1q_u8(decomp_offset + 16));                          \
@@ -463,8 +462,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
           uint8x16_t in, uint16x8_t chars, size_t n_bytes,                          \
           const uint8_t *input, uint8_t **out, size_t out_length,                   \
           uint8_t *last_ccc) {                                                      \
-    uint16x8_t values = NEON_TRIE_LOOKUP_WIDE(                                      \
-        NORMDATA_UTF8_##decomp_form_upper##_TRIE, chars);                           \
+    uint16x8_t values =                                                             \
+        NEON_TRIE_LOOKUP_WIDE(UNIDATA_UTF8_##decomp_form_upper##_TRIE, chars);      \
     /* Each value contains the UTF-8 code point size (from 0 to 3) in the           \
      * lowest two bits. If there's nothing special about the code point, it         \
      * will have zero bits past those two bits. */                                  \
@@ -523,7 +522,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                               \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t values =                                                             \
-        NEON_TRIE_LOOKUP(NORMDATA_UTF8_##decomp_form_upper##_TRIE, chars);          \
+        NEON_TRIE_LOOKUP(UNIDATA_UTF8_##decomp_form_upper##_TRIE, chars);           \
     bool decomp_result = vmaxv_u16(values) > 3;                                     \
     /* Case where we have no Hangul syllables and no relevant characters */         \
     if (!hangul_result && !decomp_result) {                                         \
@@ -602,8 +601,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
        * Algorithm described here:                                                  \
        * https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401 \
        */                                                                           \
-      if (min >= NORMDATA_S_BASE &&                                                 \
-          max < NORMDATA_S_BASE + NORMDATA_S_COUNT) {                               \
+      if (min >= UNIDATA_S_BASE && max < UNIDATA_S_BASE + UNIDATA_S_COUNT) {        \
         neon_decompose_all_hangul_utf8(chars, out, last_ccc);                       \
         return 12;                                                                  \
       }                                                                             \
@@ -624,29 +622,29 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       return 12;                                                                    \
     }                                                                               \
                                                                                     \
-    uint8_t idx = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                      \
-    uint8_t n_bytes = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];                  \
+    uint8_t idx = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                       \
+    uint8_t n_bytes = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];                   \
                                                                                     \
-    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12_SMALL) {                              \
+    if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_12_SMALL) {                               \
       /* In this case, there are six one to two byte code points, and               \
        * `n_bytes` is small. This tells us our input is mostly ASCII, so we         \
        * can take a special path to exploit that. */                                \
       uint16x8_t chars = neon_parse_4_12_utf8_wide(in, idx);                        \
       neon_decompose_utf8_##decomp_form##_small(chars, input, out, out_length,      \
                                                 last_ccc);                          \
-    } else if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12) {                             \
+    } else if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_12) {                              \
       /* Six one to two byte code points */                                         \
       uint16x8_t chars = neon_parse_4_12_utf8_wide(in, idx);                        \
       /* Precomposed Hangul syllables are not possible in 1 to 2 byte code          \
        * points */                                                                  \
       neon_decompose_non_hangul_utf8_##decomp_form(in, chars, n_bytes, input,       \
                                                    out, out_length, last_ccc);      \
-    } else if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_123) {                            \
+    } else if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_123) {                             \
       /* Four code points */                                                        \
       uint16x4_t chars = neon_parse_4_123_utf8_wide(in, idx);                       \
       neon_decompose_utf8_##decomp_form(in, chars, n_bytes, input, out,             \
                                         out_length, last_ccc);                      \
-    } else if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_1234) {                           \
+    } else if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_1234) {                            \
       /* TODO: right now, anytime we have 3 1..4-byte code points, we just          \
        *       fall back to scalar. This is because our functions are designed      \
        *       for 4 code points, and we don't have a good way to handle the        \
@@ -678,7 +676,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
         continue;                                                                   \
       }                                                                             \
       uint16_t value = values[i];                                                   \
-      uint8_t size = NORMDATA_UTF8_SIZE[leading];                                   \
+      uint8_t size = UNIDATA_UTF8_SIZE[leading];                                    \
       /* Check if we can skip */                                                    \
       if (value == 0) {                                                             \
         vst1_u8(*out, vld1_u8(input));                                              \
@@ -693,12 +691,12 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       uint16_t shifted = code_point >> 6;                                           \
       uint16_t masked = code_point & 0x3F;                                          \
       uint16_t index =                                                              \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shifted];             \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_INDEX[shifted];              \
       uint32_t decomp_value =                                                       \
-          NORMDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];       \
+          UNIDATA_UTF8_##decomp_form_upper##_DATA_TRIE_DATA[index + masked];        \
       XXUTF_ASSERT(decomp_value != 0);                                              \
       const uint8_t *decomp_offset =                                                \
-          &NORMDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS                  \
+          &UNIDATA_UTF8_##decomp_form_upper##_TRIE_DECOMPOSITIONS                   \
               [decomp_value & 0x7FFF];                                              \
       uint8_t length = (decomp_value >> 15) & 0x3F;                                 \
       XXUTF_ASSERT(length <= 8);                                                    \
@@ -724,7 +722,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       const uint8_t *input, const uint8_t *input_base, size_t input_length,         \
       uint8_t **out, size_t length) {                                               \
     size_t offset = input - input_base;                                             \
-    size_t first_size = NORMDATA_UTF8_SIZE[input[0]];                               \
+    size_t first_size = UNIDATA_UTF8_SIZE[input[0]];                                \
     /* Get the region that we will NFC normalize */                                 \
     size_t prev_starter =                                                           \
         scalar_rfind_starter_utf8(input_base, offset + first_size);                 \
@@ -761,7 +759,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
     uint16x4_t values =                                                             \
-        NEON_TRIE_LOOKUP(NORMDATA_##comp_form_upper##_TRIE, code_points);           \
+        NEON_TRIE_LOOKUP(UNIDATA_##comp_form_upper##_TRIE, code_points);            \
     uint16_t max = vmaxv_u16(values);                                               \
     /* No relevant characters */                                                    \
     if (max == 0) {                                                                 \
@@ -794,7 +792,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
       const uint8_t *input_base, size_t input_length, size_t n_bytes,               \
       uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
     uint16x8_t values =                                                             \
-        NEON_TRIE_LOOKUP_WIDE(NORMDATA_##comp_form_upper##_TRIE, code_points);      \
+        NEON_TRIE_LOOKUP_WIDE(UNIDATA_##comp_form_upper##_TRIE, code_points);       \
     uint16_t max = vmaxvq_u16(values);                                              \
     if (max == 0) {                                                                 \
       vst1q_u8(*out, in);                                                           \
@@ -841,22 +839,22 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
           out_length, last_ccc);                                                    \
     }                                                                               \
                                                                                     \
-    uint8_t idx = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                      \
-    size_t n_bytes = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];                   \
-    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12) {                                    \
+    uint8_t idx = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                       \
+    size_t n_bytes = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];                    \
+    if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_12) {                                     \
       uint16x8_t code_points = neon_parse_4_12_utf8_wide(in, idx);                  \
       return neon_normalize_code_points_utf8_##comp_form##_wide(                    \
           in, code_points, input, input_base, input_length, n_bytes, out,           \
           out_length, last_ccc);                                                    \
     }                                                                               \
-    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_123) {                                   \
+    if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_123) {                                    \
       uint16x4_t code_points = neon_parse_4_123_utf8_wide(in, idx);                 \
       return neon_normalize_code_points_utf8_##comp_form(                           \
           in, code_points, input, input_base, input_length, n_bytes, out,           \
           out_length, last_ccc);                                                    \
     }                                                                               \
                                                                                     \
-    XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_WIDE_INDEX_1234);                          \
+    XXUTF_ASSERT(idx < UNIDATA_SHUFUTF8_WIDE_INDEX_1234);                           \
     *last_ccc = 0;                                                                  \
     return neon_fallback_utf8_##comp_form(input, input_base, input_length,          \
                                           out, n_bytes);                            \
@@ -987,32 +985,32 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
     if (sml_mask == 0x924) {                                                   \
       uint16x4_t code_points = neon_parse_3_byte_utf8(in);                     \
       *out_length += NEON_TRIE_LENGTH_SUM(                                     \
-          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
       return 12;                                                               \
     }                                                                          \
     if (sml_mask == 0xAAA) {                                                   \
       uint16x8_t code_points = neon_parse_2_byte_utf8_wide(in);                \
       *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
-          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
       return 12;                                                               \
     }                                                                          \
                                                                                \
-    uint8_t idx = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                 \
-    size_t n_bytes = NORMDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];              \
-    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_12) {                               \
+    uint8_t idx = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][0];                  \
+    size_t n_bytes = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];               \
+    if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_12) {                                \
       uint16x8_t code_points = neon_parse_4_12_utf8_wide(in, idx);             \
       *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
-          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
       return n_bytes;                                                          \
     }                                                                          \
-    if (idx < NORMDATA_SHUFUTF8_WIDE_INDEX_123) {                              \
+    if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_123) {                               \
       uint16x4_t code_points = neon_parse_4_123_utf8_wide(in, idx);            \
       *out_length += NEON_TRIE_LENGTH_SUM(                                     \
-          NORMDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);              \
+          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
       return n_bytes;                                                          \
     }                                                                          \
                                                                                \
-    XXUTF_ASSERT(idx < NORMDATA_SHUFUTF8_WIDE_INDEX_1234);                     \
+    XXUTF_ASSERT(idx < UNIDATA_SHUFUTF8_WIDE_INDEX_1234);                      \
     *out_length += scalar_normalize_utf8_##form##_length(input, n_bytes);      \
     return n_bytes;                                                            \
   }                                                                            \

@@ -284,7 +284,7 @@ const default_flags: []const []const u8 = &.{
 
 const header_files: []const []const u8 = &.{
     "xxutf.h",
-    "normdata.h",
+    "unidata.h",
     "common_defs.h",
     "impl/scalar.h",
     "impl/scalar/scalar_common.h",
@@ -294,7 +294,7 @@ const header_files: []const []const u8 = &.{
 
 const default_sources: []const []const u8 = &.{
     "xxutf.c",
-    "normdata.c",
+    "unidata.c",
     "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_normalize_utf8.c",
     "impl/scalar/scalar_normalize_utf16.c",

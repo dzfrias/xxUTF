@@ -4,7 +4,7 @@
 #include "impl/neon.h"
 #include "impl/neon/neon_common.h"
 #include "impl/scalar.h"
-#include "normdata.h"
+#include "unidata.h"
 #include <arm_neon.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -60,7 +60,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       scalar_write_uint16##endianness(v, *out);                                \
       *out += 2;                                                               \
       scalar_write_uint16##endianness(t, *out);                                \
-      *out += 2 * (t - NORMDATA_T_BASE > 0);                                   \
+      *out += 2 * (t - UNIDATA_T_BASE > 0);                                    \
       input += 2;                                                              \
     }                                                                          \
   }                                                                            \
@@ -82,8 +82,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint8_t ccc = value >> 24;                                               \
       uint8_t ccc_delta = (value >> 20) & 0b111;                               \
       const uint8_t *decomp_offset =                                           \
-          &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0x3FFF];   \
+          &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &     \
+                                                                   0x3FFF];    \
       uint8_t delta = (value >> 14) & 0x3F;                                    \
       uint8_t length = delta + 2;                                              \
       /* `length` is length in bytes, not code units */                        \
@@ -135,7 +135,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
      * created this index table at runtime. But we can take advantage of the   \
      * simplicity of UTF-16 to generate all possible index tables at compile   \
      * time. */                                                                \
-    uint8x16_t index = vld1q_u8(NORMDATA_UTF16_DECOMP_SHUF[packed_shift]);     \
+    uint8x16_t index = vld1q_u8(UNIDATA_UTF16_DECOMP_SHUF[packed_shift]);      \
     /* Each 8 byte sub-table at position `i` holds the potential decomposition \
      * of the character `chars[i / 8]`. There are four 8 byte sub-tables       \
      * because there are four characters. */                                   \
@@ -150,8 +150,8 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint32_t value = values[i];                                              \
       /* Load the character's decomposition */                                 \
       uint8x8_t decomp_bytes = vld1_u8(                                        \
-          &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &    \
-                                                                    0x3FFF]);  \
+          &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[value &     \
+                                                                   0x3FFF]);   \
       if (is_big_endian) {                                                     \
         decomp_bytes = vrev16_u8(decomp_bytes);                                \
       }                                                                        \
@@ -177,7 +177,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                          \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                           \
     uint32x4_t values =                                                        \
-        NEON_TRIE_LOOKUP_32(NORMDATA_UTF16_##decomp_form_upper##_TRIE, chars); \
+        NEON_TRIE_LOOKUP_32(UNIDATA_UTF16_##decomp_form_upper##_TRIE, chars);  \
     bool decomp_result = vmaxvq_u32(values) > 0;                               \
     /* With no Hangul characters and no decomposable/combining code points, we \
      * can skip */                                                             \
@@ -321,12 +321,12 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       uint16_t shifted = code_point >> 6;                                      \
       uint16_t masked = code_point & 0x3F;                                     \
       uint16_t index =                                                         \
-          NORMDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shifted];            \
+          UNIDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shifted];             \
       uint32_t decomp_value =                                                  \
-          NORMDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];      \
+          UNIDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];       \
       XXUTF_ASSERT(decomp_value != 0);                                         \
       const uint8_t *decomp_offset =                                           \
-          &NORMDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS            \
+          &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS             \
               [decomp_value & 0x3FFF];                                         \
       uint8_t delta = (decomp_value >> 14) & 0x3F;                             \
       uint8_t length = delta + 2;                                              \
@@ -411,7 +411,7 @@ NEON_UTF16_HELPERS(be, !XXUTF_BIG_ENDIAN);
       /* Check if we have no surrogate pairs */                                \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
         uint16x8_t trie =                                                      \
-            NEON_TRIE_LOOKUP_FULL(NORMDATA_##comp_form_upper##_TRIE, in);      \
+            NEON_TRIE_LOOKUP_FULL(UNIDATA_##comp_form_upper##_TRIE, in);       \
         uint16_t max = vmaxvq_u16(trie);                                       \
         /* Skip if we have no relevant code points */                          \
         if (max == 0) {                                                        \
@@ -498,7 +498,7 @@ NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfkd, NFKD, nfkc, NFKC,
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       if (vmaxvq_u16(surrogates_mask) == 0) {                                  \
         uint16x8_t values = NEON_TRIE_LOOKUP_FULL(                             \
-            NORMDATA_UTF16_##form_upper##_LENGTH_TRIE, in);                    \
+            UNIDATA_UTF16_##form_upper##_LENGTH_TRIE, in);                     \
         out_length += vaddvq_u16(values);                                      \
       } else {                                                                 \
         size_t normalize_range = 16;                                           \
