@@ -34,8 +34,10 @@ pub fn build(b: *std.Build) !void {
     run_amalgamate.addArg("-o");
     const amalgamation = run_amalgamate.addOutputFileArg("xxutf_amalgamation.c");
     const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
+    const amalgamate_install_header = b.addInstallHeaderFile(b.path("xxutf.h"), "xxutf.h");
     const amalgamate_step = b.step("amalgamate", "Create the xxUTF amalgamation file");
     amalgamate_step.dependOn(&amalgamate_install_file.step);
+    amalgamate_step.dependOn(&amalgamate_install_header.step);
 
     const lib = createLibrary(
         b,
