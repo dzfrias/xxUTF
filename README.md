@@ -23,9 +23,9 @@ xxUTF supports Unicode 16.0.0 and below.
 
 ## Usage
 
-xxUTF is distributed as a single header, available at the
-[release page](https://github.com/dzfrias/xxUTF/releases). This is similar to
-what [SQLite does](https://sqlite.org/amalgamation.html).
+xxUTF is distributed as an amalgamation with a single header file, available at
+the [release page](https://github.com/dzfrias/xxUTF/releases). This is similar
+to what [SQLite does](https://sqlite.org/amalgamation.html).
 
 Example C program:
 
@@ -206,7 +206,7 @@ here.
 
 Benchmarks are compared against the
 [ICU4C library](https://github.com/unicode-org/icu), as ICU4C has the current
-next fastest open soruce implementations of these algorithms.
+next fastest open source implementations of these algorithms.
 
 ## Building
 
@@ -231,8 +231,21 @@ For all available build options, run `zig build --help`.
 
 ### Fuzzing
 
-xxUTF is fuzz tested to ensure total safety. To look into the exact fuzzing
-setup, see [the relevant README file](test/README.md).
+xxUTF is fuzz tested to improve correctness and safety. To look into the exact
+fuzzing setup, see [the relevant README file](test/README.md).
+
+## State of the Project
+
+xxUTF is ready for use as a library, but as it is in an alpha state, there is
+much to be done, such as:
+
+- Support more SIMD instruction sets. Although not many instruction sets are
+  supported right now, the good news is that xxUTF is still the fastest
+  implementation even when in scalar mode.
+- Double check possible security vulnerabilities
+- Add a few helper functions to the API (functions to check if strings are in a
+  certain normalization form, check string equality in normalized forms, Turkic
+  casefold, etc.)
 
 ## License
 
