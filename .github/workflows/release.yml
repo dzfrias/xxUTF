@@ -21,20 +21,24 @@ jobs:
       - name: Build amalgamation
         run: zig build amalgamate
 
+      - name: Get version
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Stage release artifacts
         run: |
-          mkdir -p xxutf-amalgamation-${{ github.ref_name#v }}
-          cp zig-out/amalgamation.c xxutf-amalgamation-${{ github.ref_name#v }}/xxutf.c
-          cp zig-out/include/xxutf.h xxutf-amalgamation-${{ github.ref_name#v }}/xxutf.h
+          mkdir -p xxutf-amalgamation-${{ steps.version.outputs.tag }}
+          cp zig-out/amalgamation.c xxutf-amalgamation-${{ steps.version.outputs.tag }}/xxutf.c
+          cp zig-out/include/xxutf.h xxutf-amalgamation-${{ steps.version.outputs.tag }}/xxutf.h
 
       - name: Zip artifacts
-        run: zip -r xxutf-amalgamation.zip xxutf-amalgamation-${{ github.ref_name#v }}/
+        run: zip -r xxutf-amalgamation.zip xxutf-amalgamation-${{ steps.version.outputs.tag }}/
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "Version ${{ github.ref_name#v }}" \
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Version ${{ steps.version.outputs.tag }}" \
             --notes "" \
             xxutf-amalgamation.zip
