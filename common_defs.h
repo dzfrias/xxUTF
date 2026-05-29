@@ -11,4 +11,7 @@
 #define XXUTF_ASSERT(x) assert(x)
 #endif
 
+#define XXUTF_ALWAYS_INLINE __attribute__((always_inline)) inline
+#define XXUTF_UNUSED __attribute__((unused))
+
 #endif // COMMON_DEFS_H

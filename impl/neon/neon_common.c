@@ -1,6 +1,7 @@
 // amalgamate add: #if XXUTF_IMPLEMENTATION_NEON
 
 #include "impl/neon/neon_common.h"
+#include "common_defs.h"
 #include "unidata.h"
 #include <arm_neon.h>
 #include <stddef.h>
@@ -9,7 +10,7 @@
 
 // Macro to define a print function for an arbitrarily-shaped NEON vector.
 #define NEON_PRINT_FUNC(type, child_type, store_func)                          \
-  __attribute__((unused)) void neon_print_##type(const char *name, type vec) { \
+  XXUTF_UNUSED void neon_print_##type(const char *name, type vec) {            \
     printf("%s: ", name);                                                      \
     for (uint8_t i = 0; i < sizeof(vec) / sizeof(child_type); i++) {           \
       printf("%04x ", vec[i]);                                                 \

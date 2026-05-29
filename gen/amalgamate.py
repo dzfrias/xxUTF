@@ -38,7 +38,7 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
             elif (decl_match := decl_re.match(line)) is not None:
                 name = decl_match.group(2)
                 if not line.startswith("static") and not name.startswith("xxutf_"):
-                    out.write(f"__attribute__((unused)) static {line}")
+                    out.write(f"XXUTF_UNUSED static {line}")
                 else:
                     out.write(line)
             elif (var_match := var_re.match(line)) is not None:
@@ -46,9 +46,9 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
                 if not name.lower().startswith("xxutf_"):
                     if not line.startswith("static"):
                         if not line.startswith("extern"):
-                            out.write(f"__attribute__((unused)) static {line}")
+                            out.write(f"XXUTF_UNUSED static {line}")
                     else:
-                        out.write(f"__attribute__((unused)) {line}")
+                        out.write(f"XXUTF_UNUSED {line}")
                 else:
                     out.write(line)
             elif (add_match := add_re.match(line)) is not None:
@@ -66,22 +66,34 @@ def main() -> None:
         prog="amalgamate",
         description="Amalgamate the entire xxUTF codebase into one file",
     )
-    parser.add_argument("sources", help="directory with the xxUTF codebase", nargs="+")
+    parser.add_argument(
+        "sources", type=Path, help="directory with the xxUTF codebase", nargs="+"
+    )
     parser.add_argument(
         "-o", "--output", type=str, help="output file (default: stdout)"
+    )
+    parser.add_argument(
+        "--common-defs",
+        type=Path,
+        help="path to common_defs.h file",
+        required=True,
     )
 
     args = parser.parse_args()
 
     cwd = Path.cwd()
     seen_headers: set[str] = set()
+    seen_headers.add(args.common_defs.name)
     if args.output is None:
         sys.stdout.write(PREAMBLE)
+        # Include common_defs first because we use XXUTF_UNUSED in this script
+        copy_file(sys.stdout, args.common_defs, seen_headers)
         for file in args.sources:
-            copy_file(sys.stdout, file, seen_headers)
+            copy_file(sys.stdout, Path(file), seen_headers)
     else:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(PREAMBLE)
+            copy_file(f, args.common_defs.relative_to(cwd), seen_headers)
             for file in args.sources:
                 file_path = Path(file)
                 copy_file(f, file_path.relative_to(cwd), seen_headers)

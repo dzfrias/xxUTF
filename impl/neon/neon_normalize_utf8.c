@@ -320,7 +320,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
    * syllables and that they are "simple". In particular, this means the total      \
    * decomposition of the (up to) six `chars` code points cannot exceed 16          \
    * bytes in size. Also, no combining characters can be out of order. */           \
-  __attribute__((always_inline)) static inline void                                 \
+  XXUTF_ALWAYS_INLINE static void                                                   \
       neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           uint8x16_t in, uint16x8_t chars, int16x8_t delta, uint16x8_t values,      \
           uint8_t *out) {                                                           \
@@ -457,7 +457,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
   /* Decompose input code points, assuming they are not precomposed Hangul          \
    * syllables. `n_bytes` is the number of bytes that the six `chars` code          \
    * points occupy within the 16 byte `in` vector. */                               \
-  __attribute__((always_inline)) static inline void                                 \
+  XXUTF_ALWAYS_INLINE static void                                                   \
       neon_decompose_non_hangul_utf8_##decomp_form(                                 \
           uint8x16_t in, uint16x8_t chars, size_t n_bytes,                          \
           const uint8_t *input, uint8_t **out, size_t out_length,                   \
@@ -514,11 +514,9 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
    * The code points here may or may not be Hangul. A faster variant of this        \
    * function is available if Hangul cannot be present.                             \
    * */                                                                             \
-  __attribute__((always_inline)) static inline void                                 \
-      neon_decompose_utf8_##decomp_form(uint8x16_t in, uint16x4_t chars,            \
-                                        size_t n_bytes, const uint8_t *input,       \
-                                        uint8_t **out, size_t out_length,           \
-                                        uint8_t *last_ccc) {                        \
+  XXUTF_ALWAYS_INLINE static void neon_decompose_utf8_##decomp_form(                \
+      uint8x16_t in, uint16x4_t chars, size_t n_bytes, const uint8_t *input,        \
+      uint8_t **out, size_t out_length, uint8_t *last_ccc) {                        \
     uint16x4_t hangul_mask = neon_hangul_mask(chars);                               \
     bool hangul_result = vmaxv_u16(hangul_mask) > 0;                                \
     uint16x4_t values =                                                             \
