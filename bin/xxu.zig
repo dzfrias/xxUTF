@@ -9,8 +9,10 @@ const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };
 const ResolvedEncoding = enum { utf8, utf16le, utf16be };
 
-const help =
-    \\xxu
+const version = "0.1.0";
+
+const help = std.fmt.comptimePrint(
+    \\xxu {s}
     \\Diego Frias <mail@dzfrias.dev>
     \\
     \\xxu implements commonly-used locale-independent Unicode algorithms at speed.
@@ -30,9 +32,10 @@ const help =
     \\  -e, --encoding ENCODING       Set the encoding of input and output (default: UTF-8).
     \\  -o, --output FILE             Set the output file to write to (default: stdout).
     \\  --bom                         Add the U+FEFF BOM (byte-order mark) to the output.
+    \\  -v, --version                 Print the version and exit.
     \\  -h, --help                    Print this help and exit.
     \\
-;
+, .{version});
 
 pub fn main(init: std.process.Init) u8 {
     var stderr = std.Io.File.stderr();
@@ -60,6 +63,14 @@ pub fn main(init: std.process.Init) u8 {
     if (options.help) {
         stderr_writer.interface.writeAll(help) catch return 1;
         stderr_writer.interface.flush() catch return 1;
+        return 0;
+    }
+    if (options.version) {
+        var stdout = std.Io.File.stdout();
+        var stdout_buf: [2048]u8 = undefined;
+        var stdout_writer = stdout.writer(init.io, &stdout_buf);
+        stdout_writer.interface.print("xxu {s}\n", .{version}) catch return 1;
+        stdout_writer.interface.flush() catch return 1;
         return 0;
     }
 
@@ -128,6 +139,7 @@ const Flags = struct {
     output: ?[]const u8,
     bom: bool,
     help: bool,
+    version: bool,
 
     pub const positionals = .{
         .input = void,
@@ -137,9 +149,11 @@ const Flags = struct {
         .encoding = 'e',
         .output = 'o',
         .help = 'h',
+        .version = 'v',
     };
     pub const standalone = .{
         .help = void,
+        .version = void,
     };
 };
 
