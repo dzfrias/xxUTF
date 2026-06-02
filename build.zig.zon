@@ -1,6 +1,7 @@
 .{
     .name = .xxUTF,
-    .version = "0.15.2",
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{""},
     .fingerprint = 0x8a1444ce1c938ac1,
