@@ -22,19 +22,30 @@ pub fn build(b: *std.Build) !void {
     );
     try flags.append(b.allocator, booleanFlag("XXUTF_IMPLEMENTATION_NEON", add_neon));
 
+    const run_generate = std.Build.Step.Run.create(b, "Run gen.py");
+    run_generate.setCwd(b.path("gen"));
+    run_generate.addFileArg(b.path("gen/gen.py"));
+    const unidata_c_path = run_generate.addOutputFileArg("unidata.c");
+    const unidata_h_path = run_generate.addOutputFileArg("unidata.h");
+
     const run_amalgamate = std.Build.Step.Run.create(b, "Run amalgamate");
     run_amalgamate.setCwd(b.path(""));
     run_amalgamate.addFileArg(b.path("gen/amalgamate.py"));
+    run_amalgamate.addFileArg(unidata_c_path);
     for (all_sources) |source| {
         run_amalgamate.addFileArg(b.path(source));
     }
     for (all_files) |file| {
         run_amalgamate.addFileInput(b.path(file));
     }
+    run_amalgamate.addFileInput(unidata_h_path);
     run_amalgamate.addArg("-o");
     const amalgamation = run_amalgamate.addOutputFileArg("xxutf_amalgamation.c");
     run_amalgamate.addArg("--common-defs");
     run_amalgamate.addFileArg(b.path("common_defs.h"));
+    run_amalgamate.addArg("--include");
+    run_amalgamate.addDirectoryArg(unidata_h_path.dirname());
+    run_amalgamate.addDirectoryArg(b.path(""));
     const amalgamate_install_file = b.addInstallFile(amalgamation, "amalgamation.c");
     const amalgamate_install_header = b.addInstallHeaderFile(b.path("xxutf.h"), "xxutf.h");
     const amalgamate_step = b.step("amalgamate", "Create the xxUTF amalgamation file");
@@ -48,6 +59,8 @@ pub fn build(b: *std.Build) !void {
         sources.items,
         flags.items,
         amalgamation,
+        unidata_c_path,
+        unidata_h_path,
     );
     b.installArtifact(lib);
 
@@ -110,6 +123,8 @@ pub fn build(b: *std.Build) !void {
         sources.items,
         flags.items,
         amalgamation,
+        unidata_c_path,
+        unidata_h_path,
     );
     const shim_lib = createShimLibrary(b, target, optimize);
     benchmark_exe.root_module.linkLibrary(optimized_lib);
@@ -194,12 +209,6 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_test_exe.step);
     test_step.dependOn(&run_xxu_test.step);
     test_step.dependOn(&run_xxu_zig_tests.step);
-
-    const run_generate = std.Build.Step.Run.create(b, "Generate xxUTF data file");
-    run_generate.setCwd(b.path("gen"));
-    run_generate.addFileArg(b.path("gen/gen.py"));
-    const generate_step = b.step("generate", "Generate the xxUTF data file");
-    generate_step.dependOn(&run_generate.step);
 }
 
 fn createLibrary(
@@ -209,6 +218,8 @@ fn createLibrary(
     sources: []const []const u8,
     flags: []const []const u8,
     amalgamation_path: std.Build.LazyPath,
+    unidata_c_path: std.Build.LazyPath,
+    unidata_h_path: std.Build.LazyPath,
 ) *std.Build.Step.Compile {
     const lib = b.addLibrary(.{
         .name = "xxutf",
@@ -221,12 +232,14 @@ fn createLibrary(
         .linkage = .static,
     });
     lib.root_module.addIncludePath(b.path(""));
+    lib.root_module.addIncludePath(unidata_h_path.dirname());
     if (optimize == .Debug) {
         lib.root_module.addCSourceFiles(.{
             .root = b.path(""),
             .files = sources,
             .flags = flags,
         });
+        lib.root_module.addCSourceFile(.{ .file = unidata_c_path, .flags = flags });
     } else {
         // Use single header for release builds. This gives worse compiler errors, but
         // better performance.
@@ -288,7 +301,6 @@ const default_flags: []const []const u8 = &.{
 
 const header_files: []const []const u8 = &.{
     "xxutf.h",
-    "unidata.h",
     "common_defs.h",
     "impl/scalar.h",
     "impl/scalar/scalar_common.h",
@@ -298,7 +310,6 @@ const header_files: []const []const u8 = &.{
 
 const default_sources: []const []const u8 = &.{
     "xxutf.c",
-    "unidata.c",
     "impl/scalar/scalar_common.c",
     "impl/scalar/scalar_normalize_utf8.c",
     "impl/scalar/scalar_normalize_utf16.c",

@@ -4,6 +4,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Union
 
 
 PREAMBLE = """/*
@@ -24,15 +25,32 @@ var_re = re.compile(r"^([_a-zA-Z][a-zA-Z_0-9 ]+ \**)([_a-zA-Z0-9]+)(\[|;| =)")
 add_re = re.compile(r"^// amalgamate add: (.*)")
 
 
-def copy_file(out, file: Path, seen_headers: set[str]) -> None:
-    out.write(f"/*amalgamate: BEGIN {file}*/\n")
+def find_header(name: str, includes: list[Path]) -> Union[Path, None]:
+    for dir in includes:
+        full_path = dir / name
+        if full_path.exists():
+            return full_path
+    return None
+
+
+def copy_file(
+    out, file: Path, seen_headers: set[str], include_dirs: list[Path]
+) -> None:
+    out.write(f"/*amalgamate: BEGIN {file.name}*/\n")
     with open(file, "r", encoding="utf-8") as f:
         for line in f:
             if (include_match := include_re.match(line)) is not None:
                 include = include_match.group(1)
                 if include not in seen_headers:
-                    copy_file(out, Path(include), seen_headers)
-                    seen_headers.add(include)
+                    header = find_header(include, include_dirs)
+                    if header is not None:
+                        copy_file(
+                            out,
+                            header,
+                            seen_headers,
+                            include_dirs,
+                        )
+                        seen_headers.add(include)
                 else:
                     out.write(f"/*amalgamate: skip {line.strip()}*/\n")
             elif (decl_match := decl_re.match(line)) is not None:
@@ -58,7 +76,7 @@ def copy_file(out, file: Path, seen_headers: set[str]) -> None:
                 out.write("#if 0\n")
             else:
                 out.write(line)
-    out.write(f"/*amalgamate: END {file}*/\n")
+    out.write(f"/*amalgamate: END {file.name}*/\n")
 
 
 def main() -> None:
@@ -78,25 +96,27 @@ def main() -> None:
         help="path to common_defs.h file",
         required=True,
     )
+    parser.add_argument(
+        "-I", "--include", type=Path, help="header file sources", nargs="*"
+    )
 
     args = parser.parse_args()
 
-    cwd = Path.cwd()
     seen_headers: set[str] = set()
     seen_headers.add(args.common_defs.name)
     if args.output is None:
         sys.stdout.write(PREAMBLE)
         # Include common_defs first because we use XXUTF_UNUSED in this script
-        copy_file(sys.stdout, args.common_defs, seen_headers)
+        copy_file(sys.stdout, args.common_defs, seen_headers, args.include)
         for file in args.sources:
-            copy_file(sys.stdout, Path(file), seen_headers)
+            copy_file(sys.stdout, Path(file), seen_headers, args.include)
     else:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(PREAMBLE)
-            copy_file(f, args.common_defs.relative_to(cwd), seen_headers)
+            copy_file(f, args.common_defs, seen_headers, args.include)
             for file in args.sources:
                 file_path = Path(file)
-                copy_file(f, file_path.relative_to(cwd), seen_headers)
+                copy_file(f, file_path, seen_headers, args.include)
 
 
 if __name__ == "__main__":

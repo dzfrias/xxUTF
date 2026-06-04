@@ -1133,7 +1133,8 @@ def main() -> None:
     )
 
     headers: list[HeaderDef] = []
-    with open("unidata.c", "w") as f:
+    c_output = sys.argv[1]
+    with open(c_output, "w") as f:
         f.write(PREAMBLE)
         headers.extend(
             generate_hash_tables(f, nfd_map, nfkd_map, comp_map, casefold_map)
@@ -1255,7 +1256,8 @@ def main() -> None:
                 f, "UNIDATA_UTF16_NFKC_LENGTH_TRIE", utf16_nfkc_length_trie, 16, 8
             )
         )
-    with open("unidata.h", "w") as f:
+    h_output = sys.argv[2]
+    with open(h_output, "w") as f:
         f.write(PREAMBLE_H)
         for header in headers:
             generate_header_def(f, header)
