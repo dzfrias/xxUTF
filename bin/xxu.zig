@@ -158,118 +158,119 @@ const Flags = struct {
 };
 
 const ImplementationFn = fn ([*c]const u8, usize, [*c]u8) callconv(.c) usize;
-const ImplementationLengthFn = fn ([*c]const u8, usize) callconv(.c) usize;
+const ImplementationCheckFn = fn ([*c]const u8, usize, [*c]usize) callconv(.c) bool;
+const ImplementationFindFn = fn ([*c]const u8, usize) callconv(.c) usize;
 const Implementation = struct {
     algorithm: Algorithm,
     encoding: ResolvedEncoding,
     impl: ImplementationFn,
-    lengthImpl: ImplementationLengthFn,
-    lastStableImpl: ?ImplementationLengthFn,
+    checkImpl: ImplementationCheckFn,
+    lastStableImpl: ?ImplementationFindFn,
 };
 const implementations: []const Implementation = &.{
     .{
         .algorithm = .nfd,
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfd,
-        .lengthImpl = c.xxutf_normalize_utf8_nfd_length,
+        .checkImpl = c.xxutf_normalize_utf8_nfd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf8_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfkd,
-        .lengthImpl = c.xxutf_normalize_utf8_nfkd_length,
+        .checkImpl = c.xxutf_normalize_utf8_nfkd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf8_nfkd,
     },
     .{
         .algorithm = .nfc,
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfc,
-        .lengthImpl = c.xxutf_normalize_utf8_nfc_length,
+        .checkImpl = c.xxutf_normalize_utf8_nfc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf8_nfc,
     },
     .{
         .algorithm = .nfkc,
         .encoding = .utf8,
         .impl = c.xxutf_normalize_utf8_nfkc,
-        .lengthImpl = c.xxutf_normalize_utf8_nfkc_length,
+        .checkImpl = c.xxutf_normalize_utf8_nfkc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf8_nfkc,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf8,
         .impl = c.xxutf_casefold_utf8,
-        .lengthImpl = c.xxutf_casefold_utf8_length,
+        .checkImpl = c.xxutf_casefold_utf8_check,
         .lastStableImpl = null,
     },
     .{
         .algorithm = .nfd,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfd,
-        .lengthImpl = c.xxutf_normalize_utf16le_nfd_length,
+        .checkImpl = c.xxutf_normalize_utf16le_nfd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfkd,
-        .lengthImpl = c.xxutf_normalize_utf16le_nfkd_length,
+        .checkImpl = c.xxutf_normalize_utf16le_nfkd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfkd,
     },
     .{
         .algorithm = .nfc,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfc,
-        .lengthImpl = c.xxutf_normalize_utf16le_nfc_length,
+        .checkImpl = c.xxutf_normalize_utf16le_nfc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfc,
     },
     .{
         .algorithm = .nfkc,
         .encoding = .utf16le,
         .impl = c.xxutf_normalize_utf16le_nfkc,
-        .lengthImpl = c.xxutf_normalize_utf16le_nfkc_length,
+        .checkImpl = c.xxutf_normalize_utf16le_nfkc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16le_nfkc,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf16le,
         .impl = c.xxutf_casefold_utf16le,
-        .lengthImpl = c.xxutf_casefold_utf16le_length,
+        .checkImpl = c.xxutf_casefold_utf16le_check,
         .lastStableImpl = null,
     },
     .{
         .algorithm = .nfd,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfd,
-        .lengthImpl = c.xxutf_normalize_utf16be_nfd_length,
+        .checkImpl = c.xxutf_normalize_utf16be_nfd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfd,
     },
     .{
         .algorithm = .nfkd,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfkd,
-        .lengthImpl = c.xxutf_normalize_utf16be_nfkd_length,
+        .checkImpl = c.xxutf_normalize_utf16be_nfkd_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfkd,
     },
     .{
         .algorithm = .nfc,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfc,
-        .lengthImpl = c.xxutf_normalize_utf16be_nfc_length,
+        .checkImpl = c.xxutf_normalize_utf16be_nfc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfc,
     },
     .{
         .algorithm = .nfkc,
         .encoding = .utf16be,
         .impl = c.xxutf_normalize_utf16be_nfkc,
-        .lengthImpl = c.xxutf_normalize_utf16be_nfkc_length,
+        .checkImpl = c.xxutf_normalize_utf16be_nfkc_check,
         .lastStableImpl = c.xxutf_find_last_stable_utf16be_nfkc,
     },
     .{
         .algorithm = .casefold,
         .encoding = .utf16be,
         .impl = c.xxutf_casefold_utf16be,
-        .lengthImpl = c.xxutf_casefold_utf16be_length,
+        .checkImpl = c.xxutf_casefold_utf16be_check,
         .lastStableImpl = null,
     },
 };
@@ -328,12 +329,12 @@ fn run(
     }
 
     var impl: *const ImplementationFn = undefined;
-    var lengthImpl: *const ImplementationLengthFn = undefined;
-    var lastStableImpl: ?*const ImplementationLengthFn = undefined;
+    var checkImpl: *const ImplementationCheckFn = undefined;
+    var lastStableImpl: ?*const ImplementationFindFn = undefined;
     inline for (implementations) |implementation| {
         if (algorithm == implementation.algorithm and resolved_encoding == implementation.encoding) {
             impl = implementation.impl;
-            lengthImpl = implementation.lengthImpl;
+            checkImpl = implementation.checkImpl;
             lastStableImpl = if (implementation.lastStableImpl) |f| f else null;
         }
     }
@@ -350,24 +351,32 @@ fn run(
             return error.InvalidInput;
         }
         // Compute the size that we need to run the implementation function. Resize if needed.
-        const out_length = lengthImpl(trimmed.ptr, trimmed.len);
-        if (out_length > out_buf.len) {
-            allocator.free(out_buf);
-            out_buf = try allocator.alloc(u8, out_length);
-        }
-        const nwritten = impl(trimmed.ptr, trimmed.len, out_buf.ptr);
+        var out_length: usize = undefined;
+        const check = checkImpl(trimmed.ptr, trimmed.len, &out_length);
+        // If `check` is true, we can skip the work of writing using `impl`
+        const final_buf: []const u8 = if (check) trimmed else out: {
+            if (out_length > out_buf.len) {
+                allocator.free(out_buf);
+                out_buf = try allocator.alloc(u8, out_length);
+            }
+            const nwritten = impl(trimmed.ptr, trimmed.len, out_buf.ptr);
+            break :out out_buf[0..nwritten];
+        };
         // When we have an algorithm that is not closed under string concatenation (such as the
         // normalization algorithms), `last_stable` is the last stable code point for which we
         // can use to concatenate this current outputted result and the next outputted result.
         // We put the `last_stable` and the code points after it into the start of the `read_buf`
         // so that they can be normalized with the next bytes we read from the input.
-        const last_stable = if (lastStableImpl) |f| f(out_buf.ptr, nwritten) else nwritten;
+        const last_stable = if (lastStableImpl) |f|
+            f(final_buf.ptr, final_buf.len)
+        else
+            final_buf.len;
         // Check if we got -1, meaning we found no stable code point in `out_buf`
         if (last_stable == std.math.maxInt(usize)) {
             return error.InvalidInput;
         }
-        output_writer.interface.writeAll(out_buf[0..last_stable]) catch return error.WriteFailed;
-        const carry_stable = out_buf[last_stable..nwritten];
+        output_writer.interface.writeAll(final_buf[0..last_stable]) catch return error.WriteFailed;
+        const carry_stable = final_buf[last_stable..];
         const carry_partial = buf[trimmed.len..];
         assert(carry_partial.len < 4);
         carried = carry_stable.len + carry_partial.len;

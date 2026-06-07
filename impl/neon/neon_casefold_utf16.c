@@ -81,9 +81,10 @@
     return out - start;                                                        \
   }                                                                            \
                                                                                \
-  size_t neon_casefold_utf16##endianness##_length(const uint8_t *input,        \
-                                                  size_t length) {             \
-    size_t out_length = 0;                                                     \
+  bool neon_casefold_utf16##endianness##_check(                                \
+      const uint8_t *input, size_t length, size_t *out_length) {               \
+    *out_length = 0;                                                           \
+    bool is_qc = true;                                                         \
     const size_t SAFETY_MARGIN = 16;                                           \
     size_t p = 0;                                                              \
     while (p + SAFETY_MARGIN <= length) {                                      \
@@ -94,65 +95,40 @@
       }                                                                        \
       uint16x8_t ascii_mask = vcleq_u16(in, vdupq_n_u16(0x7F));                \
       if (vminvq_u16(ascii_mask) != 0) {                                       \
-        out_length += 16;                                                      \
+        uint16x8_t shifted = vsubq_u16(in, vdupq_n_u16('A'));                  \
+        uint16x8_t uppercase_mask =                                            \
+            vcleq_u16(shifted, vdupq_n_u16('Z' - 'A'));                        \
+        is_qc &= vmaxvq_u16(uppercase_mask) == 0;                              \
+        *out_length += 16;                                                     \
         p += 16;                                                               \
         continue;                                                              \
       }                                                                        \
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       if (vmaxvq_u32(surrogates_mask) == 0) {                                  \
-        uint16x8_t index = vshrq_n_u16(in, 6);                                 \
-        uint16x8_t block_index = {                                             \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    0)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    1)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    2)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    3)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    4)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    5)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    6)],       \
-            UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_INDEX[vgetq_lane_u16(index,     \
-                                                                    7)],       \
-        };                                                                     \
-        uint16x8_t masked = vandq_u16(in, vdupq_n_u16(0x3F));                  \
-        uint16x8_t data_offset = vaddq_u16(block_index, masked);               \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 0)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 1)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 2)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 3)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 4)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 5)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 6)];                                                  \
-        out_length += UNIDATA_UTF16_CASEFOLD_LENGTH_TRIE_DATA[vgetq_lane_u16(  \
-            data_offset, 7)];                                                  \
+        uint16x8_t values =                                                    \
+            NEON_TRIE_LOOKUP_FULL(UNIDATA_UTF16_CASEFOLD_CHECK_TRIE, in);      \
+        *out_length += vaddvq_u16(vandq_u16(values, vdupq_n_u16(0x3F)));       \
+        is_qc &= !vmaxvq_u16(vshrq_n_u16(values, 7));                          \
         p += 16;                                                               \
       } else {                                                                 \
         size_t range = 16;                                                     \
         if (vgetq_lane_u16(surrogates_mask, 7) == 0xFFFF) {                    \
           range += 2;                                                          \
         }                                                                      \
-        out_length +=                                                          \
-            scalar_casefold_utf16##endianness##_length(input + p, range);      \
+        size_t l;                                                              \
+        is_qc &=                                                               \
+            scalar_casefold_utf16##endianness##_check(input + p, range, &l);   \
+        *out_length += l;                                                      \
         p += range;                                                            \
       }                                                                        \
     }                                                                          \
     if (p < length) {                                                          \
-      out_length +=                                                            \
-          scalar_casefold_utf16##endianness##_length(input + p, length - p);   \
+      size_t tail_length;                                                      \
+      is_qc &= scalar_casefold_utf16##endianness##_check(                      \
+          input + p, length - p, &tail_length);                                \
+      *out_length += tail_length;                                              \
     }                                                                          \
-    return out_length;                                                         \
+    return is_qc;                                                              \
   }
 
 NEON_UTF16_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, false);

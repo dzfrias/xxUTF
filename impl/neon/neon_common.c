@@ -4,6 +4,7 @@
 #include "common_defs.h"
 #include "unidata.h"
 #include <arm_neon.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -283,10 +284,26 @@ uint64_t neon_make_utf8_code_point_mask(const uint8_t *input) {
   return mask;
 }
 
-// Create a logical vector for high surrogates.
 uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in) {
   return vandq_u16(vcleq_u16(in, vdupq_n_u16(0xDBFF)),
                    vcgeq_u16(in, vdupq_n_u16(0xD800)));
+}
+
+bool neon_is_ccc_sorted_full(uint16x8_t ccc_values, uint8_t last_ccc) {
+  uint16x8_t shifted_ccc = vextq_u16(vdupq_n_u16(last_ccc), ccc_values, 7);
+  uint16x8_t starters = vceqq_u16(ccc_values, vdupq_n_u16(0));
+  /* We can use the special ccc value 255 for starters */
+  uint16x8_t ccc_fixup = vbslq_u16(starters, vdupq_n_u16(255), ccc_values);
+  uint16x8_t ccc_lt = vcltq_u16(ccc_fixup, shifted_ccc);
+  return vmaxvq_u16(ccc_lt) == 0;
+}
+
+bool neon_is_ccc_sorted(uint16x4_t ccc_values, uint8_t last_ccc) {
+  uint16x4_t shifted_ccc = vext_u16(vdup_n_u16(last_ccc), ccc_values, 3);
+  uint16x4_t starters = vceq_u16(ccc_values, vdup_n_u16(0));
+  uint16x4_t ccc_fixup = vbsl_u16(starters, vdup_n_u16(255), ccc_values);
+  uint16x4_t ccc_lt = vclt_u16(ccc_fixup, shifted_ccc);
+  return vmaxv_u16(ccc_lt) == 0;
 }
 
 // amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

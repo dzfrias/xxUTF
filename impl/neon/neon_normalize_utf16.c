@@ -478,9 +478,11 @@ NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfkd, NFKD, nfkc, NFKC,
 
 #define NEON_UTF16_LENGTH_IMPLEMENTATION(endianness, swap_endianness, form,    \
                                          form_upper)                           \
-  size_t neon_normalize_utf16##endianness##_##form##_length(                   \
-      const uint8_t *input, size_t length) {                                   \
-    size_t out_length = 0;                                                     \
+  bool neon_normalize_utf16##endianness##_##form##_check(                      \
+      const uint8_t *input, size_t length, size_t *out_length) {               \
+    *out_length = 0;                                                           \
+    uint8_t last_ccc = 0;                                                      \
+    bool is_qc = true;                                                         \
     const size_t SAFETY_MARGIN = 16;                                           \
     size_t p = 0;                                                              \
     while (p + SAFETY_MARGIN < length) {                                       \
@@ -491,31 +493,41 @@ NEON_UTF16_IMPLEMENTATION(be, !XXUTF_BIG_ENDIAN, true, nfkd, NFKD, nfkc, NFKC,
       }                                                                        \
       uint16x8_t ascii_mask = vcleq_u16(in, vdupq_n_u16(0x7F));                \
       if (vminvq_u16(ascii_mask) != 0) {                                       \
-        out_length += 16;                                                      \
+        *out_length += 16;                                                     \
         p += 16;                                                               \
+        last_ccc = 0;                                                          \
         continue;                                                              \
       }                                                                        \
       uint16x8_t surrogates_mask = neon_make_utf16_surrogates_mask(in);        \
       if (vmaxvq_u16(surrogates_mask) == 0) {                                  \
         uint16x8_t values = NEON_TRIE_LOOKUP_FULL(                             \
-            UNIDATA_UTF16_##form_upper##_LENGTH_TRIE, in);                     \
-        out_length += vaddvq_u16(values);                                      \
+            UNIDATA_UTF16_##form_upper##_CHECK_TRIE, in);                      \
+        *out_length += vaddvq_u16(vandq_u16(values, vdupq_n_u16(0x3F)));       \
+        uint16x8_t ccc_values =                                                \
+            vandq_u16(vshrq_n_u16(values, 6), vdupq_n_u16(0xFF));              \
+        if (is_qc) {                                                           \
+          is_qc &= !vmaxvq_u16(vshrq_n_u16(values, 15)) &&                     \
+                   neon_is_ccc_sorted_full(ccc_values, last_ccc);              \
+        }                                                                      \
+        last_ccc = vgetq_lane_u16(ccc_values, 7);                              \
       } else {                                                                 \
         size_t normalize_range = 16;                                           \
         if (vgetq_lane_u16(surrogates_mask, 7) == 0xFFFF) {                    \
           normalize_range += 2;                                                \
         }                                                                      \
-        out_length += scalar_normalize_utf16##endianness##_##form##_length(    \
-            input + p, normalize_range);                                       \
+        is_qc &=                                                               \
+            scalar_normalize_utf16##endianness##_##form##_check_with_context(  \
+                input + p, normalize_range, out_length, &last_ccc);            \
         p += normalize_range - 16;                                             \
       }                                                                        \
       p += 16;                                                                 \
     }                                                                          \
     if (p < length) {                                                          \
-      out_length += scalar_normalize_utf16##endianness##_##form##_length(      \
-          input + p, length - p);                                              \
+      is_qc &=                                                                 \
+          scalar_normalize_utf16##endianness##_##form##_check_with_context(    \
+              input + p, length - p, out_length, &last_ccc);                   \
     }                                                                          \
-    return out_length;                                                         \
+    return is_qc;                                                              \
   }
 
 NEON_UTF16_LENGTH_IMPLEMENTATION(le, XXUTF_BIG_ENDIAN, nfd, NFD);

@@ -108,7 +108,7 @@ var out: [64]u8 align(2) = undefined;
 // Test if two normalization forms are equal.
 fn testEqualNormalized(
     comptime impl: fn ([*c]const u8, usize, [*c]u8) callconv(.c) usize,
-    comptime length_impl: ?fn ([*c]const u8, usize) callconv(.c) usize,
+    comptime check_impl: ?fn ([*c]const u8, usize, [*c]usize) callconv(.c) bool,
     comptime col: ColumnType,
     expected: []const col.intType(),
     input: []const col.intType(),
@@ -126,13 +126,22 @@ fn testEqualNormalized(
             .got = normalized_cast,
         } };
     }
-    if (length_impl) |f| {
-        const expect_nwritten = f(input_bytes.ptr, input_bytes.len);
+    if (check_impl) |f| {
+        var expect_nwritten: usize = undefined;
+        const check = f(input_bytes.ptr, input_bytes.len, &expect_nwritten);
         if (expect_nwritten != nwritten) {
             return .{ .lengths_mismatch = .{
                 .expected = expect_nwritten,
                 .input = input,
                 .got = nwritten,
+            } };
+        }
+        if (check and !std.mem.eql(u8, input_bytes, normalized)) {
+            const normalized_cast = std.mem.bytesAsSlice(col.intType(), normalized);
+            return .{ .contents_mismatch = .{
+                .expected = input,
+                .input = input,
+                .got = normalized_cast,
             } };
         }
     }
@@ -158,26 +167,26 @@ fn runTest(
                 .utf16le => c.xxutf_normalize_utf16le_nfd,
                 .utf16be => c.xxutf_normalize_utf16be_nfd,
             };
-            const length_impl = switch (col) {
-                .utf8 => c.xxutf_normalize_utf8_nfd_length,
-                .utf16le => c.xxutf_normalize_utf16le_nfd_length,
-                .utf16be => c.xxutf_normalize_utf16be_nfd_length,
+            const check_impl = switch (col) {
+                .utf8 => c.xxutf_normalize_utf8_nfd_check,
+                .utf16le => c.xxutf_normalize_utf16le_nfd_check,
+                .utf16be => c.xxutf_normalize_utf16be_nfd_check,
             };
 
             // c3 ==  toNFD(c1) ==  toNFD(c2) ==  toNFD(c3)
             const expected = test_info.cols[2];
-            if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[2])) |failure|
                 return failure;
 
             // c5 ==  toNFD(c4) ==  toNFD(c5)
             const alt_expected = test_info.cols[4];
-            if (testEqualNormalized(impl, length_impl, col, alt_expected, test_info.cols[3])) |failure|
+            if (testEqualNormalized(impl, check_impl, col, alt_expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, alt_expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, alt_expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;
@@ -213,23 +222,23 @@ fn runTest(
                 .utf16le => c.xxutf_normalize_utf16le_nfkd,
                 .utf16be => c.xxutf_normalize_utf16be_nfkd,
             };
-            const length_impl = switch (col) {
-                .utf8 => c.xxutf_normalize_utf8_nfkd_length,
-                .utf16le => c.xxutf_normalize_utf16le_nfkd_length,
-                .utf16be => c.xxutf_normalize_utf16be_nfkd_length,
+            const check_impl = switch (col) {
+                .utf8 => c.xxutf_normalize_utf8_nfkd_check,
+                .utf16le => c.xxutf_normalize_utf16le_nfkd_check,
+                .utf16be => c.xxutf_normalize_utf16be_nfkd_check,
             };
 
             // c5 == toNFKD(c1) == toNFKD(c2) == toNFKD(c3) == toNFKD(c4) == toNFKD(c5)
             const expected = test_info.cols[4];
-            if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[0])) |failure|
+            if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[0])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[1])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[1])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[2])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[2])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[3])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[3])) |failure|
                 return failure
-            else if (testEqualNormalized(impl, length_impl, col, expected, test_info.cols[4])) |failure|
+            else if (testEqualNormalized(impl, check_impl, col, expected, test_info.cols[4])) |failure|
                 return failure;
 
             return null;

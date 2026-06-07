@@ -1,6 +1,7 @@
 #ifndef XXUTF_H
 #define XXUTF_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -31,21 +32,36 @@ size_t xxutf_casefold_utf8(const char *input, size_t length, char *out);
 size_t xxutf_casefold_utf16le(const char *input, size_t length, char *out);
 size_t xxutf_casefold_utf16be(const char *input, size_t length, char *out);
 
-size_t xxutf_normalize_utf8_nfd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf8_nfkd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf8_nfc_length(const char *input, size_t length);
-size_t xxutf_normalize_utf8_nfkc_length(const char *input, size_t length);
-size_t xxutf_casefold_utf8_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16le_nfd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16le_nfkd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16le_nfc_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16le_nfkc_length(const char *input, size_t length);
-size_t xxutf_casefold_utf16le_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16be_nfd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16be_nfkd_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16be_nfc_length(const char *input, size_t length);
-size_t xxutf_normalize_utf16be_nfkc_length(const char *input, size_t length);
-size_t xxutf_casefold_utf16be_length(const char *input, size_t length);
+bool xxutf_normalize_utf8_nfd_check(const char *input, size_t length,
+                                    size_t *out_length);
+bool xxutf_normalize_utf8_nfkd_check(const char *input, size_t length,
+                                     size_t *out_length);
+bool xxutf_normalize_utf8_nfc_check(const char *input, size_t length,
+                                    size_t *out_length);
+bool xxutf_normalize_utf8_nfkc_check(const char *input, size_t length,
+                                     size_t *out_length);
+bool xxutf_casefold_utf8_check(const char *input, size_t length,
+                               size_t *out_length);
+bool xxutf_normalize_utf16le_nfd_check(const char *input, size_t length,
+                                       size_t *out_length);
+bool xxutf_normalize_utf16le_nfkd_check(const char *input, size_t length,
+                                        size_t *out_length);
+bool xxutf_normalize_utf16le_nfc_check(const char *input, size_t length,
+                                       size_t *out_length);
+bool xxutf_normalize_utf16le_nfkc_check(const char *input, size_t length,
+                                        size_t *out_length);
+bool xxutf_casefold_utf16le_check(const char *input, size_t length,
+                                  size_t *out_length);
+bool xxutf_normalize_utf16be_nfd_check(const char *input, size_t length,
+                                       size_t *out_length);
+bool xxutf_normalize_utf16be_nfkd_check(const char *input, size_t length,
+                                        size_t *out_length);
+bool xxutf_normalize_utf16be_nfc_check(const char *input, size_t length,
+                                       size_t *out_length);
+bool xxutf_normalize_utf16be_nfkc_check(const char *input, size_t length,
+                                        size_t *out_length);
+bool xxutf_casefold_utf16be_check(const char *input, size_t length,
+                                  size_t *out_length);
 
 size_t xxutf_find_last_stable_utf8_nfd(const char *input, size_t length);
 size_t xxutf_find_first_stable_utf8_nfd(const char *input, size_t length);

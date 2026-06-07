@@ -40,19 +40,17 @@ static size_t scalar_casefold_character_utf8_supplementary(uint32_t c,
   return 0;
 }
 
-// Returns the number of UTF-8 bytes needed to write the casefold of `c` where
-// `c` is in the BMP.
-static uint8_t scalar_casefold_length_utf8_bmp(uint16_t c) {
+static bool scalar_casefold_length_utf8_bmp(uint16_t c, size_t *out_length) {
   uint16_t shifted = c >> 6;
   uint16_t masked = c & 63;
-  uint16_t index = UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE_INDEX[shifted];
-  uint8_t value = UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE_DATA[index + masked];
-  return value;
+  uint16_t index = UNIDATA_UTF8_CASEFOLD_CHECK_TRIE_INDEX[shifted];
+  uint8_t value = UNIDATA_UTF8_CASEFOLD_CHECK_TRIE_DATA[index + masked];
+  *out_length += value & 0x7F;
+  return !(value >> 7);
 }
 
-// Returns the number of UTF-8 bytes needed to write the casefold of `c` where
-// `c` is in the supplementary plane.
-static uint8_t scalar_casefold_length_utf8_supplementary(uint32_t c) {
+static bool scalar_casefold_length_utf8_supplementary(uint32_t c,
+                                                      size_t *out_length) {
   uint32_t salt_hash =
       scalar_phash(c, 0, sizeof(UNIDATA_CASEFOLD_KV) / sizeof(uint32_t));
   uint32_t salt = UNIDATA_CASEFOLD_SALT[salt_hash];
@@ -61,9 +59,11 @@ static uint8_t scalar_casefold_length_utf8_supplementary(uint32_t c) {
   uint32_t k = UNIDATA_CASEFOLD_KV[key_hash][1];
   uint32_t casefold = UNIDATA_CASEFOLD_KV[key_hash][0];
   if (k == c) {
-    return scalar_code_point_size_utf8(casefold);
+    *out_length += scalar_code_point_size_utf8(casefold);
+    return false;
   }
-  return 4;
+  *out_length += 4;
+  return true;
 }
 
 size_t scalar_casefold_utf8(const uint8_t *input, size_t length, uint8_t *out) {
@@ -125,32 +125,38 @@ size_t scalar_casefold_utf8(const uint8_t *input, size_t length, uint8_t *out) {
   return out - start;
 }
 
-size_t scalar_casefold_utf8_length(const uint8_t *input, size_t length) {
-  size_t out_length = 0;
+bool scalar_casefold_utf8_check(const uint8_t *input, size_t length,
+                                size_t *out_length) {
+  *out_length = 0;
+  bool is_qc = true;
   size_t p = 0;
   while (p < length) {
     uint8_t leading = input[p];
     if (leading < 0b10000000) {
-      out_length++;
+      if (leading >= 'A' && leading <= 'Z') {
+        is_qc = false;
+      }
+      (*out_length)++;
       p++;
     } else if ((leading & 0b11100000) == 0b11000000) {
       uint16_t code_point =
           (leading & 0b00011111) << 6 | (input[p + 1] & 0b00111111);
-      out_length += scalar_casefold_length_utf8_bmp(code_point);
+      is_qc &= scalar_casefold_length_utf8_bmp(code_point, out_length);
       p += 2;
     } else if ((leading & 0b11110000) == 0b11100000) {
       uint16_t code_point = (leading & 0b00001111) << 12 |
                             (input[p + 1] & 0b00111111) << 6 |
                             (input[p + 2] & 0b00111111);
-      out_length += scalar_casefold_length_utf8_bmp(code_point);
+      is_qc &= scalar_casefold_length_utf8_bmp(code_point, out_length);
       p += 3;
     } else if ((leading & 0b11111000) == 0b11110000) {
       uint32_t code_point =
           (leading & 0b00000111) << 18 | (input[p + 1] & 0b00111111) << 12 |
           (input[p + 2] & 0b00111111) << 6 | (input[p + 3] & 0b00111111);
-      out_length += scalar_casefold_length_utf8_supplementary(code_point);
+      is_qc &=
+          scalar_casefold_length_utf8_supplementary(code_point, out_length);
       p += 4;
     }
   }
-  return out_length;
+  return is_qc;
 }

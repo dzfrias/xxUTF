@@ -57,7 +57,7 @@ The xxUTF's core API follows this pattern:
 ```c
 /// Normalize the Unicode text bytes in the given normalization form, returning the
 /// length of the output. All lengths are measured in bytes. The input is expected
-/// to be valid under the specified normalization form.
+/// to be valid under the specified encoding.
 ///
 /// It is assumed that the output buffer is large enough to fit the full normalized
 /// form of the input. The encoding of the output will match the encoding of the
@@ -65,17 +65,19 @@ The xxUTF's core API follows this pattern:
 /// input is still a byte pointer. xxUTF does not require the input to be aligned,
 /// and the performance difference is marginal even if it is.
 size_t xxutf_normalize_ENCODING_FORM(const uint8_t *input, size_t length, uint8_t *out);
-/// Get the size of the output buffer needed to normalize the input. The input is
-/// expected to be valid under the specified normalization form.
+/// Check if the input is already in the specified form, returning `true` if so.
+/// Additionally, the `out_length` out parameter is set to the size of an output
+/// buffer needed to hold the normalized form of the input. The input is expected
+/// to be valid under the specified encoding.
 ///
-/// Note that for NFC and NFKC, the returned size is actually an upper bound
-/// calculated from the input, not the exact size. This is the case for speed reasons.
-/// All lengths are measured in bytes.
-size_t xxutf_normalize_ENCODING_FORM_length(const uint8_t *input, size_t length);
+/// Note that for NFC and NFKC, `out_length` is actually an upper bound calculated
+/// from the input, not the exact size. This is the case for speed reasons. All lengths
+/// are measured in bytes.
+bool xxutf_normalize_ENCODING_FORM_check(const uint8_t *input, size_t length, size_t *out_length);
 
 /// Case fold the Unicode text bytes, returning the length of the output. All
 /// lengths are measured in bytes. The input is expected to be valid under the
-/// specified normalization form.
+/// specified encoding.
 ///
 /// It is assumed that the output buffer is large enough to fit the full case folded
 /// form of the input. The encoding of the output wil match the encoding of the input.
@@ -83,10 +85,11 @@ size_t xxutf_normalize_ENCODING_FORM_length(const uint8_t *input, size_t length)
 /// still a byte pointer. xxUTF does not require the input to be aligned, and the
 /// performance difference is marginal even if it is.
 size_t xxutf_casefold_ENCODING(const uint8_t *input, size_t length, uint8_t *out);
-/// Get the size of the output buffer needed to case fold the input. All lengths are
-/// measured in bytes. The input is expected to be valid under the specified
-/// normalization form.
-size_t xxutf_casefold_ENCODING_length(const uint8_t *input, size_t length);
+/// Check if the input is already case folded, returning `true` if so. Additionally,
+/// the `out_length` out parameter is set to the size of an output buffer needed to
+/// hold the normalized form of the input. The input is expected to be valid under the
+/// specified encoding.
+bool xxutf_casefold_ENCODING_check(const uint8_t *input, size_t length, size_t *out_length);
 ```
 
 The valid encodings are:
@@ -105,9 +108,17 @@ The valid normalization forms are:
 For example:
 
 ```c
-size_t out_length = xxutf_normalize_utf16le_nfkc_length(input, length);
-// ...maybe re-allocate according to `out_length`...
-(void)xxutf_normalize_utf16le_nfkc(input, length, out);
+size_t out_length_bound;
+bool check = xxutf_normalize_utf16le_nfkc_check(input, length, &out_length_bound);
+if (check) {
+  printf("Already NFKC normalized!\n");
+} else {
+  // Allocate according to out_length_bound
+  uint8_t *out = malloc(out_length_bound);
+  // ...maybe re-allocate according to `out_length`...
+  size_t out_length = xxutf_normalize_utf16le_nfkc(input, length, out);
+  printf("NFKC normalized to: '%s'\n", out);
+}
 ```
 
 Like many Unicode processing libraries, xxUTF supports a two-pass pattern:

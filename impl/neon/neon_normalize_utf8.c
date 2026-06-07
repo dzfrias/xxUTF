@@ -478,23 +478,16 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     XXUTF_ASSERT(total > 0);                                                        \
     uint16x8_t ccc_values =                                                         \
         vandq_u16(vshrq_n_u16(values, 2), vdupq_n_u16(0xFF));                       \
-    uint16x8_t shifted_ccc = vextq_u16(vdupq_n_u16(*last_ccc), ccc_values, 7);      \
-    uint16x8_t starters = vceqq_u16(ccc_values, vdupq_n_u16(0));                    \
-    /* We can use the special ccc value 255 for starters */                         \
-    uint16x8_t ccc_fixup = vbslq_u16(starters, vdupq_n_u16(255), ccc_values);       \
-    uint16x8_t ccc_lt = vcltq_u16(ccc_fixup, shifted_ccc);                          \
+    bool is_sorted = neon_is_ccc_sorted_full(ccc_values, *last_ccc);                \
     /* There are two conditions in which we would enter the slow path:              \
      *                                                                              \
      * 1. The total number of bytes we need to write the decomposition of the       \
      *    input bytes would be greater than 16.                                     \
-     * 2. We've detected that combining characters are out-of-order (note that      \
-     *    it is possible to use `ccc_lt` to sort characters in an "optimized"       \
-     *    manner. But this led to a performance hit, likely because we would        \
-     *    have to spill more onto the stack).                                       \
+     * 2. We've detected that combining characters are out-of-order.                \
      *                                                                              \
      * Both of these conditions are rather uncommon, though.                        \
      */                                                                             \
-    if (XXUTF_LIKELY(total <= 16 && vmaxvq_u16(ccc_lt) == 0)) {                     \
+    if (XXUTF_LIKELY(total <= 16 && is_sorted)) {                                   \
       *last_ccc = vgetq_lane_u16(ccc_values, 5);                                    \
       neon_write_non_hangul_simple_utf8_##decomp_form(in, chars, delta,             \
                                                       values, *out);                \
@@ -533,12 +526,8 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     int16_t total = (int16_t)n_bytes + vaddv_s16(delta);                            \
     XXUTF_ASSERT(total > 0);                                                        \
     uint16x4_t ccc_values = vand_u16(vshr_n_u16(values, 2), vdup_n_u16(0xFF));      \
-    uint16x4_t shifted_ccc = vext_u16(vdup_n_u16(*last_ccc), ccc_values, 3);        \
-    uint16x4_t starters = vceq_u16(ccc_values, vdup_n_u16(0));                      \
-    /* We can use the special ccc value 255 for starters */                         \
-    uint16x4_t ccc_fixup = vbsl_u16(starters, vdup_n_u16(255), ccc_values);         \
-    uint16x4_t ccc_lt = vclt_u16(ccc_fixup, shifted_ccc);                           \
-    if (!hangul_result && total <= 16 && vmaxv_u16(ccc_lt) == 0) {                  \
+    bool is_sorted = neon_is_ccc_sorted(ccc_values, *last_ccc);                     \
+    if (!hangul_result && total <= 16 && is_sorted) {                               \
       *last_ccc = vget_lane_u16(ccc_values, 3);                                     \
       neon_write_non_hangul_simple_utf8_##decomp_form(                              \
           in, vcombine_u16(chars, vdup_n_u16(0)),                                   \
@@ -922,59 +911,47 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
 
 #undef NEON_DEFINE_NORMALIZE_FUNCTIONS
 
-#define NEON_TRIE_LENGTH_SUM(trie_name, code_points)                           \
-  ({                                                                           \
-    uint16x4_t _x = (code_points);                                             \
-    uint16x4_t _index = vshr_n_u16(_x, 6);                                     \
-    uint16x4_t _block_index = {                                                \
-        trie_name##_INDEX[vget_lane_u16(_index, 0)],                           \
-        trie_name##_INDEX[vget_lane_u16(_index, 1)],                           \
-        trie_name##_INDEX[vget_lane_u16(_index, 2)],                           \
-        trie_name##_INDEX[vget_lane_u16(_index, 3)],                           \
-    };                                                                         \
-    uint16x4_t _masked = vand_u16(_x, vdup_n_u16(0x3F));                       \
-    uint16x4_t _data_offset = vadd_u16(_block_index, _masked);                 \
-    uint16_t _sum = 0;                                                         \
-    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 0)];                  \
-    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 1)];                  \
-    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 2)];                  \
-    _sum += trie_name##_DATA[vget_lane_u16(_data_offset, 3)];                  \
-    _sum;                                                                      \
-  })
-
-#define NEON_TRIE_LENGTH_SUM_WIDE(trie_name, code_points)                      \
-  ({                                                                           \
-    uint16x8_t _x = (code_points);                                             \
-    uint16x8_t _index = vshrq_n_u16(_x, 6);                                    \
-    uint16x8_t _block_index = {                                                \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 0)],                          \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 1)],                          \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 2)],                          \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 3)],                          \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 4)],                          \
-        trie_name##_INDEX[vgetq_lane_u16(_index, 5)],                          \
-        0,                                                                     \
-        0,                                                                     \
-    };                                                                         \
-    uint16x8_t _masked = vandq_u16(_x, vdupq_n_u16(0x3F));                     \
-    uint16x8_t _data_offset = vaddq_u16(_block_index, _masked);                \
-    uint16_t _sum = 0;                                                         \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 0)];                 \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 1)];                 \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 2)];                 \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 3)];                 \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 4)];                 \
-    _sum += trie_name##_DATA[vgetq_lane_u16(_data_offset, 5)];                 \
-    _sum;                                                                      \
-  })
-
-#define NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(form, form_upper)               \
-  static size_t neon_normalize_masked_utf8_##form##_length(                    \
-      const uint8_t *input, uint64_t mask, size_t *out_length) {               \
+#define NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS(form, form_upper)                \
+  static void neon_check_code_points_utf8_##form##_wide(                       \
+      uint16x8_t code_points, size_t *out_length, bool *is_qc,                 \
+      uint8_t *last_ccc) {                                                     \
+    uint16x8_t values = NEON_TRIE_LOOKUP_WIDE(                                 \
+        UNIDATA_UTF8_##form_upper##_CHECK_TRIE, code_points);                  \
+    *out_length += vaddvq_u16(vandq_u16(values, vdupq_n_u16(0x3F)));           \
+    uint16x8_t ccc_values =                                                    \
+        vandq_u16(vshrq_n_u16(values, 6), vdupq_n_u16(0xFF));                  \
+    if (*is_qc) {                                                              \
+      /* Set is_qc to false if the top bit of any value is set or if our ccc's \
+       * are out of order. Checking combining classes is expensive, so we only \
+       * run this if we haven't already failed the quick-check.  */            \
+      *is_qc &= !vmaxvq_u16(vshrq_n_u16(values, 15)) &&                        \
+                neon_is_ccc_sorted_full(ccc_values, *last_ccc);                \
+    }                                                                          \
+    *last_ccc = vgetq_lane_u16(ccc_values, 5);                                 \
+  }                                                                            \
+                                                                               \
+  static void neon_check_code_points_utf8_##form(                              \
+      uint16x4_t code_points, size_t *out_length, bool *is_qc,                 \
+      uint8_t *last_ccc) {                                                     \
+    uint16x4_t values =                                                        \
+        NEON_TRIE_LOOKUP(UNIDATA_UTF8_##form_upper##_CHECK_TRIE, code_points); \
+    *out_length += vaddv_u16(vand_u16(values, vdup_n_u16(0x3F)));              \
+    uint16x4_t ccc_values = vand_u16(vshr_n_u16(values, 6), vdup_n_u16(0xFF)); \
+    if (*is_qc) {                                                              \
+      *is_qc &= !vmaxv_u16(vshr_n_u16(values, 15)) &&                          \
+                neon_is_ccc_sorted(ccc_values, *last_ccc);                     \
+    }                                                                          \
+    *last_ccc = vget_lane_u16(ccc_values, 3);                                  \
+  }                                                                            \
+                                                                               \
+  static size_t neon_normalize_masked_utf8_##form##_check(                     \
+      const uint8_t *input, uint64_t mask, size_t *out_length, bool *is_qc,    \
+      uint8_t *last_ccc) {                                                     \
     int t1 = __builtin_ctzll(~mask);                                           \
     if (t1 > 0) {                                                              \
       size_t min = t1 > 52 ? 52 : t1;                                          \
       *out_length += min;                                                      \
+      *last_ccc = 0;                                                           \
       return min;                                                              \
     }                                                                          \
     uint8x16_t in = vld1q_u8(input);                                           \
@@ -982,14 +959,14 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
                                                                                \
     if (sml_mask == 0x924) {                                                   \
       uint16x4_t code_points = neon_parse_3_byte_utf8(in);                     \
-      *out_length += NEON_TRIE_LENGTH_SUM(                                     \
-          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
+      neon_check_code_points_utf8_##form(code_points, out_length, is_qc,       \
+                                         last_ccc);                            \
       return 12;                                                               \
     }                                                                          \
     if (sml_mask == 0xAAA) {                                                   \
       uint16x8_t code_points = neon_parse_2_byte_utf8_wide(in);                \
-      *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
-          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
+      neon_check_code_points_utf8_##form##_wide(code_points, out_length,       \
+                                                is_qc, last_ccc);              \
       return 12;                                                               \
     }                                                                          \
                                                                                \
@@ -997,49 +974,52 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
     size_t n_bytes = UNIDATA_CODE_POINT_INDEX_WIDE[sml_mask][1];               \
     if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_12) {                                \
       uint16x8_t code_points = neon_parse_4_12_utf8_wide(in, idx);             \
-      *out_length += NEON_TRIE_LENGTH_SUM_WIDE(                                \
-          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
+      neon_check_code_points_utf8_##form##_wide(code_points, out_length,       \
+                                                is_qc, last_ccc);              \
       return n_bytes;                                                          \
     }                                                                          \
     if (idx < UNIDATA_SHUFUTF8_WIDE_INDEX_123) {                               \
       uint16x4_t code_points = neon_parse_4_123_utf8_wide(in, idx);            \
-      *out_length += NEON_TRIE_LENGTH_SUM(                                     \
-          UNIDATA_UTF8_##form_upper##_LENGTH_TRIE, code_points);               \
+      neon_check_code_points_utf8_##form(code_points, out_length, is_qc,       \
+                                         last_ccc);                            \
       return n_bytes;                                                          \
     }                                                                          \
                                                                                \
     XXUTF_ASSERT(idx < UNIDATA_SHUFUTF8_WIDE_INDEX_1234);                      \
-    *out_length += scalar_normalize_utf8_##form##_length(input, n_bytes);      \
+    *is_qc &= scalar_normalize_utf8_##form##_check_with_context(               \
+        input, n_bytes, out_length, last_ccc);                                 \
     return n_bytes;                                                            \
   }                                                                            \
                                                                                \
-  size_t neon_normalize_utf8_##form##_length(const uint8_t *input,             \
-                                             size_t length) {                  \
-    size_t out_length = 0;                                                     \
+  bool neon_normalize_utf8_##form##_check(const uint8_t *input, size_t length, \
+                                          size_t *out_length) {                \
+    *out_length = 0;                                                           \
+    bool is_qc = true;                                                         \
     const size_t SAFETY_MARGIN = 64;                                           \
     size_t p = 0;                                                              \
+    uint8_t last_ccc = 0;                                                      \
     while (p + 64 + SAFETY_MARGIN <= length) {                                 \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);               \
       size_t pmax = (p + 64) - 12;                                             \
       while (p < pmax) {                                                       \
-        size_t consumed = neon_normalize_masked_utf8_##form##_length(          \
-            input + p, mask, &out_length);                                     \
+        size_t consumed = neon_normalize_masked_utf8_##form##_check(           \
+            input + p, mask, out_length, &is_qc, &last_ccc);                   \
         p += consumed;                                                         \
         mask >>= consumed;                                                     \
       }                                                                        \
     }                                                                          \
     if (p < length) {                                                          \
-      out_length +=                                                            \
-          scalar_normalize_utf8_##form##_length(input + p, length - p);        \
+      is_qc &= scalar_normalize_utf8_##form##_check_with_context(              \
+          input + p, length - p, out_length, &last_ccc);                       \
     }                                                                          \
-    return out_length;                                                         \
+    return is_qc;                                                              \
   }
 
-NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(nfd, NFD);
-NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(nfkd, NFKD);
-NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(nfc, NFC);
-NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS(nfkc, NFKC);
+NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS(nfd, NFD);
+NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS(nfkd, NFKD);
+NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS(nfc, NFC);
+NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS(nfkc, NFKC);
 
-#undef NEON_DEFINE_NORMALIZE_LENGTH_FUNCTIONS
+#undef NEON_DEFINE_NORMALIZE_CHECK_FUNCTIONS
 
 // amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

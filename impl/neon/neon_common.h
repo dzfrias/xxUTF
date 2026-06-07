@@ -2,6 +2,7 @@
 #define XXUTF_NEON_COMMON_H
 
 #include <arm_neon.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -64,6 +65,10 @@ uint64_t neon_make_utf8_code_point_mask(const uint8_t *input);
 
 // Create a logical vector for high surrogates.
 uint16x8_t neon_make_utf16_surrogates_mask(uint16x8_t in);
+
+// Check if combining character classes are in order.
+bool neon_is_ccc_sorted_full(uint16x8_t ccc_values, uint8_t last_ccc);
+bool neon_is_ccc_sorted(uint16x4_t ccc_values, uint8_t last_ccc);
 
 #define NEON_TRIE_LOOKUP(trie_name, code_points)                               \
   ({                                                                           \

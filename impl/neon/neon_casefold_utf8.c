@@ -100,14 +100,17 @@ size_t neon_casefold_utf8(const uint8_t *input, size_t length, uint8_t *out) {
   return *out_ptr - start;
 }
 
-static size_t neon_casefold_masked_utf8_length(const uint8_t *input,
-                                               uint64_t mask,
-                                               size_t *out_length) {
+static size_t neon_casefold_masked_utf8_check(const uint8_t *input,
+                                              uint64_t mask, size_t *out_length,
+                                              bool *is_qc) {
   uint8x16_t in = vld1q_u8(input);
   // Check for ASCII bytes
   int t1 = __builtin_ctzll(~mask);
-  if (t1 > 0) {
-    size_t min = t1 > 52 ? 52 : t1;
+  if (t1 > 2) {
+    size_t min = t1 > 16 ? 16 : t1;
+    uint8x16_t shifted = vsubq_u8(in, vdupq_n_u8('A'));
+    uint8x16_t uppercase_mask = vcleq_u8(shifted, vdupq_n_u8('Z' - 'A'));
+    *is_qc &= vmaxvq_u8(uppercase_mask) == 0;
     *out_length += min;
     return min;
   }
@@ -128,18 +131,22 @@ static size_t neon_casefold_masked_utf8_length(const uint8_t *input,
     } else if (idx < UNIDATA_SHUFUTF8_INDEX_123) {
       chars = neon_parse_4_123_utf8(in, idx);
     } else {
-      *out_length += scalar_casefold_utf8_length(input, n_bytes);
+      size_t l;
+      *is_qc &= scalar_casefold_utf8_check(input, n_bytes, &l);
+      *out_length += l;
       return n_bytes;
     }
   }
-  uint16x4_t values =
-      NEON_TRIE_LOOKUP(UNIDATA_UTF8_CASEFOLD_LENGTH_TRIE, chars);
-  *out_length += vaddv_u16(values);
+  uint16x4_t values = NEON_TRIE_LOOKUP(UNIDATA_UTF8_CASEFOLD_CHECK_TRIE, chars);
+  *out_length += vaddv_u16(vand_u16(values, vdup_n_u16(0x3F)));
+  *is_qc &= !vmaxv_u16(vshr_n_u16(values, 7));
   return n_bytes;
 }
 
-size_t neon_casefold_utf8_length(const uint8_t *input, size_t length) {
-  size_t out_length = 0;
+bool neon_casefold_utf8_check(const uint8_t *input, size_t length,
+                              size_t *out_length) {
+  *out_length = 0;
+  bool is_qc = true;
   const size_t SAFETY_MARGIN = 16;
   size_t p = 0;
   while (p + 64 + SAFETY_MARGIN <= length) {
@@ -147,15 +154,17 @@ size_t neon_casefold_utf8_length(const uint8_t *input, size_t length) {
     size_t pmax = (p + 64) - 12;
     while (p < pmax) {
       size_t consumed =
-          neon_casefold_masked_utf8_length(input + p, mask, &out_length);
+          neon_casefold_masked_utf8_check(input + p, mask, out_length, &is_qc);
       p += consumed;
       mask >>= consumed;
     }
   }
   if (p < length) {
-    out_length += scalar_casefold_utf8_length(input + p, length - p);
+    size_t tail_length;
+    is_qc &= scalar_casefold_utf8_check(input + p, length - p, &tail_length);
+    *out_length += tail_length;
   }
-  return out_length;
+  return is_qc;
 }
 
 // amalgamate add: #endif // XXUTF_IMPLEMENTATION_NEON

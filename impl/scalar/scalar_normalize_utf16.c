@@ -147,387 +147,423 @@ SCALAR_UTF16_HELPERS(be);
 
 #undef SCALAR_UTF16_HELPERS
 
-#define SCALAR_UTF16_IMPLEMENTATION(endianness, is_big_endian, decomp_form,          \
-                                    decomp_form_upper, comp_form,                    \
-                                    comp_form_upper)                                 \
-  static size_t                                                                      \
-      scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(            \
-          uint32_t code_point, uint8_t *out, uint8_t *first_ccc,                     \
-          uint8_t *ccc) {                                                            \
-    uint8_t *start = out;                                                            \
-    uint32_t salt_hash = scalar_phash(                                               \
-        code_point, 0,                                                               \
-        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
-    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                   \
-    uint32_t key_hash = scalar_phash(                                                \
-        code_point, salt,                                                            \
-        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
-    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];               \
-    if (kv.k == code_point) {                                                        \
-      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];       \
-      for (size_t k = 0; k < kv.len; k++) {                                          \
-        out += scalar_write_code_point_utf16##endianness(chars[k], out);             \
-      }                                                                              \
-      *ccc = kv.last_ccc;                                                            \
-    } else {                                                                         \
-      *ccc = 0;                                                                      \
-    }                                                                                \
-    *first_ccc = 0;                                                                  \
-                                                                                     \
-    return out - start;                                                              \
-  }                                                                                  \
-                                                                                     \
-  static size_t scalar_decompose_utf16##endianness##_##decomp_form##_bmp(            \
-      uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {         \
-    uint8_t *start = out;                                                            \
-    uint16_t shift = code_point >> 6;                                                \
-    uint16_t masked = code_point & 63;                                               \
-    uint16_t index = UNIDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shift];          \
-    uint32_t value =                                                                 \
-        UNIDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];               \
-    if (value == 0) {                                                                \
-      *ccc = 0;                                                                      \
-      return 0;                                                                      \
-    }                                                                                \
-    *ccc = value >> 24;                                                              \
-    uint8_t delta = (value >> 14) & 0x3F;                                            \
-    uint8_t length = delta + 2;                                                      \
-    XXUTF_ASSERT(length % 2 == 0);                                                   \
-    uint16_t offset = value & 0x3FFF;                                                \
-    const uint8_t *bytes =                                                           \
-        &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];            \
-    for (size_t k = 0; k < length; k += 2) {                                         \
-      if (is_big_endian) {                                                           \
-        out[0] = bytes[k + 1];                                                       \
-        out[1] = bytes[k];                                                           \
-      } else {                                                                       \
-        out[0] = bytes[k];                                                           \
-        out[1] = bytes[k + 1];                                                       \
-      }                                                                              \
-      out += 2;                                                                      \
-    }                                                                                \
-    uint8_t ccc_delta = (value >> 20) & 0b111;                                       \
-    *first_ccc = ccc_delta == 0 ? 0 : *ccc - ccc_delta;                              \
-    return out - start;                                                              \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_find_first_stable_utf16##endianness##_##decomp_form(                 \
-      const uint8_t *input, size_t length) {                                         \
-    uint32_t p = 0;                                                                  \
-    while (p < length) {                                                             \
-      uint8_t size;                                                                  \
-      uint32_t c =                                                                   \
-          scalar_parse_code_point_utf16##endianness(input + p, &size);               \
-      uint8_t ccc = scalar_lookup_ccc(c);                                            \
-      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                      \
-        return p;                                                                    \
-      }                                                                              \
-      p += size;                                                                     \
-    }                                                                                \
-    return (size_t)-1;                                                               \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_find_last_stable_utf16##endianness##_##decomp_form(                  \
-      const uint8_t *input, size_t length) {                                         \
-    size_t cutoff = length;                                                          \
-    while (cutoff > 0) {                                                             \
-      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);                \
-      if (cutoff == (size_t)-1) {                                                    \
-        return (size_t)-1;                                                           \
-      }                                                                              \
-      uint8_t size;                                                                  \
-      uint32_t c =                                                                   \
-          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);          \
-      uint8_t ccc = scalar_lookup_ccc(c);                                            \
-      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                      \
-        return cutoff;                                                               \
-      }                                                                              \
-    }                                                                                \
-    return (size_t)-1;                                                               \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(          \
-      const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,          \
-      uint8_t *last_ccc) {                                                           \
-    uint8_t *start = out;                                                            \
-                                                                                     \
-    size_t p = 0;                                                                    \
-    while (p < length) {                                                             \
-      uint8_t size;                                                                  \
-      uint32_t code_point =                                                          \
-          scalar_parse_code_point_utf16##endianness(input + p, &size);               \
-                                                                                     \
-      uint8_t first_ccc = 0;                                                         \
-      uint8_t ccc = 0;                                                               \
-      if (scalar_is_hangul(code_point)) {                                            \
-        out += scalar_decompose_hangul_utf16##endianness(code_point, out);           \
-      } else {                                                                       \
-        size_t nwritten;                                                             \
-        if (size == 2) {                                                             \
-          nwritten = scalar_decompose_utf16##endianness##_##decomp_form##_bmp(       \
-              code_point, out, &first_ccc, &ccc);                                    \
-        } else {                                                                     \
-          XXUTF_ASSERT(size == 4);                                                   \
-          nwritten =                                                                 \
-              scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(    \
-                  code_point, out, &first_ccc, &ccc);                                \
-        }                                                                            \
-        if (nwritten == 0) {                                                         \
-          /* Copy if no decomposition is found */                                    \
-          for (uint8_t i = 0; i < size; i++) {                                       \
-            *out++ = input[p + i];                                                   \
-          }                                                                          \
-        } else {                                                                     \
-          out += nwritten;                                                           \
-        }                                                                            \
-      }                                                                              \
-                                                                                     \
-      p += size;                                                                     \
-      uint8_t cmp_ccc = first_ccc > 0 ? first_ccc : ccc;                             \
-      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                                     \
-        ccc = scalar_sort_characters_utf16##endianness(out, (out - start) +          \
-                                                                out_offset);         \
-      }                                                                              \
-      *last_ccc = ccc;                                                               \
-    }                                                                                \
-                                                                                     \
-    return out - start;                                                              \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_normalize_utf16##endianness##_##decomp_form(                         \
-      const uint8_t *input, size_t length, uint8_t *out) {                           \
-    uint8_t last_ccc = 0;                                                            \
-    return scalar_normalize_utf16##endianness##_##decomp_form##_with_context(        \
-        input, length, out, 0, &last_ccc);                                           \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_find_first_stable_utf16##endianness##_##comp_form(                   \
-      const uint8_t *input, size_t length) {                                         \
-    uint32_t p = 0;                                                                  \
-    while (p < length) {                                                             \
-      uint8_t size;                                                                  \
-      uint32_t c =                                                                   \
-          scalar_parse_code_point_utf16##endianness(input + p, &size);               \
-      uint8_t ccc = scalar_lookup_ccc(c);                                            \
-      if (ccc == 0 && !scalar_is_##comp_form##_relevant(c)) {                        \
-        return p;                                                                    \
-      }                                                                              \
-      p += size;                                                                     \
-    }                                                                                \
-    return (size_t)-1;                                                               \
-  }                                                                                  \
-                                                                                     \
-  size_t scalar_find_last_stable_utf16##endianness##_##comp_form(                    \
-      const uint8_t *input, size_t length) {                                         \
-    size_t cutoff = length;                                                          \
-    while (cutoff > 0) {                                                             \
-      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);                \
-      if (cutoff == (size_t)-1) {                                                    \
-        return (size_t)-1;                                                           \
-      }                                                                              \
-      uint8_t size;                                                                  \
-      uint32_t c =                                                                   \
-          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);          \
-      uint8_t ccc = scalar_lookup_ccc(c);                                            \
-      if (ccc == 0 && !scalar_is_##comp_form##_relevant(c)) {                        \
-        return cutoff;                                                               \
-      }                                                                              \
-    }                                                                                \
-    return (size_t)-1;                                                               \
-  }                                                                                  \
-                                                                                     \
-  /* TODO: this has a lot of shared code with the utf8 version... consider           \
-   * putting this logic into a shared macro... */                                    \
-  size_t scalar_normalize_utf16##endianness##_##comp_form(                           \
-      const uint8_t *input, size_t length, uint8_t *out) {                           \
-    uint8_t *start = out;                                                            \
-    size_t p = 0;                                                                    \
-    uint8_t last_ccc = 0;                                                            \
-                                                                                     \
-    while (p < length) {                                                             \
-      uint8_t size;                                                                  \
-      uint32_t c =                                                                   \
-          scalar_parse_code_point_utf16##endianness(input + p, &size);               \
-                                                                                     \
-      /* ASCII fast path to skip ccc lookup */                                       \
-      if (c <= 0x7F) {                                                               \
-        out[0] = input[p];                                                           \
-        out[1] = input[p + 1];                                                       \
-        out += 2;                                                                    \
-        p += 2;                                                                      \
-        last_ccc = 0;                                                                \
-        continue;                                                                    \
-      }                                                                              \
-                                                                                     \
-      uint8_t ccc = scalar_lookup_ccc(c);                                            \
-                                                                                     \
-      /* We can skip this character if it the combining classes are in the           \
-       * right order and if it is irrelevant */                                      \
-      if (ccc <= last_ccc && !scalar_is_##comp_form##_relevant(c)) {                 \
-        for (size_t i = 0; i < size; i++) {                                          \
-          *out++ = input[p + i];                                                     \
-        }                                                                            \
-        p += size;                                                                   \
-        last_ccc = ccc;                                                              \
-        continue;                                                                    \
-      }                                                                              \
-                                                                                     \
-      last_ccc = ccc;                                                                \
-                                                                                     \
-      /* This starter should be NF(K)C irrelevant */                                 \
-      size_t previous_starter_pos =                                                  \
-          scalar_rfind_starter_utf16##endianness(input, p);                          \
-      if (previous_starter_pos == (size_t)-1) {                                      \
-        previous_starter_pos = 0;                                                    \
-      }                                                                              \
-                                                                                     \
-      size_t next_irrelevant_starter_pos =                                           \
-          scalar_find_first_stable_utf16##endianness##_##comp_form(                  \
-              input + p + size, length - p - size);                                  \
-      if (next_irrelevant_starter_pos == (size_t)-1) {                               \
-        next_irrelevant_starter_pos = length;                                        \
-      } else {                                                                       \
-        next_irrelevant_starter_pos += p + size;                                     \
-      }                                                                              \
-                                                                                     \
-      /* NOTE: scary! */                                                             \
-      uint8_t *normalized_out = out - (p - previous_starter_pos);                    \
-      /* NF(K)D normalize a localized region in between the two starters that        \
-       * are NF(K)C irrelevant. This guarantees that, if we NF(K)C normalize         \
-       * this range, no characters after the end of the range in the input           \
-       * will combine/interact with the range we normalized. In other words,         \
-       * we run NF(K)C on the largest possible sub-range of characters that          \
-       * may (or may not) have to do with the NF(K)C relevant character `c`          \
-       * that we initially detected. */                                              \
-      size_t normalized_length =                                                     \
-          scalar_normalize_utf16##endianness##_##decomp_form(                        \
-              input + previous_starter_pos,                                          \
-              next_irrelevant_starter_pos - previous_starter_pos,                    \
-              normalized_out);                                                       \
-                                                                                     \
-      size_t normalized_pos = 0;                                                     \
-      uint8_t normalized_last_ccc = 255;                                             \
-      /* Iterate through each code point, seeking back until a starter is            \
-       * found and trying to combine with that. This part of the algorithm           \
-       * closely matches up with the spec. See:                                      \
-       * https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614  \
-       */                                                                            \
-      while (normalized_pos < normalized_length) {                                   \
-        uint8_t normalized_size;                                                     \
-        uint32_t normalized_c = scalar_parse_code_point_utf16##endianness(           \
-            normalized_out + normalized_pos, &normalized_size);                      \
-        uint8_t normalized_ccc = scalar_lookup_ccc(normalized_c);                    \
-                                                                                     \
-        /* Find the preceding starter. It should be composition irrelevant */        \
-        /* TODO: we can cache this */                                                \
-        size_t starter_pos = scalar_rfind_starter_utf16##endianness(                 \
-            normalized_out, normalized_pos);                                         \
-        XXUTF_ASSERT(starter_pos != normalized_pos);                                 \
-        /* Skip if we don't have a starter before this */                            \
-        if (starter_pos == (size_t)-1) {                                             \
-          normalized_pos += normalized_size;                                         \
-          normalized_last_ccc = normalized_ccc;                                      \
-          continue;                                                                  \
-        }                                                                            \
-                                                                                     \
-        uint8_t starter_size;                                                        \
-        uint32_t starter = scalar_parse_code_point_utf16##endianness(                \
-            normalized_out + starter_pos, &starter_size);                            \
-        /* Skip if we're blocked from the starter */                                 \
-        if (normalized_ccc <= normalized_last_ccc &&                                 \
-            starter_pos + starter_size != normalized_pos) {                          \
-          normalized_pos += normalized_size;                                         \
-          normalized_last_ccc = normalized_ccc;                                      \
-          continue;                                                                  \
-        }                                                                            \
-                                                                                     \
-        uint32_t composed;                                                           \
-        if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {                           \
-          composed = scalar_try_compose_bmp(starter, normalized_c);                  \
-        } else {                                                                     \
-          composed = unidata_compose_supplementary(starter, normalized_c);           \
-        }                                                                            \
-        /* Skip if no composed character */                                          \
-        if (composed == 0) {                                                         \
-          normalized_pos += normalized_size;                                         \
-          normalized_last_ccc = normalized_ccc;                                      \
-          continue;                                                                  \
-        }                                                                            \
-        uint8_t composed_size = scalar_code_point_size_utf16(composed);              \
-        XXUTF_ASSERT(composed_size >= starter_size);                                 \
-                                                                                     \
-        /* Shift left to delete the combining character */                           \
-        scalar_shift_left(normalized_out + normalized_pos,                           \
-                          normalized_length - normalized_pos,                        \
-                          normalized_size);                                          \
-        /* Account for combining character deletion */                               \
-        normalized_length -= normalized_size;                                        \
-                                                                                     \
-        /* Shift everything right to make room for new composed code point */        \
-        scalar_shift_right(normalized_out + starter_pos + starter_size,              \
-                           normalized_length - starter_pos - starter_size,           \
-                           composed_size - starter_size);                            \
-        /* Overwrite the starter with the new composed code point */                 \
-        (void)scalar_write_code_point_utf16##endianness(                             \
-            composed, normalized_out + starter_pos);                                 \
-        normalized_length += composed_size - starter_size;                           \
-        normalized_pos += composed_size - starter_size;                              \
-      }                                                                              \
-                                                                                     \
-      /* Set the out pointer to the end of the normalized buffer */                  \
-      out = normalized_out + normalized_length;                                      \
-      /* Set the input offset to the next starter that is garuanteed to not be       \
-       * relevant to NF(K)C */                                                       \
-      p = next_irrelevant_starter_pos;                                               \
-    }                                                                                \
-                                                                                     \
-    return out - start;                                                              \
-  }                                                                                  \
-                                                                                     \
-  static uint8_t                                                                     \
-      scalar_decomposition_length_utf16##endianness##_##decomp_form##_supplementary( \
-          uint32_t code_point) {                                                     \
-    uint32_t salt_hash = scalar_phash(                                               \
-        code_point, 0,                                                               \
-        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
-    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                   \
-    uint32_t key_hash = scalar_phash(                                                \
-        code_point, salt,                                                            \
-        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));       \
-    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];               \
-    if (kv.k == code_point) {                                                        \
-      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];       \
-      uint8_t length = 0;                                                            \
-      for (size_t k = 0; k < kv.len; k++) {                                          \
-        length += scalar_code_point_size_utf16(chars[k]);                            \
-      }                                                                              \
-      return length;                                                                 \
-    }                                                                                \
-    return 4;                                                                        \
-  }                                                                                  \
-                                                                                     \
-  static uint8_t                                                                     \
-      scalar_decomposition_length_utf16##endianness##_##decomp_form##_bmp(           \
-          uint16_t code_point) {                                                     \
-    uint16_t shift = code_point >> 6;                                                \
-    uint16_t masked = code_point & 63;                                               \
-    uint16_t index =                                                                 \
-        UNIDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_INDEX[shift];                \
-    uint8_t value =                                                                  \
-        UNIDATA_UTF16_##decomp_form_upper##_LENGTH_TRIE_DATA[index + masked];        \
-    return value;                                                                    \
-  }                                                                                  \
-                                                                                     \
-  static uint8_t                                                                     \
-      scalar_decomposition_length_utf16##endianness##_##comp_form##_bmp(             \
-          uint16_t code_point) {                                                     \
-    uint16_t shift = code_point >> 6;                                                \
-    uint16_t masked = code_point & 63;                                               \
-    uint16_t index =                                                                 \
-        UNIDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_INDEX[shift];                  \
-    uint8_t value =                                                                  \
-        UNIDATA_UTF16_##comp_form_upper##_LENGTH_TRIE_DATA[index + masked];          \
-    return value;                                                                    \
+#define SCALAR_UTF16_IMPLEMENTATION(endianness, is_big_endian, decomp_form,         \
+                                    decomp_form_upper, comp_form,                   \
+                                    comp_form_upper)                                \
+  static size_t                                                                     \
+      scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(           \
+          uint32_t code_point, uint8_t *out, uint8_t *first_ccc,                    \
+          uint8_t *ccc) {                                                           \
+    uint8_t *start = out;                                                           \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0,                                                              \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                  \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt,                                                           \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];              \
+    if (kv.k == code_point) {                                                       \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];      \
+      for (size_t k = 0; k < kv.len; k++) {                                         \
+        out += scalar_write_code_point_utf16##endianness(chars[k], out);            \
+      }                                                                             \
+      *ccc = kv.last_ccc;                                                           \
+    } else {                                                                        \
+      *ccc = 0;                                                                     \
+    }                                                                               \
+    *first_ccc = 0;                                                                 \
+                                                                                    \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
+  static size_t scalar_decompose_utf16##endianness##_##decomp_form##_bmp(           \
+      uint32_t code_point, uint8_t *out, uint8_t *first_ccc, uint8_t *ccc) {        \
+    uint8_t *start = out;                                                           \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index = UNIDATA_UTF16_##decomp_form_upper##_TRIE_INDEX[shift];         \
+    uint32_t value =                                                                \
+        UNIDATA_UTF16_##decomp_form_upper##_TRIE_DATA[index + masked];              \
+    if (value == 0) {                                                               \
+      *ccc = 0;                                                                     \
+      return 0;                                                                     \
+    }                                                                               \
+    *ccc = value >> 24;                                                             \
+    uint8_t delta = (value >> 14) & 0x3F;                                           \
+    uint8_t length = delta + 2;                                                     \
+    XXUTF_ASSERT(length % 2 == 0);                                                  \
+    uint16_t offset = value & 0x3FFF;                                               \
+    const uint8_t *bytes =                                                          \
+        &UNIDATA_UTF16_##decomp_form_upper##_TRIE_DECOMPOSITIONS[offset];           \
+    for (size_t k = 0; k < length; k += 2) {                                        \
+      if (is_big_endian) {                                                          \
+        out[0] = bytes[k + 1];                                                      \
+        out[1] = bytes[k];                                                          \
+      } else {                                                                      \
+        out[0] = bytes[k];                                                          \
+        out[1] = bytes[k + 1];                                                      \
+      }                                                                             \
+      out += 2;                                                                     \
+    }                                                                               \
+    uint8_t ccc_delta = (value >> 20) & 0b111;                                      \
+    *first_ccc = ccc_delta == 0 ? 0 : *ccc - ccc_delta;                             \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_find_first_stable_utf16##endianness##_##decomp_form(                \
+      const uint8_t *input, size_t length) {                                        \
+    uint32_t p = 0;                                                                 \
+    while (p < length) {                                                            \
+      uint8_t size;                                                                 \
+      uint32_t c =                                                                  \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);              \
+      uint8_t ccc = scalar_lookup_ccc(c);                                           \
+      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                     \
+        return p;                                                                   \
+      }                                                                             \
+      p += size;                                                                    \
+    }                                                                               \
+    return (size_t)-1;                                                              \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_find_last_stable_utf16##endianness##_##decomp_form(                 \
+      const uint8_t *input, size_t length) {                                        \
+    size_t cutoff = length;                                                         \
+    while (cutoff > 0) {                                                            \
+      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);               \
+      if (cutoff == (size_t)-1) {                                                   \
+        return (size_t)-1;                                                          \
+      }                                                                             \
+      uint8_t size;                                                                 \
+      uint32_t c =                                                                  \
+          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);         \
+      uint8_t ccc = scalar_lookup_ccc(c);                                           \
+      if (ccc == 0 && !scalar_is_##decomp_form##_relevant(c)) {                     \
+        return cutoff;                                                              \
+      }                                                                             \
+    }                                                                               \
+    return (size_t)-1;                                                              \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_normalize_utf16##endianness##_##decomp_form##_with_context(         \
+      const uint8_t *input, size_t length, uint8_t *out, size_t out_offset,         \
+      uint8_t *last_ccc) {                                                          \
+    uint8_t *start = out;                                                           \
+                                                                                    \
+    size_t p = 0;                                                                   \
+    while (p < length) {                                                            \
+      uint8_t size;                                                                 \
+      uint32_t code_point =                                                         \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);              \
+                                                                                    \
+      uint8_t first_ccc = 0;                                                        \
+      uint8_t ccc = 0;                                                              \
+      if (scalar_is_hangul(code_point)) {                                           \
+        out += scalar_decompose_hangul_utf16##endianness(code_point, out);          \
+      } else {                                                                      \
+        size_t nwritten;                                                            \
+        if (size == 2) {                                                            \
+          nwritten = scalar_decompose_utf16##endianness##_##decomp_form##_bmp(      \
+              code_point, out, &first_ccc, &ccc);                                   \
+        } else {                                                                    \
+          XXUTF_ASSERT(size == 4);                                                  \
+          nwritten =                                                                \
+              scalar_decompose_utf16##endianness##_##decomp_form##_supplementary(   \
+                  code_point, out, &first_ccc, &ccc);                               \
+        }                                                                           \
+        if (nwritten == 0) {                                                        \
+          /* Copy if no decomposition is found */                                   \
+          for (uint8_t i = 0; i < size; i++) {                                      \
+            *out++ = input[p + i];                                                  \
+          }                                                                         \
+        } else {                                                                    \
+          out += nwritten;                                                          \
+        }                                                                           \
+      }                                                                             \
+                                                                                    \
+      p += size;                                                                    \
+      uint8_t cmp_ccc = first_ccc > 0 ? first_ccc : ccc;                            \
+      if (cmp_ccc != 0 && *last_ccc > cmp_ccc) {                                    \
+        ccc = scalar_sort_characters_utf16##endianness(out, (out - start) +         \
+                                                                out_offset);        \
+      }                                                                             \
+      *last_ccc = ccc;                                                              \
+    }                                                                               \
+                                                                                    \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_normalize_utf16##endianness##_##decomp_form(                        \
+      const uint8_t *input, size_t length, uint8_t *out) {                          \
+    uint8_t last_ccc = 0;                                                           \
+    return scalar_normalize_utf16##endianness##_##decomp_form##_with_context(       \
+        input, length, out, 0, &last_ccc);                                          \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_find_first_stable_utf16##endianness##_##comp_form(                  \
+      const uint8_t *input, size_t length) {                                        \
+    uint32_t p = 0;                                                                 \
+    while (p < length) {                                                            \
+      uint8_t size;                                                                 \
+      uint32_t c =                                                                  \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);              \
+      uint8_t ccc = scalar_lookup_ccc(c);                                           \
+      if (ccc == 0 && !scalar_is_##comp_form##_relevant(c)) {                       \
+        return p;                                                                   \
+      }                                                                             \
+      p += size;                                                                    \
+    }                                                                               \
+    return (size_t)-1;                                                              \
+  }                                                                                 \
+                                                                                    \
+  size_t scalar_find_last_stable_utf16##endianness##_##comp_form(                   \
+      const uint8_t *input, size_t length) {                                        \
+    size_t cutoff = length;                                                         \
+    while (cutoff > 0) {                                                            \
+      cutoff = scalar_rfind_starter_utf16##endianness(input, cutoff);               \
+      if (cutoff == (size_t)-1) {                                                   \
+        return (size_t)-1;                                                          \
+      }                                                                             \
+      uint8_t size;                                                                 \
+      uint32_t c =                                                                  \
+          scalar_parse_code_point_utf16##endianness(input + cutoff, &size);         \
+      uint8_t ccc = scalar_lookup_ccc(c);                                           \
+      if (ccc == 0 && !scalar_is_##comp_form##_relevant(c)) {                       \
+        return cutoff;                                                              \
+      }                                                                             \
+    }                                                                               \
+    return (size_t)-1;                                                              \
+  }                                                                                 \
+                                                                                    \
+  /* TODO: this has a lot of shared code with the utf8 version... consider          \
+   * putting this logic into a shared macro... */                                   \
+  size_t scalar_normalize_utf16##endianness##_##comp_form(                          \
+      const uint8_t *input, size_t length, uint8_t *out) {                          \
+    uint8_t *start = out;                                                           \
+    size_t p = 0;                                                                   \
+    uint8_t last_ccc = 0;                                                           \
+                                                                                    \
+    while (p < length) {                                                            \
+      uint8_t size;                                                                 \
+      uint32_t c =                                                                  \
+          scalar_parse_code_point_utf16##endianness(input + p, &size);              \
+                                                                                    \
+      /* ASCII fast path to skip ccc lookup */                                      \
+      if (c <= 0x7F) {                                                              \
+        out[0] = input[p];                                                          \
+        out[1] = input[p + 1];                                                      \
+        out += 2;                                                                   \
+        p += 2;                                                                     \
+        last_ccc = 0;                                                               \
+        continue;                                                                   \
+      }                                                                             \
+                                                                                    \
+      uint8_t ccc = scalar_lookup_ccc(c);                                           \
+                                                                                    \
+      /* We can skip this character if it the combining classes are in the          \
+       * right order and if it is irrelevant */                                     \
+      if (ccc <= last_ccc && !scalar_is_##comp_form##_relevant(c)) {                \
+        for (size_t i = 0; i < size; i++) {                                         \
+          *out++ = input[p + i];                                                    \
+        }                                                                           \
+        p += size;                                                                  \
+        last_ccc = ccc;                                                             \
+        continue;                                                                   \
+      }                                                                             \
+                                                                                    \
+      last_ccc = ccc;                                                               \
+                                                                                    \
+      /* This starter should be NF(K)C irrelevant */                                \
+      size_t previous_starter_pos =                                                 \
+          scalar_rfind_starter_utf16##endianness(input, p);                         \
+      if (previous_starter_pos == (size_t)-1) {                                     \
+        previous_starter_pos = 0;                                                   \
+      }                                                                             \
+                                                                                    \
+      size_t next_irrelevant_starter_pos =                                          \
+          scalar_find_first_stable_utf16##endianness##_##comp_form(                 \
+              input + p + size, length - p - size);                                 \
+      if (next_irrelevant_starter_pos == (size_t)-1) {                              \
+        next_irrelevant_starter_pos = length;                                       \
+      } else {                                                                      \
+        next_irrelevant_starter_pos += p + size;                                    \
+      }                                                                             \
+                                                                                    \
+      /* NOTE: scary! */                                                            \
+      uint8_t *normalized_out = out - (p - previous_starter_pos);                   \
+      /* NF(K)D normalize a localized region in between the two starters that       \
+       * are NF(K)C irrelevant. This guarantees that, if we NF(K)C normalize        \
+       * this range, no characters after the end of the range in the input          \
+       * will combine/interact with the range we normalized. In other words,        \
+       * we run NF(K)C on the largest possible sub-range of characters that         \
+       * may (or may not) have to do with the NF(K)C relevant character `c`         \
+       * that we initially detected. */                                             \
+      size_t normalized_length =                                                    \
+          scalar_normalize_utf16##endianness##_##decomp_form(                       \
+              input + previous_starter_pos,                                         \
+              next_irrelevant_starter_pos - previous_starter_pos,                   \
+              normalized_out);                                                      \
+                                                                                    \
+      size_t normalized_pos = 0;                                                    \
+      uint8_t normalized_last_ccc = 255;                                            \
+      /* Iterate through each code point, seeking back until a starter is           \
+       * found and trying to combine with that. This part of the algorithm          \
+       * closely matches up with the spec. See:                                     \
+       * https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614 \
+       */                                                                           \
+      while (normalized_pos < normalized_length) {                                  \
+        uint8_t normalized_size;                                                    \
+        uint32_t normalized_c = scalar_parse_code_point_utf16##endianness(          \
+            normalized_out + normalized_pos, &normalized_size);                     \
+        uint8_t normalized_ccc = scalar_lookup_ccc(normalized_c);                   \
+                                                                                    \
+        /* Find the preceding starter. It should be composition irrelevant */       \
+        /* TODO: we can cache this */                                               \
+        size_t starter_pos = scalar_rfind_starter_utf16##endianness(                \
+            normalized_out, normalized_pos);                                        \
+        XXUTF_ASSERT(starter_pos != normalized_pos);                                \
+        /* Skip if we don't have a starter before this */                           \
+        if (starter_pos == (size_t)-1) {                                            \
+          normalized_pos += normalized_size;                                        \
+          normalized_last_ccc = normalized_ccc;                                     \
+          continue;                                                                 \
+        }                                                                           \
+                                                                                    \
+        uint8_t starter_size;                                                       \
+        uint32_t starter = scalar_parse_code_point_utf16##endianness(               \
+            normalized_out + starter_pos, &starter_size);                           \
+        /* Skip if we're blocked from the starter */                                \
+        if (normalized_ccc <= normalized_last_ccc &&                                \
+            starter_pos + starter_size != normalized_pos) {                         \
+          normalized_pos += normalized_size;                                        \
+          normalized_last_ccc = normalized_ccc;                                     \
+          continue;                                                                 \
+        }                                                                           \
+                                                                                    \
+        uint32_t composed;                                                          \
+        if (starter <= 0xFFFF && normalized_c <= 0xFFFF) {                          \
+          composed = scalar_try_compose_bmp(starter, normalized_c);                 \
+        } else {                                                                    \
+          composed = unidata_compose_supplementary(starter, normalized_c);          \
+        }                                                                           \
+        /* Skip if no composed character */                                         \
+        if (composed == 0) {                                                        \
+          normalized_pos += normalized_size;                                        \
+          normalized_last_ccc = normalized_ccc;                                     \
+          continue;                                                                 \
+        }                                                                           \
+        uint8_t composed_size = scalar_code_point_size_utf16(composed);             \
+        XXUTF_ASSERT(composed_size >= starter_size);                                \
+                                                                                    \
+        /* Shift left to delete the combining character */                          \
+        scalar_shift_left(normalized_out + normalized_pos,                          \
+                          normalized_length - normalized_pos,                       \
+                          normalized_size);                                         \
+        /* Account for combining character deletion */                              \
+        normalized_length -= normalized_size;                                       \
+                                                                                    \
+        /* Shift everything right to make room for new composed code point */       \
+        scalar_shift_right(normalized_out + starter_pos + starter_size,             \
+                           normalized_length - starter_pos - starter_size,          \
+                           composed_size - starter_size);                           \
+        /* Overwrite the starter with the new composed code point */                \
+        (void)scalar_write_code_point_utf16##endianness(                            \
+            composed, normalized_out + starter_pos);                                \
+        normalized_length += composed_size - starter_size;                          \
+        normalized_pos += composed_size - starter_size;                             \
+      }                                                                             \
+                                                                                    \
+      /* Set the out pointer to the end of the normalized buffer */                 \
+      out = normalized_out + normalized_length;                                     \
+      /* Set the input offset to the next starter that is garuanteed to not be      \
+       * relevant to NF(K)C */                                                      \
+      p = next_irrelevant_starter_pos;                                              \
+    }                                                                               \
+                                                                                    \
+    return out - start;                                                             \
+  }                                                                                 \
+                                                                                    \
+  static bool                                                                       \
+      scalar_decomposition_check_utf16##endianness##_##decomp_form##_supplementary( \
+          uint32_t code_point, size_t *out_length, uint8_t *ccc) {                  \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0,                                                              \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                  \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt,                                                           \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];              \
+    if (kv.k == code_point) {                                                       \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];      \
+      uint8_t length = 0;                                                           \
+      for (size_t k = 0; k < kv.len; k++) {                                         \
+        length += scalar_code_point_size_utf16(chars[k]);                           \
+      }                                                                             \
+      *out_length += length;                                                        \
+      *ccc = kv.ccc;                                                                \
+      return (kv.qc & 1) == 0;                                                      \
+    } else {                                                                        \
+      *out_length += 4;                                                             \
+      *ccc = 0;                                                                     \
+      return true;                                                                  \
+    }                                                                               \
+  }                                                                                 \
+                                                                                    \
+  static bool                                                                       \
+      scalar_decomposition_check_utf16##endianness##_##comp_form##_supplementary(   \
+          uint32_t code_point, size_t *out_length, uint8_t *ccc) {                  \
+    uint32_t salt_hash = scalar_phash(                                              \
+        code_point, 0,                                                              \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    uint32_t salt = UNIDATA_##decomp_form_upper##_SALT[salt_hash];                  \
+    uint32_t key_hash = scalar_phash(                                               \
+        code_point, salt,                                                           \
+        sizeof(UNIDATA_##decomp_form_upper##_KV) / sizeof(UnidataTableEntry));      \
+    UnidataTableEntry kv = UNIDATA_##decomp_form_upper##_KV[key_hash];              \
+    if (kv.k == code_point) {                                                       \
+      uint32_t const *chars = &UNIDATA_##decomp_form_upper##_CHARS[kv.offset];      \
+      uint8_t length = 0;                                                           \
+      for (size_t k = 0; k < kv.len; k++) {                                         \
+        length += scalar_code_point_size_utf16(chars[k]);                           \
+      }                                                                             \
+      *out_length += length;                                                        \
+      *ccc = kv.ccc;                                                                \
+      return (kv.qc & 2) == 0;                                                      \
+    } else {                                                                        \
+      *out_length += 4;                                                             \
+      *ccc = 0;                                                                     \
+      return true;                                                                  \
+    }                                                                               \
+  }                                                                                 \
+                                                                                    \
+  static bool                                                                       \
+      scalar_decomposition_check_utf16##endianness##_##decomp_form##_bmp(           \
+          uint16_t code_point, size_t *out_length, uint8_t *ccc) {                  \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index =                                                                \
+        UNIDATA_UTF16_##decomp_form_upper##_CHECK_TRIE_INDEX[shift];                \
+    uint16_t value =                                                                \
+        UNIDATA_UTF16_##decomp_form_upper##_CHECK_TRIE_DATA[index + masked];        \
+    *out_length += value & 0x3F;                                                    \
+    *ccc = (value >> 6) & 0xFF;                                                     \
+    return !(value >> 15);                                                          \
+  }                                                                                 \
+                                                                                    \
+  static bool                                                                       \
+      scalar_decomposition_check_utf16##endianness##_##comp_form##_bmp(             \
+          uint16_t code_point, size_t *out_length, uint8_t *ccc) {                  \
+    uint16_t shift = code_point >> 6;                                               \
+    uint16_t masked = code_point & 63;                                              \
+    uint16_t index =                                                                \
+        UNIDATA_UTF16_##comp_form_upper##_CHECK_TRIE_INDEX[shift];                  \
+    uint16_t value =                                                                \
+        UNIDATA_UTF16_##comp_form_upper##_CHECK_TRIE_DATA[index + masked];          \
+    *out_length += value & 0x3F;                                                    \
+    *ccc = (value >> 6) & 0xFF;                                                     \
+    return !(value >> 15);                                                          \
   }
 
 SCALAR_UTF16_IMPLEMENTATION(le, false, nfd, NFD, nfc, NFC);
@@ -537,50 +573,64 @@ SCALAR_UTF16_IMPLEMENTATION(be, true, nfkd, NFKD, nfkc, NFKC);
 
 #undef SCALAR_UTF16_IMPLEMENTATION
 
-#define SCALAR_UTF16_LENGTH_IMPLEMENTATION(form, endianness, bmp_function,     \
-                                           supplementary_function)             \
-  size_t scalar_normalize_utf16##endianness##_##form##_length(                 \
-      const uint8_t *input, size_t length) {                                   \
-    size_t out_length = 0;                                                     \
+#define SCALAR_UTF16_CHECK_IMPLEMENTATION(form, endianness, bmp_function,      \
+                                          supplementary_function)              \
+  bool scalar_normalize_utf16##endianness##_##form##_check_with_context(       \
+      const uint8_t *input, size_t length, size_t *out_length,                 \
+      uint8_t *last_ccc) {                                                     \
+    bool is_qc = true;                                                         \
     size_t p = 0;                                                              \
     while (p < length) {                                                       \
       uint8_t size;                                                            \
+      uint8_t ccc;                                                             \
       uint32_t code_point =                                                    \
           scalar_parse_code_point_utf16##endianness(input + p, &size);         \
       if (size == 2) {                                                         \
-        out_length += bmp_function(code_point);                                \
+        is_qc &= bmp_function(code_point, out_length, &ccc);                   \
       } else {                                                                 \
         XXUTF_ASSERT(size == 4);                                               \
-        out_length += supplementary_function(code_point);                      \
+        is_qc &= supplementary_function(code_point, out_length, &ccc);         \
       }                                                                        \
       p += size;                                                               \
+      if (*last_ccc > ccc && ccc != 0) {                                       \
+        is_qc = false;                                                         \
+      }                                                                        \
+      *last_ccc = ccc;                                                         \
     }                                                                          \
-    return out_length;                                                         \
+    return is_qc;                                                              \
+  }                                                                            \
+                                                                               \
+  bool scalar_normalize_utf16##endianness##_##form##_check(                    \
+      const uint8_t *input, size_t length, size_t *out_length) {               \
+    uint8_t last_ccc = 0;                                                      \
+    *out_length = 0;                                                           \
+    return scalar_normalize_utf16##endianness##_##form##_check_with_context(   \
+        input, length, out_length, &last_ccc);                                 \
   }
 
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfd, le, scalar_decomposition_length_utf16le_nfd_bmp,
-    scalar_decomposition_length_utf16le_nfd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfkd, le, scalar_decomposition_length_utf16le_nfkd_bmp,
-    scalar_decomposition_length_utf16le_nfkd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfc, le, scalar_decomposition_length_utf16le_nfc_bmp,
-    scalar_decomposition_length_utf16le_nfd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfkc, le, scalar_decomposition_length_utf16le_nfkc_bmp,
-    scalar_decomposition_length_utf16le_nfkd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfd, be, scalar_decomposition_length_utf16be_nfd_bmp,
-    scalar_decomposition_length_utf16be_nfd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfkd, be, scalar_decomposition_length_utf16be_nfkd_bmp,
-    scalar_decomposition_length_utf16be_nfkd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfc, be, scalar_decomposition_length_utf16be_nfc_bmp,
-    scalar_decomposition_length_utf16be_nfd_supplementary);
-SCALAR_UTF16_LENGTH_IMPLEMENTATION(
-    nfkc, be, scalar_decomposition_length_utf16be_nfkc_bmp,
-    scalar_decomposition_length_utf16be_nfkd_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfd, le, scalar_decomposition_check_utf16le_nfd_bmp,
+    scalar_decomposition_check_utf16le_nfd_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfkd, le, scalar_decomposition_check_utf16le_nfkd_bmp,
+    scalar_decomposition_check_utf16le_nfkd_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfc, le, scalar_decomposition_check_utf16le_nfc_bmp,
+    scalar_decomposition_check_utf16le_nfc_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfkc, le, scalar_decomposition_check_utf16le_nfkc_bmp,
+    scalar_decomposition_check_utf16le_nfkc_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfd, be, scalar_decomposition_check_utf16be_nfd_bmp,
+    scalar_decomposition_check_utf16be_nfd_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfkd, be, scalar_decomposition_check_utf16be_nfkd_bmp,
+    scalar_decomposition_check_utf16be_nfkd_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfc, be, scalar_decomposition_check_utf16be_nfc_bmp,
+    scalar_decomposition_check_utf16be_nfc_supplementary);
+SCALAR_UTF16_CHECK_IMPLEMENTATION(
+    nfkc, be, scalar_decomposition_check_utf16be_nfkc_bmp,
+    scalar_decomposition_check_utf16be_nfkc_supplementary);
 
-#undef SCALAR_UTF16_LENGTH_IMPLEMENTATION
+#undef SCALAR_UTF16_CHECK_IMPLEMENTATION
