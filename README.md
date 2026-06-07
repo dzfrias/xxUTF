@@ -113,10 +113,10 @@ bool check = xxutf_normalize_utf16le_nfkc_check(input, length, &out_length_bound
 if (check) {
   printf("Already NFKC normalized!\n");
 } else {
-  // Allocate according to out_length_bound
-  uint8_t *out = malloc(out_length_bound);
-  // ...maybe re-allocate according to `out_length`...
+  // Allocate according to `out_length_bound`
+  uint8_t *out = malloc(out_length_bound + 1);
   size_t out_length = xxutf_normalize_utf16le_nfkc(input, length, out);
+  out[out_length] = '\0';
   printf("NFKC normalized to: '%s'\n", out);
 }
 ```
