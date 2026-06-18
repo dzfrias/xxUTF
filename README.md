@@ -202,16 +202,15 @@ xxu -x casefold file.txt
 
 ## Benchmarks
 
-xxUTF is benchmarked using a variety of
-[large real-world inputs](/benchmarks/inputs) from multiple languages. As there
-are many factors to consider during benchmarking, curious users are encouraged
-to run the benchmark suite (or write their own benchmarks) on their machines.
+xxUTF is benchmarked using a variety of [real text inputs](/benchmarks/inputs)
+from multiple languages. As there are many factors to consider during
+benchmarking, curious users are encouraged to run the benchmark suite (or write
+their own benchmarks) on their machines.
 
-These are the results for running NFD normalization on UTF-8 on a machine
-supporting
+These are throughput results (in GB/s) for running NFD normalization on UTF-8 on
+a machine supporting
 [ARM NEON](<https://en.wikipedia.org/wiki/ARM_architecture_family#Advanced_SIMD_(Neon)>).
-Inputs vary in size and complexity, so cross-input comparison is not meaningful
-here.
+Higher is better.
 
 <img src="doc/neon_utf8_nfd.png" width="70%" />
 

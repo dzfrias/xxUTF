@@ -25,7 +25,7 @@ def main():
 
     # 2. Extract unique result names (the X-axis categories)
     # We assume all implementations have the same result categories
-    result_names = [r["name"] for r in data[0]["results"]]
+    result_names = [r["name"][: r["name"].index(".")] for r in data[0]["results"]]
     num_categories = len(result_names)
     num_implementations = len(data)
 
@@ -38,17 +38,18 @@ def main():
     # 4. Plot bars for each implementation
     for i, implementation in enumerate(data):
         impl_name = implementation["name"]
-        means = [r["mean_ms"] for r in implementation["results"]]
-        stds = [r["sd_ms"] for r in implementation["results"]]
+        throughputs = [
+            to_gb_s(r["mean_ns"], r["input_size"]) for r in implementation["results"]
+        ]
 
         # Calculate position offset for grouping
         offset = (i - (num_implementations - 1) / 2) * width
 
-        ax.bar(x + offset, means, width, label=impl_name, yerr=stds, capsize=5)
+        ax.bar(x + offset, throughputs, width, label=impl_name, capsize=5)
 
     # 5. Styling
-    ax.set_ylabel("Execution Time (ms)")
-    ax.set_title("Benchmark Results by Implementation")
+    ax.set_ylabel("Throughput (GB/s)")
+    ax.set_title("Throughput by Implementation")
     ax.set_xticks(x)
     ax.set_xticklabels(result_names)
     ax.legend()
@@ -56,6 +57,18 @@ def main():
 
     plt.tight_layout()
     plt.show()
+
+
+GB = 1_073_741_824.0
+NANOSECONDS = 1e09
+
+
+def to_gb_s(x_ns, size_bytes):
+    return (size_bytes / x_ns) * (NANOSECONDS / GB)
+
+
+def sd_to_gb_s(sd_ns, size_bytes, mean_ns):
+    return size_bytes * (sd_ns / mean_ns**2)
 
 
 if __name__ == "__main__":
