@@ -360,7 +360,8 @@ static bool compare_casefold_utf8(const char *input, size_t length,
       }                                                                        \
       return false;                                                            \
     }                                                                          \
-    if (qc && !equal(xxutf_out, xxutf_out_length, input, length)) {            \
+    if (qc &&                                                                  \
+        !equal(xxutf_out, xxutf_out_length, utf16_bytes, utf16_length)) {      \
       if (verbose) {                                                           \
         printf("quick check value (%s, CF) does not match, got %u\n",          \
                "UTF-16" #endianness_upper, qc);                                \
