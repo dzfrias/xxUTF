@@ -910,7 +910,12 @@ def create_comp_check_trie(
 ) -> Trie:
     trie = Trie()
     for x in range(0x10000):
-        if x in qc and x in decomp_map:
+        if x >= S_BASE and x < S_BASE + S_COUNT:
+            # Handle Hangul syllables
+            s_index = x - S_BASE
+            jamo_size = len(chr(L_BASE).encode(encoding))
+            length = 2 * jamo_size if s_index % T_COUNT == 0 else 3 * jamo_size
+        elif x in decomp_map:
             length = sum(len(chr(c).encode(encoding)) for c in decomp_map[x].decomps)
         else:
             try:
