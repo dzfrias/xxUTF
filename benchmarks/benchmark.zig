@@ -81,15 +81,6 @@ const implementations: []const struct { []const u8, ImplementationFunc, Encoding
         IcuCaseFoldAnyEncoding(.utf16be).implementation,
         .utf16be,
     },
-    .{ "xxutf_utf8_len_nfd", xxutfNormalizeUtf8NFDLength, .utf8 },
-    .{ "xxutf_utf8_len_nfkd", xxutfNormalizeUtf8NFKDLength, .utf8 },
-    .{ "xxutf_utf8_len_cf", xxutfCasefoldUtf8Length, .utf8 },
-    .{ "xxutf_utf16le_len_nfd", xxutfNormalizeUtf16leNFDLength, .utf16le },
-    .{ "xxutf_utf16le_len_nfkd", xxutfNormalizeUtf16leNFKDLength, .utf16le },
-    .{ "xxutf_utf16le_len_cf", xxutfCasefoldUtf16leLength, .utf16le },
-    .{ "xxutf_utf16be_len_nfd", xxutfNormalizeUtf16beNFDLength, .utf16be },
-    .{ "xxutf_utf16be_len_nfkd", xxutfNormalizeUtf16beNFKDLength, .utf16be },
-    .{ "xxutf_utf16be_len_cf", xxutfCasefoldUtf16beLength, .utf16be },
 };
 
 const ImplementationResult = struct {
@@ -519,42 +510,6 @@ fn IcuNormalizerAnyEncoding(
             c.shim_ucnv_close(conv);
         }
     };
-}
-
-fn xxutfNormalizeUtf8NFDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf8_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfNormalizeUtf8NFKDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf8_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfCasefoldUtf8Length(src: []const u8) void {
-    _ = c.xxutf_casefold_utf8_length(src.ptr, src.len);
-}
-
-fn xxutfNormalizeUtf16leNFDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf16le_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfNormalizeUtf16leNFKDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf16le_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfCasefoldUtf16leLength(src: []const u8) void {
-    _ = c.xxutf_casefold_utf16le_length(src.ptr, src.len);
-}
-
-fn xxutfNormalizeUtf16beNFDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf16be_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfNormalizeUtf16beNFKDLength(src: []const u8) void {
-    _ = c.xxutf_normalize_utf16be_nfd_length(src.ptr, src.len);
-}
-
-fn xxutfCasefoldUtf16beLength(src: []const u8) void {
-    _ = c.xxutf_casefold_utf16be_length(src.ptr, src.len);
 }
 
 const BenchResult = struct {
