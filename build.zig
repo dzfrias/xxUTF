@@ -23,6 +23,9 @@ pub fn build(b: *std.Build) !void {
     try flags.append(b.allocator, booleanFlag("XXUTF_IMPLEMENTATION_NEON", add_neon));
 
     const run_generate = std.Build.Step.Run.create(b, "Run gen.py");
+    run_generate.addFileInput(b.path("gen/CaseFolding.txt"));
+    run_generate.addFileInput(b.path("gen/DerivedNormalizationProps.txt"));
+    run_generate.addFileInput(b.path("gen/UnicodeData.txt"));
     run_generate.setCwd(b.path("gen"));
     run_generate.addFileArg(b.path("gen/gen.py"));
     const unidata_c_path = run_generate.addOutputFileArg("unidata.c");

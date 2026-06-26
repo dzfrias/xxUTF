@@ -12,14 +12,16 @@ at speed using SIMD. Current algorithms supported:
 
 All algorithms are compatible with UTF-8, UTF-16LE, and UTF-16BE. Further helper
 functions are defined for efficient and correct streaming versions of these
-algorithms. See the [API](#api) for details.
+algorithms. See the [API](#api) for details. Here are some features:
 
-xxUTF never allocates memory, does not depend on libc, cannot fail, and has the
-fastest open source implementations of the listed algorithms available. All
-functions are comprehensively tested using both the available Unicode test
-suites and a fuzzer.
+- Never allocates memory
+- Does not depend on libc
+- Cannot fail
+- Has the [fastest](#benchmarks) open source implementations of the supported
+  algorithms
+- [Comprensively tested](#fuzzing)
 
-xxUTF supports Unicode 16.0.0 and below.
+xxUTF is built for Unicode 17.0.0.
 
 ## Usage
 
@@ -221,7 +223,7 @@ next fastest open source implementations of these algorithms.
 ## Building
 
 xxUTF is built with the [Zig](https://codeberg.org/ziglang/zig) build system,
-version 0.16.0.
+version 0.17.0.
 
 To build the project in release mode, run `zig build -Doptimize=ReleaseFast`.
 The following artifacts will be created:

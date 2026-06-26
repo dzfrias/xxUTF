@@ -26,7 +26,7 @@ uint16x4_t neon_hangul_mask(uint16x4_t input);
 
 // Compute the L, V, and T indices for Hangul syllable decomposition.
 //
-// https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401
+// https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G59401
 uint16x4x3_t neon_compute_hangul_jamo(uint16x4_t chars);
 
 // memcpy for inputs less than 64 bytes large. The destination buffer needs at

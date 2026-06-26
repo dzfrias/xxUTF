@@ -410,7 +410,7 @@ SCALAR_UTF16_HELPERS(be);
       /* Iterate through each code point, seeking back until a starter is           \
        * found and trying to combine with that. This part of the algorithm          \
        * closely matches up with the spec. See:                                     \
-       * https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49614 \
+       * https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G49614 \
        */                                                                           \
       while (normalized_pos < normalized_length) {                                  \
         uint8_t normalized_size;                                                    \

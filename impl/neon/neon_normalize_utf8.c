@@ -586,7 +586,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
        * lookup.                                                                    \
        *                                                                            \
        * Algorithm described here:                                                  \
-       * https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G59401 \
+       * https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G59401 \
        */                                                                           \
       if (min >= UNIDATA_S_BASE && max < UNIDATA_S_BASE + UNIDATA_S_COUNT) {        \
         neon_decompose_all_hangul_utf8(chars, out, last_ccc);                       \

@@ -1088,7 +1088,7 @@ def main() -> None:
             #       for why this operation doesn't mess with the canonical decomposition process
             #       in a harmful way.
             #
-            #       From https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-3/#G49537:
+            #       From https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G1632
             #       > All characters with non-zero canonical combining class are combining characters,
             #       > but the reverse is not the case: there are combining characters with a zero
             #       > canonical combining class.
