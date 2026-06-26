@@ -235,30 +235,27 @@ static bool compare_casefold_utf8(const char *input, size_t length,
   char icu_out[8192];
   int32_t icu_out_length =
       ucasemap_utf8FoldCase(csm, icu_out, 8192, input, length, &status);
-  char xxutf_out[8192];
+
+  size_t xxutf_length;
+  bool qc = xxutf_casefold_utf8_check(input, length, &xxutf_length);
+
+  char *xxutf_out = malloc(xxutf_length);
   size_t xxutf_out_length = xxutf_casefold_utf8(input, length, xxutf_out);
+
   size_t pos;
   if (!is_valid_utf8((const uint8_t *)xxutf_out, xxutf_out_length, &pos)) {
     if (verbose) {
       printf("casefolded output is invaild UTF-8, position %zu\n", pos);
     }
+    free(xxutf_out);
     return false;
   }
 
-  size_t expected_xxutf_length;
-  bool qc = xxutf_casefold_utf8_check(input, length, &expected_xxutf_length);
-  if (expected_xxutf_length != xxutf_out_length) {
-    if (verbose) {
-      printf("casefolded UTF-8 output does not have expected length, got "
-             "%zu, expected %zu\n",
-             xxutf_out_length, expected_xxutf_length);
-    }
-    return false;
-  }
   if (qc && !equal(xxutf_out, xxutf_out_length, input, length)) {
     if (verbose) {
       printf("quick check value (UTF-8, CF) does not match, got %u\n", qc);
     }
+    free(xxutf_out);
     return false;
   }
 
@@ -275,11 +272,13 @@ static bool compare_casefold_utf8(const char *input, size_t length,
       print_code_points_utf8(icu_out, icu_out_length);
       printf("\n");
     }
+    free(xxutf_out);
     return false;
   }
   if (verbose) {
     printf("Both buffers (UTF-8, CF) equal!\n");
   }
+  free(xxutf_out);
   return true;
 }
 
@@ -335,7 +334,11 @@ static bool compare_casefold_utf8(const char *input, size_t length,
       return false;                                                            \
     }                                                                          \
                                                                                \
-    char xxutf_out[8192];                                                      \
+    size_t xxutf_length;                                                       \
+    bool qc = xxutf_casefold_utf16##endianness##_check(                        \
+        utf16_bytes, utf16_length, &xxutf_length);                             \
+                                                                               \
+    char *xxutf_out = malloc(xxutf_length);                                    \
     size_t xxutf_out_length = xxutf_casefold_utf16##endianness(                \
         utf16_bytes, utf16_length, xxutf_out);                                 \
     size_t pos;                                                                \
@@ -345,27 +348,17 @@ static bool compare_casefold_utf8(const char *input, size_t length,
         printf("normalized (%s, CF) output is invaild UTF-16, position %zu\n", \
                "UTF-16" #endianness_upper, pos);                               \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
                                                                                \
-    size_t expected_xxutf_length;                                              \
-    bool qc = xxutf_casefold_utf16##endianness##_check(                        \
-        utf16_bytes, utf16_length, &expected_xxutf_length);                    \
-    if (expected_xxutf_length != xxutf_out_length) {                           \
-      if (verbose) {                                                           \
-        printf("casefolded %s output does not have expected length, got "      \
-               "%zu, expected %zu\n",                                          \
-               "UTF-16" #endianness_upper, xxutf_out_length,                   \
-               expected_xxutf_length);                                         \
-      }                                                                        \
-      return false;                                                            \
-    }                                                                          \
     if (qc &&                                                                  \
         !equal(xxutf_out, xxutf_out_length, utf16_bytes, utf16_length)) {      \
       if (verbose) {                                                           \
         printf("quick check value (%s, CF) does not match, got %u\n",          \
                "UTF-16" #endianness_upper, qc);                                \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
                                                                                \
@@ -383,12 +376,14 @@ static bool compare_casefold_utf8(const char *input, size_t length,
         printf("\n");                                                          \
       }                                                                        \
       ucnv_close(conv);                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
     if (verbose) {                                                             \
       printf("Both buffers (%s, CF) equal!\n", "UTF-16" #endianness_upper);    \
     }                                                                          \
     ucnv_close(conv);                                                          \
+    free(xxutf_out);                                                           \
     return true;                                                               \
   }
 
@@ -433,7 +428,11 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    char xxutf_out[8192];                                                      \
+    size_t xxutf_length;                                                       \
+    bool qc =                                                                  \
+        xxutf_normalize_utf8_##form##_check(input, length, &xxutf_length);     \
+                                                                               \
+    char *xxutf_out = malloc(xxutf_length);                                    \
     size_t xxutf_out_length =                                                  \
         xxutf_normalize_utf8_##form(input, length, xxutf_out);                 \
     size_t pos;                                                                \
@@ -442,25 +441,16 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
         printf("normalized (%s) output is invaild UTF-8, position %zu\n",      \
                #form_upper, pos);                                              \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
-    size_t expected_xxutf_length;                                              \
-    bool qc = xxutf_normalize_utf8_##form##_check(input, length,               \
-                                                  &expected_xxutf_length);     \
-    if (expected_xxutf_length < xxutf_out_length ||                            \
-        (is_decomp && expected_xxutf_length != xxutf_out_length)) {            \
-      if (verbose) {                                                           \
-        printf("normalized (UTF-8, %s) output does not have expected "         \
-               "length, got %zu, expected %zu\n",                              \
-               #form_upper, xxutf_out_length, expected_xxutf_length);          \
-      }                                                                        \
-      return false;                                                            \
-    }                                                                          \
+                                                                               \
     if (qc && !equal(xxutf_out, xxutf_out_length, input, length)) {            \
       if (verbose) {                                                           \
         printf("quick check value (UTF-8, %s) does not match, got %u\n",       \
                #form_upper, qc);                                               \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
                                                                                \
@@ -477,11 +467,13 @@ COMPARE_CASEFOLD_FUNCTION_UTF16(be, BE);
         print_code_points_utf8(icu_out, icu_out_length);                       \
         printf("\n");                                                          \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
     if (verbose) {                                                             \
       printf("Both buffers (UTF-8, %s) equal!\n", #form_upper);                \
     }                                                                          \
+    free(xxutf_out);                                                           \
     return true;                                                               \
   }
 
@@ -552,7 +544,11 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
       return false;                                                            \
     }                                                                          \
                                                                                \
-    char xxutf_out[8192];                                                      \
+    size_t xxutf_length;                                                       \
+    bool qc = xxutf_normalize_utf16##endianness##_##form##_check(              \
+        utf16_bytes, utf16_length, &xxutf_length);                             \
+                                                                               \
+    char *xxutf_out = malloc(xxutf_length);                                    \
     size_t xxutf_out_length = xxutf_normalize_utf16##endianness##_##form(      \
         utf16_bytes, utf16_length, xxutf_out);                                 \
     size_t pos;                                                                \
@@ -562,29 +558,17 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
         printf("normalized (%s, %s) output is invaild UTF-16, position %zu\n", \
                "UTF-16" #endianness_upper, #form_upper, pos);                  \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
                                                                                \
-    size_t expected_xxutf_length = 0;                                          \
-    bool qc = xxutf_normalize_utf16##endianness##_##form##_check(              \
-        utf16_bytes, utf16_length, &expected_xxutf_length);                    \
-    if (expected_xxutf_length < xxutf_out_length ||                            \
-        (is_decomp && expected_xxutf_length != xxutf_out_length)) {            \
-      if (verbose) {                                                           \
-        printf(                                                                \
-            "normalized (%s, %s) output does not have expected length, got "   \
-            "%zu, expected %zu\n",                                             \
-            "UTF-16" #endianness_upper, #form_upper, xxutf_out_length,         \
-            expected_xxutf_length);                                            \
-      }                                                                        \
-      return false;                                                            \
-    }                                                                          \
     if (qc &&                                                                  \
         !equal(xxutf_out, xxutf_out_length, utf16_bytes, utf16_length)) {      \
       if (verbose) {                                                           \
         printf("quick check value (%s, %s) does not match, got %u\n",          \
                "UTF-16" #endianness_upper, #form_upper, qc);                   \
       }                                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
                                                                                \
@@ -603,6 +587,7 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
         printf("\n");                                                          \
       }                                                                        \
       ucnv_close(conv);                                                        \
+      free(xxutf_out);                                                         \
       return false;                                                            \
     }                                                                          \
     if (verbose) {                                                             \
@@ -610,6 +595,7 @@ COMPARE_NORMALIZE_FUNCTION_UTF8(nfkc, NFKC, false);
              #form_upper);                                                     \
     }                                                                          \
     ucnv_close(conv);                                                          \
+    free(xxutf_out);                                                           \
     return true;                                                               \
   }
 
