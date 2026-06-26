@@ -1,19 +1,15 @@
 # xxUTF
 
 xxUTF is a C library that implements
-[Unicode](https://en.wikipedia.org/wiki/Unicode) text transformation algorithms
-at speed using SIMD. Current algorithms supported:
+[Unicode](https://en.wikipedia.org/wiki/Unicode) normalization algorithms at
+speed using SIMD. Here are some features:
 
-- [NFD normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
-- [NFC normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
-- [NFKD normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
-- [NFKC normalization](https://www.unicode.org/reports/tr15/#Norm_Forms)
-- [Case folding](https://www.unicode.org/reports/tr21/tr21-5.html)
-
-All algorithms are compatible with UTF-8, UTF-16LE, and UTF-16BE. Further helper
-functions are defined for efficient and correct streaming versions of these
-algorithms. See the [API](#api) for details. Here are some features:
-
+- Implements all
+  [normalization forms](https://www.unicode.org/reports/tr15/#Norm_Forms): NFD,
+  NFC, NFKD, and NFKC
+- Supports UTF-8, UTF-16LE, and UTF-16BE
+- Implements [case folding](https://www.unicode.org/reports/tr21/tr21-5.html)
+- Provides tools for streaming normalization
 - Never allocates memory
 - Does not depend on libc
 - Cannot fail
@@ -223,7 +219,7 @@ next fastest open source implementations of these algorithms.
 ## Building
 
 xxUTF is built with the [Zig](https://codeberg.org/ziglang/zig) build system,
-version 0.17.0.
+version 0.16.0.
 
 To build the project in release mode, run `zig build -Doptimize=ReleaseFast`.
 The following artifacts will be created:
