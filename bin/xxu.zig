@@ -9,7 +9,7 @@ const Algorithm = enum { nfd, nfkd, nfc, nfkc, casefold };
 const Encoding = enum { utf8, utf16le, utf16be, utf16 };
 const ResolvedEncoding = enum { utf8, utf16le, utf16be };
 
-const version = "0.1.0";
+const version = "0.2.0";
 
 const help = std.fmt.comptimePrint(
     \\xxu {s}

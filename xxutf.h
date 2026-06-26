@@ -8,7 +8,7 @@
 extern "C" {
 #endif // __cplusplus
 
-#define XXUTF_VERSION "0.1.0"
+#define XXUTF_VERSION "0.2.0"
 
 size_t xxutf_normalize_utf8_nfd(const char *input, size_t length, char *out);
 size_t xxutf_normalize_utf8_nfkd(const char *input, size_t length, char *out);
