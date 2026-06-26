@@ -865,6 +865,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
         neon_memcpy_small(*out_ptr, input + p);                                     \
         p += 63;                                                                    \
         *out_ptr += 63;                                                             \
+        last_ccc = 0;                                                               \
         continue;                                                                   \
       }                                                                             \
       size_t pmax = (p + 64) - 12;                                                  \
@@ -900,6 +901,7 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
         neon_memcpy_small(*out_ptr, input + p);                                     \
         p += 63;                                                                    \
         *out_ptr += 63;                                                             \
+        last_ccc = 0;                                                               \
         continue;                                                                   \
       }                                                                             \
       size_t pmax = (p + 64) - 12;                                                  \
@@ -1017,6 +1019,8 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
       /* ASCII fast path */                                                    \
       if (mask == 0x7FFFFFFFFFFFFFFF) {                                        \
         p += 63;                                                               \
+        *out_length += 63;                                                     \
+        last_ccc = 0;                                                          \
         continue;                                                              \
       }                                                                        \
       size_t pmax = (p + 64) - 12;                                             \
