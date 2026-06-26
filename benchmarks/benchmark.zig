@@ -265,24 +265,34 @@ fn benchmarkImplementation(
             impl,
         );
         if (!quiet) {
-            const input_size_f: f64 = @floatFromInt(result.input_size);
-            const mean_ns_f: f64 = @floatFromInt(result.mean_ns);
-            const sd_ns_f: f64 = @floatFromInt(result.sd_ns);
-            const bytes_per_ns = input_size_f / mean_ns_f;
-            const gb = 1_073_741_824.0;
-            const ns_per_s: comptime_float = @floatFromInt(std.time.ns_per_s);
-            const ratio = ns_per_s / gb;
-            const ms = mean_ns_f / @as(f64, @floatFromInt(std.time.ns_per_ms));
-            const sd_ms = sd_ns_f / @as(f64, @floatFromInt(std.time.ns_per_ms));
-            // Calculate approximate GB/s standard deviation by propogating the error
-            const sd_gb_s = input_size_f * (sd_ns_f / (mean_ns_f * mean_ns_f));
+            const time_data = try allocator.alloc(f64, result.data.len);
+            defer allocator.free(time_data);
+            for (result.data, 0..) |x, i| {
+                const x_f: f64 = @floatFromInt(x);
+                const ratio: comptime_float = @floatFromInt(std.time.ns_per_ms);
+                time_data[i] = x_f / ratio;
+            }
+            const time_stats = stats(f64, time_data);
+            const throughput_data = try allocator.alloc(f64, result.data.len);
+            defer allocator.free(throughput_data);
+            const gb: comptime_float = 1_073_741_824;
+            const ms_per_s: comptime_float = @floatFromInt(std.time.ns_per_s);
+            const ratio = ms_per_s / gb;
+            for (result.data, 0..) |x, i| {
+                const x_f: f64 = @floatFromInt(x);
+                const size_f: f64 = @floatFromInt(result.input_size);
+                const bytes_per_ns = size_f / x_f;
+                const gb_per_s = bytes_per_ns * ratio;
+                throughput_data[i] = gb_per_s;
+            }
+            const throughput_stats = stats(f64, throughput_data);
             try out.print(
                 std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}GB/s\n", .{print_alignment}),
-                .{ entry.name, bytes_per_ns * ratio, sd_gb_s },
+                .{ entry.name, throughput_stats.mean, throughput_stats.sd },
             );
             try out.print(
                 std.fmt.comptimePrint("{{s: >{}}}: {{d:.3}}±{{d:.3}}ms\n", .{print_alignment}),
-                .{ "", ms, sd_ms },
+                .{ "", time_stats.mean, time_stats.sd },
             );
             try out.flush();
         }
@@ -527,17 +537,36 @@ fn IcuNormalizerAnyEncoding(
     };
 }
 
-// TODO: report throughput AND time. Use ns as i64, size as u64. Interpretation of these results
-//       can come later. Also count code points and display throughput as code points per second
 const BenchResult = struct {
     name: []const u8,
-    mean_ns: i96,
-    sd_ns: i96,
     input_size: u64,
     data: [n_iters]i96,
 };
 
+fn Statistics(comptime T: type) type {
+    return struct {
+        mean: T,
+        sd: T,
+    };
+}
+
+fn stats(comptime T: type, data: []const T) Statistics(T) {
+    var sum: T = 0;
+    for (data) |x| {
+        sum += x;
+    }
+    const size: T = if (@typeInfo(T) == .float) @floatFromInt(data.len) else @intCast(data.len);
+    const mean = sum / size;
+    var total_dists: T = 0;
+    for (data) |x| {
+        total_dists += std.math.pow(T, x - mean, 2);
+    }
+    const variance = total_dists / (size - 1);
+    return .{ .mean = mean, .sd = std.math.sqrt(variance) };
+}
+
 const n_iters = 1_000;
+const warmup = 50;
 
 fn trimPartialUTF8(input: []const u8) []const u8 {
     if (input.len > 0 and input[input.len - 1] >= 0xC0) {
@@ -565,9 +594,8 @@ fn runBenchmark(
     const stat = try file.stat(io);
     var reader_buf: [4096]u8 = undefined;
     var reader = file.reader(io, &reader_buf);
-    var mean: i96 = 0;
     var results: [n_iters]i96 = undefined;
-    for (0..n_iters) |i| {
+    for (0..n_iters + warmup) |i| {
         var nread = try reader.interface.readSliceShort(&read_buf);
         var carry_buffer: [4]u8 = undefined;
         var carry = std.ArrayListUnmanaged(u8).initBuffer(&carry_buffer);
@@ -587,31 +615,23 @@ fn runBenchmark(
                     break :buf std.mem.sliceAsBytes(encoded_buf[0..utf16_size]);
                 },
             };
-            const timestamp = std.Io.Timestamp.now(io, .real);
+            const timestamp = std.Io.Timestamp.now(io, .awake);
             impl(encoded);
-            elapsed += std.Io.Timestamp.untilNow(timestamp, io, .real).nanoseconds;
+            elapsed += std.Io.Timestamp.untilNow(timestamp, io, .awake).nanoseconds;
             carry.clearRetainingCapacity();
             carry.appendSliceBounded(buf[trimmed.len..]) catch unreachable;
             @memcpy(read_buf[0..carry.items.len], carry.items);
             nread = try reader.interface.readSliceShort(read_buf[carry.items.len..]);
         }
-        mean += @divTrunc(elapsed, n_iters);
-        results[i] = elapsed;
+        if (i >= warmup) {
+            results[i - warmup] = elapsed;
+        }
         try reader.seekTo(0);
     }
-
-    var total_dists: i96 = 0;
-    for (0..n_iters) |i| {
-        const x = results[i];
-        total_dists += std.math.pow(i96, x - mean, 2);
-    }
-    const variance = @divTrunc(total_dists, (n_iters - 1));
 
     return .{
         .name = name,
         .input_size = stat.size,
-        .mean_ns = mean,
-        .sd_ns = @trunc(std.math.sqrt(@as(f64, @floatFromInt(variance)))),
         .data = results,
     };
 }

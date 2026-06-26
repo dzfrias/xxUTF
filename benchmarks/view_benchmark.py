@@ -39,7 +39,7 @@ def main():
     for i, implementation in enumerate(data):
         impl_name = implementation["name"]
         throughputs = [
-            to_gb_s(r["mean_ns"], r["input_size"]) for r in implementation["results"]
+            throughput(r["data"], r["input_size"]) for r in implementation["results"]
         ]
 
         # Calculate position offset for grouping
@@ -59,7 +59,7 @@ def main():
     plt.show()
 
 
-GB = 1_073_741_824.0
+GB = 1_073_741_824
 NANOSECONDS = 1e09
 
 
@@ -67,8 +67,9 @@ def to_gb_s(x_ns, size_bytes):
     return (size_bytes / x_ns) * (NANOSECONDS / GB)
 
 
-def sd_to_gb_s(sd_ns, size_bytes, mean_ns):
-    return size_bytes * (sd_ns / mean_ns**2)
+def throughput(data_ns, size_bytes):
+    throughput_data = [to_gb_s(x, size_bytes) for x in data_ns]
+    return sum(throughput_data) / len(throughput_data)
 
 
 if __name__ == "__main__":

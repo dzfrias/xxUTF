@@ -860,6 +860,13 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     size_t p = 0;                                                                   \
     while (p + 64 + SAFETY_MARGIN <= length) {                                      \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);                    \
+      /* ASCII fast path */                                                         \
+      if (mask == 0x7FFFFFFFFFFFFFFF) {                                             \
+        neon_memcpy_small(*out_ptr, input + p);                                     \
+        p += 63;                                                                    \
+        *out_ptr += 63;                                                             \
+        continue;                                                                   \
+      }                                                                             \
       size_t pmax = (p + 64) - 12;                                                  \
       while (p < pmax) {                                                            \
         size_t consumed = neon_normalize_masked_utf8_##decomp_form(                 \
@@ -888,6 +895,13 @@ static uint16x4_t neon_parse_4_123_utf8_wide(uint8x16_t in,
     size_t p = 0;                                                                   \
     while (p + 64 + SAFETY_MARGIN <= length) {                                      \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);                    \
+      /* ASCII fast path */                                                         \
+      if (mask == 0x7FFFFFFFFFFFFFFF) {                                             \
+        neon_memcpy_small(*out_ptr, input + p);                                     \
+        p += 63;                                                                    \
+        *out_ptr += 63;                                                             \
+        continue;                                                                   \
+      }                                                                             \
       size_t pmax = (p + 64) - 12;                                                  \
       while (p < pmax) {                                                            \
         size_t consumed = neon_normalize_masked_utf8_##comp_form(                   \
@@ -1000,6 +1014,11 @@ NEON_DEFINE_NORMALIZE_FUNCTIONS(nfkd, NFKD, nfkc, NFKC, true);
     uint8_t last_ccc = 0;                                                      \
     while (p + 64 + SAFETY_MARGIN <= length) {                                 \
       uint64_t mask = neon_make_utf8_code_point_mask(input + p);               \
+      /* ASCII fast path */                                                    \
+      if (mask == 0x7FFFFFFFFFFFFFFF) {                                        \
+        p += 63;                                                               \
+        continue;                                                              \
+      }                                                                        \
       size_t pmax = (p + 64) - 12;                                             \
       while (p < pmax) {                                                       \
         size_t consumed = neon_normalize_masked_utf8_##form##_check(           \
