@@ -67,19 +67,6 @@ pub fn build(b: *std.Build) !void {
     );
     b.installArtifact(lib);
 
-    const compare_exe = b.addExecutable(.{
-        .name = "compare",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    compare_exe.root_module.addIncludePath(b.path(""));
-    compare_exe.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
-    compare_exe.root_module.addCSourceFile(.{ .file = amalgamation, .flags = flags.items });
-    compare_exe.root_module.addCSourceFile(.{ .file = b.path("test/fuzz.c") });
-    b.installArtifact(compare_exe);
-
     const flags_module = b.createModule(.{
         .root_source_file = b.path("bin/flags.zig"),
         .target = target,
@@ -199,19 +186,42 @@ pub fn build(b: *std.Build) !void {
     test_exe.root_module.linkLibrary(lib);
     const run_test_exe = b.addRunArtifact(test_exe);
     run_test_exe.addFileArg(b.path("test/NormalizationTest.txt"));
-    const test_step = b.step("test", "Test xxUTF using the Unicode Character Database");
     const run_xxu_test = std.Build.Step.Run.create(b, "Run xxu tests");
     run_xxu_test.addFileArg(b.path("test/xxu_test.py"));
     run_xxu_test.addFileArg(xxu.getEmittedBin());
     run_xxu_test.addFileArg(b.path("benchmarks/inputs"));
     run_xxu_test.addFileArg(b.path("test/inputs"));
+
     const xxu_zig_tests = b.addTest(.{
         .root_module = xxu.root_module,
     });
     const run_xxu_zig_tests = b.addRunArtifact(xxu_zig_tests);
+    const test_step = b.step("test", "Test xxUTF using the Unicode Character Database");
     test_step.dependOn(&run_test_exe.step);
     test_step.dependOn(&run_xxu_test.step);
     test_step.dependOn(&run_xxu_zig_tests.step);
+
+    const compare_exe = b.addExecutable(.{
+        .name = "compare",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/compare.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = benchmark_c.createModule(),
+                },
+            },
+        }),
+    });
+    compare_exe.root_module.linkLibrary(lib);
+    compare_exe.root_module.linkLibrary(shim_lib);
+    b.installArtifact(compare_exe);
+
+    const run_compare_exe = b.addRunArtifact(compare_exe);
+    const compare_step = b.step("compare", "Run the compare REPL for xxUTF and ICU4C");
+    compare_step.dependOn(&run_compare_exe.step);
 }
 
 fn createLibrary(
