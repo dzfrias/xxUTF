@@ -66,42 +66,6 @@ pub fn build(b: *std.Build) !void {
         unidata_h_path,
     );
     b.installArtifact(lib);
-
-    const flags_module = b.createModule(.{
-        .root_source_file = b.path("bin/flags.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const benchmark_c = b.addTranslateC(.{
-        .root_source_file = b.path("benchmarks/c.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    benchmark_c.addIncludePath(b.path(""));
-    benchmark_c.addIncludePath(b.path("benchmarks"));
-    benchmark_c.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
-    const benchmark_exe = b.addExecutable(.{
-        .name = "benchmark",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("benchmarks/benchmark.zig"),
-            .target = target,
-            .optimize = if (optimize == .Debug)
-                .ReleaseFast
-            else
-                optimize,
-            .imports = &.{
-                .{
-                    .name = "c",
-                    .module = benchmark_c.createModule(),
-                },
-                .{
-                    .name = "flags",
-                    .module = flags_module,
-                },
-            },
-        }),
-    });
     const optimized_lib = createLibrary(
         b,
         target,
@@ -116,12 +80,48 @@ pub fn build(b: *std.Build) !void {
         unidata_c_path,
         unidata_h_path,
     );
+
+    const flags_module = b.createModule(.{
+        .root_source_file = b.path("bin/common/flags.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const shim_c = b.addTranslateC(.{
+        .root_source_file = b.path("bin/common/shim_include.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    shim_c.addIncludePath(b.path(""));
+    shim_c.addIncludePath(b.path("bin/common"));
+    shim_c.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
     const shim_lib = createShimLibrary(b, target, optimize);
+
+    const benchmark_exe = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bin/benchmark/benchmark.zig"),
+            .target = target,
+            .optimize = if (optimize == .Debug)
+                .ReleaseFast
+            else
+                optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = shim_c.createModule(),
+                },
+                .{
+                    .name = "flags",
+                    .module = flags_module,
+                },
+            },
+        }),
+    });
     benchmark_exe.root_module.linkLibrary(optimized_lib);
     benchmark_exe.root_module.linkLibrary(shim_lib);
-    benchmark_exe.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
     const run_benchmark_exe = b.addRunArtifact(benchmark_exe);
-    run_benchmark_exe.addDirectoryArg(b.path("benchmarks/inputs"));
+    run_benchmark_exe.addDirectoryArg(b.path("bin/common/inputs"));
     for (b.args orelse &.{}) |arg| {
         run_benchmark_exe.addArg(arg);
     }
@@ -131,7 +131,7 @@ pub fn build(b: *std.Build) !void {
     benchmark_step.dependOn(&benchmark_install.step);
 
     const xxu_c = b.addTranslateC(.{
-        .root_source_file = b.path("bin/c.h"),
+        .root_source_file = b.path("bin/common/xxutf_include.h"),
         .target = target,
         .optimize = optimize,
     });
@@ -163,6 +163,27 @@ pub fn build(b: *std.Build) !void {
     xxu_run_step.dependOn(&run_xxu.step);
     b.installArtifact(xxu);
 
+    const compare_exe = b.addExecutable(.{
+        .name = "compare",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bin/compare.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{
+                    .name = "c",
+                    .module = shim_c.createModule(),
+                },
+            },
+        }),
+    });
+    compare_exe.root_module.linkLibrary(lib);
+    compare_exe.root_module.linkLibrary(shim_lib);
+
+    const run_compare_exe = b.addRunArtifact(compare_exe);
+    const compare_step = b.step("compare", "Run the compare REPL for xxUTF and ICU4C");
+    compare_step.dependOn(&run_compare_exe.step);
+
     const test_c = b.addTranslateC(.{
         .root_source_file = b.path("test/c.h"),
         .target = target,
@@ -189,9 +210,11 @@ pub fn build(b: *std.Build) !void {
     const run_xxu_test = std.Build.Step.Run.create(b, "Run xxu tests");
     run_xxu_test.addFileArg(b.path("test/xxu_test.py"));
     run_xxu_test.addFileArg(xxu.getEmittedBin());
-    run_xxu_test.addFileArg(b.path("benchmarks/inputs"));
+    run_xxu_test.addFileArg(b.path("bin/common/inputs"));
     run_xxu_test.addFileArg(b.path("test/inputs"));
 
+    const compare_tests = b.addTest(.{ .root_module = compare_exe.root_module });
+    const run_compare_tests = b.addRunArtifact(compare_tests);
     const xxu_zig_tests = b.addTest(.{
         .root_module = xxu.root_module,
     });
@@ -200,28 +223,7 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_test_exe.step);
     test_step.dependOn(&run_xxu_test.step);
     test_step.dependOn(&run_xxu_zig_tests.step);
-
-    const compare_exe = b.addExecutable(.{
-        .name = "compare",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/compare.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{
-                    .name = "c",
-                    .module = benchmark_c.createModule(),
-                },
-            },
-        }),
-    });
-    compare_exe.root_module.linkLibrary(lib);
-    compare_exe.root_module.linkLibrary(shim_lib);
-    b.installArtifact(compare_exe);
-
-    const run_compare_exe = b.addRunArtifact(compare_exe);
-    const compare_step = b.step("compare", "Run the compare REPL for xxUTF and ICU4C");
-    compare_step.dependOn(&run_compare_exe.step);
+    test_step.dependOn(&run_compare_tests.step);
 }
 
 fn createLibrary(
@@ -278,9 +280,9 @@ fn createShimLibrary(
         .linkage = .static,
     });
     lib.root_module.linkSystemLibrary("icu-uc", .{ .preferred_link_mode = .dynamic });
-    lib.root_module.addIncludePath(b.path("benchmarks"));
-    lib.root_module.addCSourceFile(.{ .file = b.path("benchmarks/shim.c") });
-    lib.installHeader(b.path("benchmarks/shim.h"), "xxutf_shim.h");
+    lib.root_module.addIncludePath(b.path("bin/common"));
+    lib.root_module.addCSourceFile(.{ .file = b.path("bin/common/shim.c") });
+    lib.installHeader(b.path("bin/common/shim.h"), "xxutf_shim.h");
     return lib;
 }
 

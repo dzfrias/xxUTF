@@ -47,11 +47,21 @@ pub fn main(init: std.process.Init) !void {
                             "Not equal ({s}, {s})\n",
                             comptime .{ encoding.name(), form.name() },
                         ));
+                        const xxutf_code_points = try toCodePoints(encoding, init.gpa, normalized_xxutf);
+                        defer init.gpa.free(xxutf_code_points);
+                        const icu_code_points = try toCodePoints(encoding, init.gpa, normalized_icu);
+                        defer init.gpa.free(icu_code_points);
+                        try stdout_writer.interface.writeAll("Want: ");
+                        try printCodePoints(&stdout_writer.interface, icu_code_points);
+                        try stdout_writer.interface.writeByte('\n');
+                        try stdout_writer.interface.writeAll("Got:  ");
+                        try printCodePoints(&stdout_writer.interface, xxutf_code_points);
+                        try stdout_writer.interface.writeByte('\n');
                     }
                 } else |e| switch (e) {
                     error.BadCheck => {
                         try stdout_writer.interface.writeAll(std.fmt.comptimePrint(
-                            "Bad check ({s}, {s})",
+                            "Bad check ({s}, {s})\n",
                             comptime .{ encoding.name(), form.name() },
                         ));
                     },
@@ -108,6 +118,50 @@ fn parse(allocator: Allocator, input: []const u8) (error{ParseError} || Allocato
     return try parsed.toOwnedSlice(allocator);
 }
 
+fn toCodePoints(
+    comptime encoding: Encoding,
+    allocator: Allocator,
+    s: []const EncodingUnit(encoding),
+) Allocator.Error![]const u21 {
+    var result: std.ArrayList(u21) = .empty;
+    errdefer result.deinit(allocator);
+    switch (encoding) {
+        .utf8 => {
+            const view = std.unicode.Utf8View.init(s) catch @panic("input should be valid UTF-8");
+            var it = view.iterator();
+            while (it.nextCodepoint()) |cp| {
+                try result.append(allocator, cp);
+            }
+        },
+        .utf16le => {
+            var it: std.unicode.Utf16LeIterator = .init(s);
+            while (it.nextCodepoint() catch @panic("input shoud be valid UTF-16LE")) |cp| {
+                try result.append(allocator, cp);
+            }
+        },
+        .utf16be => {
+            const swapped = try allocator.dupe(u16, s);
+            defer allocator.free(swapped);
+            std.mem.byteSwapAllElements(u16, swapped);
+            var it: std.unicode.Utf16LeIterator = .init(s);
+            while (it.nextCodepoint() catch @panic("input shoud be valid UTF-16BE")) |cp| {
+                try result.append(allocator, cp);
+            }
+        },
+    }
+    return result.toOwnedSlice(allocator);
+}
+
+fn printCodePoints(writer: *std.Io.Writer, s: []const u21) std.Io.Writer.Error!void {
+    for (s) |cp| {
+        if (cp <= 0xFFFF) {
+            try writer.print("\\u{{{x:0>4}}}", .{cp});
+        } else {
+            try writer.print("\\u{{{x:0>6}}}", .{cp});
+        }
+    }
+}
+
 const Encoding = enum {
     utf8,
     utf16le,
@@ -156,6 +210,9 @@ fn normalizeIcu(
     allocator: Allocator,
     input: []const u8,
 ) Allocator.Error![]const EncodingUnit(encoding) {
+    if (input.len == 0) {
+        return &.{};
+    }
     var status: c.UErrorCode = c.U_ZERO_ERROR;
     var ustring_len: i32 = undefined;
     // Pre-flight for the length
@@ -338,4 +395,49 @@ fn normalizeXxUtf(
         return error.BadCheck;
     }
     return normalized;
+}
+
+test "fuzz UTF-8 NFD" {
+    const buf = try std.testing.allocator.alloc(u8, 16384);
+    defer std.testing.allocator.free(buf);
+    var fba: std.heap.FixedBufferAllocator = .init(buf);
+    const allocator = fba.allocator();
+    try std.testing.fuzz(allocator, testFuzzedUtf8, .{});
+}
+
+fn testFuzzedUtf8(allocator: std.mem.Allocator, smith: *std.testing.Smith) !void {
+    @disableInstrumentation();
+    var input: std.ArrayList(u8) = .empty;
+    defer input.deinit(allocator);
+
+    // TODO: use an enum that either gives:
+    // - ASCII
+    // - Some combining marks
+    // - Tibetan marks
+    // - Hangul precomposed
+    // - Hangul Jamo
+    // - Some uninteresting characters (varying byte sizes)
+    // - Decomposable characters (compatibility and otherwise)
+    // - U+FDFA
+    while (!smith.eosWeightedSimple(255, 1)) {
+        const code_point = smith.valueWeighted(u21, &.{
+            .rangeLessThan(u21, 0, 127, 1), // ASCII range
+            .rangeLessThan(u21, 128, 0xD800 - 1, 1), // Non-ASCII BMP range
+            .rangeLessThan(u21, 0xDFFF + 1, 0xFFFF, 1), // Non-ASCII BMP range
+            .rangeLessThan(u21, 0x10000, 0x110000 - 1, 1), // Supplementary rnage
+        });
+        var encoded: [4]u8 = undefined;
+        const size = std.unicode.utf8Encode(code_point, &encoded) catch @panic("bad smith value");
+        try input.appendSlice(allocator, encoded[0..size]);
+    }
+
+    const normalized_xxutf = try normalizeXxUtf(.utf8, .nfd, allocator, input.items);
+    defer allocator.free(normalized_xxutf);
+    const normalized_icu = try normalizeIcu(.utf8, .nfd, allocator, input.items);
+    defer allocator.free(normalized_icu);
+    std.testing.expectEqualStrings(normalized_icu, normalized_xxutf) catch |e| {
+        // Right now, this is a workaround we have to use because Zig isn't saving the inputs properly
+        std.debug.print("FAILED ON: {any}\n", .{input.items});
+        return e;
+    };
 }
